@@ -1,0 +1,158 @@
+/**
+ * 地物追加ユースケース
+ *
+ * 要件定義書 §5.3.0: AddFeatureUseCase — 点・線・面の追加
+ * 要件定義書 §2.3.2: 追加ツール仕様
+ *
+ * 頂点とFeatureAnchorを生成し、指定レイヤーに地物を追加する。
+ * 追加後に feature:added イベントを発行する。
+ */
+
+import { Coordinate } from '@domain/value-objects/Coordinate';
+import { TimePoint } from '@domain/value-objects/TimePoint';
+import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import type { AnchorProperty, AnchorPlacement, FeatureShape } from '@domain/value-objects/FeatureAnchor';
+import { Ring } from '@domain/value-objects/Ring';
+import { Vertex } from '@domain/entities/Vertex';
+import { Feature } from '@domain/entities/Feature';
+import type { FeatureType } from '@domain/entities/Feature';
+import { eventBus } from './EventBus';
+
+/**
+ * 地物・頂点を管理し、点・線・面の追加操作を提供する。
+ */
+export class AddFeatureUseCase {
+  private features: Map<string, Feature> = new Map();
+  private vertices: Map<string, Vertex> = new Map();
+  private nextFeatureNum = 1;
+  private nextVertexNum = 1;
+  private nextAnchorNum = 1;
+  private nextRingNum = 1;
+
+  /** 現在の全地物を取得する */
+  getFeatures(): readonly Feature[] {
+    return [...this.features.values()];
+  }
+
+  /** 現在の全頂点マップを取得する */
+  getVertices(): ReadonlyMap<string, Vertex> {
+    return this.vertices;
+  }
+
+  /** IDで地物を取得する */
+  getFeatureById(id: string): Feature | undefined {
+    return this.features.get(id);
+  }
+
+  /**
+   * 点情報を追加する
+   * @param coord 配置座標
+   * @param layerId 所属レイヤーID
+   * @param currentTime 現在時刻（錨の開始時刻になる）
+   * @param name 地物名（省略時は自動採番）
+   */
+  addPoint(
+    coord: Coordinate,
+    layerId: string,
+    currentTime: TimePoint,
+    name?: string
+  ): Feature {
+    const vertex = this.createVertex(coord);
+    const shape: FeatureShape = { type: 'Point', vertexId: vertex.id };
+    return this.createFeature('Point', shape, layerId, currentTime, name);
+  }
+
+  /**
+   * 線情報を追加する
+   * @param coords 頂点座標の配列（2点以上）
+   * @param layerId 所属レイヤーID
+   * @param currentTime 現在時刻
+   * @param name 地物名（省略時は自動採番）
+   */
+  addLine(
+    coords: readonly Coordinate[],
+    layerId: string,
+    currentTime: TimePoint,
+    name?: string
+  ): Feature {
+    if (coords.length < 2) {
+      throw new Error('線情報には2点以上の座標が必要です');
+    }
+    const vertexIds = coords.map((c) => this.createVertex(c).id);
+    const shape: FeatureShape = { type: 'LineString', vertexIds };
+    return this.createFeature('Line', shape, layerId, currentTime, name);
+  }
+
+  /**
+   * 面情報を追加する（単一の外部リング）
+   * @param coords 頂点座標の配列（3点以上）
+   * @param layerId 所属レイヤーID
+   * @param currentTime 現在時刻
+   * @param name 地物名（省略時は自動採番）
+   */
+  addPolygon(
+    coords: readonly Coordinate[],
+    layerId: string,
+    currentTime: TimePoint,
+    name?: string
+  ): Feature {
+    if (coords.length < 3) {
+      throw new Error('面情報には3点以上の座標が必要です');
+    }
+    const vertexIds = coords.map((c) => this.createVertex(c).id);
+    const ringId = `ring-${this.nextRingNum++}`;
+    const ring = new Ring(ringId, vertexIds, 'territory', null);
+    const shape: FeatureShape = { type: 'Polygon', rings: [ring] };
+    return this.createFeature('Polygon', shape, layerId, currentTime, name);
+  }
+
+  /** 頂点を生成して登録する */
+  private createVertex(coord: Coordinate): Vertex {
+    const id = `v-${this.nextVertexNum++}`;
+    const vertex = new Vertex(id, coord.normalize());
+    this.vertices.set(id, vertex);
+    return vertex;
+  }
+
+  /** 地物を生成して登録し、イベントを発行する */
+  private createFeature(
+    featureType: FeatureType,
+    shape: FeatureShape,
+    layerId: string,
+    currentTime: TimePoint,
+    name?: string
+  ): Feature {
+    const featureId = `f-${this.nextFeatureNum++}`;
+    const anchorId = `a-${this.nextAnchorNum++}`;
+
+    const typeLabel =
+      featureType === 'Point' ? '点' :
+      featureType === 'Line' ? '線' : '面';
+    const featureName = name ?? `${typeLabel}${this.nextFeatureNum - 1}`;
+
+    const property: AnchorProperty = {
+      name: featureName,
+      description: '',
+    };
+
+    const placement: AnchorPlacement = {
+      layerId,
+      parentId: null,
+      childIds: [],
+    };
+
+    const anchor = new FeatureAnchor(
+      anchorId,
+      { start: currentTime },
+      property,
+      shape,
+      placement
+    );
+
+    const feature = new Feature(featureId, featureType, [anchor]);
+    this.features.set(featureId, feature);
+
+    eventBus.emit('feature:added', { featureId });
+    return feature;
+  }
+}

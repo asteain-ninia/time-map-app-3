@@ -15,3 +15,4 @@ export type {
 } from './EventBus';
 export { NavigateTimeUseCase } from './NavigateTimeUseCase';
 export { ManageLayersUseCase } from './ManageLayersUseCase';
+export { AddFeatureUseCase } from './AddFeatureUseCase';
