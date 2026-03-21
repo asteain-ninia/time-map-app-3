@@ -1,0 +1,28 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "outDir": "./out",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@domain/*": ["./src/renderer/domain/*"],
+      "@application/*": ["./src/renderer/application/*"],
+      "@infrastructure/*": ["./src/renderer/infrastructure/*"],
+      "@presentation/*": ["./src/renderer/presentation/*"]
+    }
+  },
+  "include": [
+    "src/renderer/**/*",
+    "src/renderer/**/*.svelte"
+  ]
+}

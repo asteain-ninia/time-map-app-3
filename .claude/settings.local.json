@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node_modules/electron/dist/electron.exe .)",
+      "Bash(cp out/main/index.js.bak out/main/index.js)",
+      "Bash(rm out/main/index.js.bak out/main/simple.js out/test.js out/test2.js out/test_app.js out/ver.js out/ver2.js out/ver3.js)",
+      "Read(//c/!WORKSPACE/time-map-app/time-map-app-2/node_modules/electron/dist/**)",
+      "Read(//c/!WORKSPACE/time-map-app/time-map-app-2/**)",
+      "Bash(npm install:*)",
+      "Bash(npm ls:*)",
+      "Bash(npx electron-vite:*)",
+      "Bash(ELECTRON_RUN_AS_NODE=0 timeout 10 node_modules/electron/dist/electron.exe .)",
+      "Bash(test_simple.js:*)",
+      "Bash(timeout 10 npx electron test_simple.js)",
+      "Bash(rm test_simple.js)",
+      "Bash(timeout 5 node_modules/electron/dist/electron.exe)",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(timeout 10 npx electron .)",
+      "Bash(node_modules/electron/dist/electron.exe --help)",
+      "Bash(timeout 10 node_modules/electron/dist/electron.exe \"c:\\\\!WORKSPACE\\\\time-map-app\\\\time-map-app-3\")",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(mv node_modules/electron/dist/resources/default_app.asar node_modules/electron/dist/resources/default_app.asar.bak)",
+      "Bash(rm -f electron_test.log)",
+      "Bash(mv node_modules/electron/dist/resources/default_app.asar.bak node_modules/electron/dist/resources/default_app.asar)",
+      "Bash(rm -rf node_modules/electron/dist/resources/app)",
+      "Bash(timeout 5 cmd.exe /c 'node_modules\\\\electron\\\\dist\\\\electron.exe .')",
+      "Bash(node -e \"const cp = require\\(''child_process''\\); const r = cp.spawnSync\\(''node_modules/electron/dist/electron.exe'', [''.''], {timeout: 8000, encoding: ''utf8'', stdio: [''pipe'', ''pipe'', ''pipe'']}\\); console.log\\(''stdout:'', r.stdout\\); console.log\\(''stderr:'', r.stderr\\); console.log\\(''status:'', r.status, ''signal:'', r.signal\\);\")",
+      "Bash(grep -r \"spawn\\\\|exec\\\\|fork\" c:/!WORKSPACE/time-map-app/time-map-app-3/node_modules/electron-vite/dist/ --include=*.js -l)",
+      "Bash(where electron:*)"
+    ]
+  }
+}
