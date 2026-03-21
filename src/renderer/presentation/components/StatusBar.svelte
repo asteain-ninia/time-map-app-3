@@ -1,7 +1,30 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { eventBus } from '@application/EventBus';
+
   let cursorLon = $state<number | null>(null);
   let cursorLat = $state<number | null>(null);
   let zoomLevel = $state(1.0);
+
+  const unsubCursorMoved = eventBus.on('cursor:moved', (e) => {
+    cursorLon = e.lon;
+    cursorLat = e.lat;
+  });
+
+  const unsubCursorLeft = eventBus.on('cursor:left', () => {
+    cursorLon = null;
+    cursorLat = null;
+  });
+
+  const unsubZoom = eventBus.on('viewport:zoomChanged', (e) => {
+    zoomLevel = e.zoom;
+  });
+
+  onDestroy(() => {
+    unsubCursorMoved();
+    unsubCursorLeft();
+    unsubZoom();
+  });
 
   function formatCoord(value: number, posLabel: string, negLabel: string): string {
     const abs = Math.abs(value);

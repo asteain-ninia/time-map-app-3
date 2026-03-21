@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ViewportManager } from '@infrastructure/ViewportManager';
+  import { eventBus } from '@application/EventBus';
   import GridRenderer from './GridRenderer.svelte';
 
   const viewport = new ViewportManager();
@@ -47,6 +48,7 @@
     viewport.zoomAtCursor(-e.deltaY, x, y);
     viewBox = viewport.getViewBox();
     zoomLevel = viewport.getZoom();
+    eventBus.emit('viewport:zoomChanged', { zoom: zoomLevel });
   }
 
   function onMouseDown(e: MouseEvent): void {
@@ -66,6 +68,9 @@
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     cursorGeo = viewport.screenToGeo(x, y);
+    if (cursorGeo) {
+      eventBus.emit('cursor:moved', { lon: cursorGeo.lon, lat: cursorGeo.lat });
+    }
 
     if (isPanning) {
       const dx = e.clientX - lastPanX;
@@ -84,6 +89,7 @@
   function onMouseLeave(_e: MouseEvent): void {
     isPanning = false;
     cursorGeo = null;
+    eventBus.emit('cursor:left', {});
   }
 </script>
 
