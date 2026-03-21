@@ -14,3 +14,4 @@ export type {
   FeatureRemovedEvent,
 } from './EventBus';
 export { NavigateTimeUseCase } from './NavigateTimeUseCase';
+export { ManageLayersUseCase } from './ManageLayersUseCase';

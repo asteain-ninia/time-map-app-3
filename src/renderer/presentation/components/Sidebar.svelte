@@ -1,4 +1,6 @@
 <script lang="ts">
+  import LayerPanel from './LayerPanel.svelte';
+
   type SidebarTab = 'layers' | 'properties' | 'features';
 
   let activeTab = $state<SidebarTab>('layers');
@@ -31,7 +33,7 @@
 
   <div class="tab-content">
     {#if activeTab === 'layers'}
-      <div class="empty-message">レイヤーはまだありません</div>
+      <LayerPanel />
     {:else if activeTab === 'properties'}
       <div class="empty-message">地物または頂点が選択されていません</div>
     {:else if activeTab === 'features'}
