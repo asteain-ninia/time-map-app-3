@@ -1,19 +1,60 @@
 <script lang="ts">
-  let currentYear = $state(1000);
+  import { onDestroy } from 'svelte';
+  import { NavigateTimeUseCase } from '@application/NavigateTimeUseCase';
+  import { eventBus } from '@application/EventBus';
+
+  const navigateTime = new NavigateTimeUseCase();
+
+  let currentYear = $state(navigateTime.getCurrentTime().year);
   let sliderMin = $state(0);
   let sliderMax = $state(10000);
+
+  /** 外部からの時刻変更を反映する */
+  const unsubTimeChanged = eventBus.on('time:changed', (e) => {
+    currentYear = e.time.year;
+  });
+
+  onDestroy(() => {
+    unsubTimeChanged();
+  });
 
   function onSliderInput(e: Event): void {
     const target = e.target as HTMLInputElement;
     currentYear = parseInt(target.value, 10);
+    navigateTime.navigateToYear(currentYear);
   }
 
   function stepBack(): void {
-    if (currentYear > sliderMin) currentYear--;
+    if (currentYear > sliderMin) {
+      currentYear--;
+      navigateTime.navigateToYear(currentYear);
+    }
   }
 
   function stepForward(): void {
-    if (currentYear < sliderMax) currentYear++;
+    if (currentYear < sliderMax) {
+      currentYear++;
+      navigateTime.navigateToYear(currentYear);
+    }
+  }
+
+  /** 年入力欄のフォーカスアウトで確定 */
+  function onYearInputConfirm(e: FocusEvent): void {
+    const target = e.target as HTMLInputElement;
+    const value = parseInt(target.value, 10);
+    if (!isNaN(value) && value >= sliderMin && value <= sliderMax) {
+      currentYear = value;
+      navigateTime.navigateToYear(currentYear);
+    } else {
+      target.value = String(currentYear);
+    }
+  }
+
+  /** Enterキーで確定 */
+  function onYearInputKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Enter') {
+      (e.target as HTMLInputElement).blur();
+    }
   }
 </script>
 
@@ -50,9 +91,11 @@
         id="year-input"
         type="number"
         class="year-input"
-        bind:value={currentYear}
+        value={currentYear}
         min={sliderMin}
         max={sliderMax}
+        onblur={onYearInputConfirm}
+        onkeydown={onYearInputKeydown}
       />
     </div>
   </div>
