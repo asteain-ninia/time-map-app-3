@@ -2,6 +2,23 @@
   import { ViewportManager } from '@infrastructure/ViewportManager';
   import { eventBus } from '@application/EventBus';
   import GridRenderer from './GridRenderer.svelte';
+  import FeatureRenderer from './FeatureRenderer.svelte';
+  import type { Feature } from '@domain/entities/Feature';
+  import type { Vertex } from '@domain/entities/Vertex';
+  import type { Layer } from '@domain/entities/Layer';
+  import type { TimePoint } from '@domain/value-objects/TimePoint';
+
+  let {
+    features = [] as readonly Feature[],
+    vertices = new Map<string, Vertex>() as ReadonlyMap<string, Vertex>,
+    layers = [] as readonly Layer[],
+    currentTime = undefined as TimePoint | undefined,
+  }: {
+    features?: readonly Feature[];
+    vertices?: ReadonlyMap<string, Vertex>;
+    layers?: readonly Layer[];
+    currentTime?: TimePoint;
+  } = $props();
 
   const viewport = new ViewportManager();
 
@@ -117,6 +134,17 @@
     <g transform="scale({360 / 4243.4}, {180 / 2121.7})">
       {@html baseMapContent}
     </g>
+
+    <!-- 地物描画 -->
+    {#if currentTime}
+      <FeatureRenderer
+        {features}
+        {vertices}
+        {layers}
+        {currentTime}
+        zoom={zoomLevel}
+      />
+    {/if}
 
     <!-- グリッド線 -->
     <GridRenderer zoom={zoomLevel} />
