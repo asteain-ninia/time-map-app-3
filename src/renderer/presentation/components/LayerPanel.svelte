@@ -8,16 +8,6 @@
 
   /** リアクティブなレイヤー一覧 */
   let layers = $state<readonly Layer[]>(manageLayers.getLayers());
-  let nextId = $state(1);
-
-  /** レイヤー追加 */
-  function addLayer(): void {
-    const id = `layer-${nextId}`;
-    const name = `レイヤー ${nextId}`;
-    nextId++;
-    manageLayers.addLayer(id, name);
-    layers = manageLayers.getLayers();
-  }
 
   /** 表示/非表示切替 */
   function toggleVisibility(layerId: string): void {
@@ -45,7 +35,6 @@
 <div class="layer-panel">
   <div class="layer-header">
     <span class="layer-title">レイヤー</span>
-    <button class="add-button" onclick={addLayer} title="レイヤーを追加">＋</button>
   </div>
 
   {#if layers.length === 0}
@@ -95,24 +84,6 @@
     font-size: 12px;
     font-weight: bold;
     color: #ccc;
-  }
-
-  .add-button {
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #3c3c3c;
-    border: 1px solid #555;
-    border-radius: 3px;
-    color: #ccc;
-    cursor: pointer;
-    font-size: 14px;
-  }
-
-  .add-button:hover {
-    background: #4c4c4c;
   }
 
   .layer-list {

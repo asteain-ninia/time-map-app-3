@@ -3,3 +3,4 @@ out/
 dist/
 *.tsbuildinfo
 .svelte-kit/
+.claude/settings.local.json
