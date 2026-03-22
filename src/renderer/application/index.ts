@@ -26,3 +26,5 @@ export type {
   WorldLoadedEvent,
   WorldSavedEvent,
 } from './EventBus';
+export { AddFeatureCommand, type AddFeatureParams } from './commands/AddFeatureCommand';
+export { MoveVertexCommand } from './commands/MoveVertexCommand';

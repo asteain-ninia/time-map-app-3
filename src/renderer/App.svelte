@@ -7,6 +7,7 @@
   import StatusBar from '@presentation/components/StatusBar.svelte';
   import { createToolStore } from '@presentation/state/toolStore';
   import { addFeature, manageLayers, navigateTime, saveLoad, undoRedo } from '@presentation/state/appState';
+  import { AddFeatureCommand } from '@application/commands/AddFeatureCommand';
   import { eventBus } from '@application/EventBus';
   import type { Coordinate } from '@domain/value-objects/Coordinate';
   import type { Feature } from '@domain/entities/Feature';
@@ -18,18 +19,18 @@
   // --- ツール状態 ---
 
   const toolStore = createToolStore((addToolType, coords) => {
-    // 描画確定時のコールバック
+    // 描画確定時のコールバック — UndoRedoManager経由で実行
     const layers = manageLayers.getLayers();
     if (layers.length === 0) return;
     const layerId = layers[0].id;
     const time = navigateTime.getCurrentTime();
 
     if (addToolType === 'point' && coords.length >= 1) {
-      addFeature.addPoint(coords[0], layerId, time);
+      undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'point', coord: coords[0], layerId, time }));
     } else if (addToolType === 'line' && coords.length >= 2) {
-      addFeature.addLine(coords, layerId, time);
+      undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'line', coords, layerId, time }));
     } else if (addToolType === 'polygon' && coords.length >= 3) {
-      addFeature.addPolygon(coords, layerId, time);
+      undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'polygon', coords, layerId, time }));
     }
     refreshFeatureData();
   });
@@ -122,11 +123,13 @@
     if (toolMode === 'add') {
       toolStore.send({ type: 'MAP_CLICK', coord });
       syncToolState();
-      // 点ツール: 即座にポイント追加
+      // 点ツール: 即座にポイント追加（Undo対応）
       if (addToolType === 'point') {
         const layerList = manageLayers.getLayers();
         if (layerList.length > 0) {
-          addFeature.addPoint(coord, layerList[0].id, navigateTime.getCurrentTime());
+          undoRedo.execute(new AddFeatureCommand(addFeature, {
+            type: 'point', coord, layerId: layerList[0].id, time: navigateTime.getCurrentTime()
+          }));
           refreshFeatureData();
         }
       }
