@@ -55,6 +55,16 @@ export class ManageLayersUseCase {
     this.layers[idx] = this.layers[idx].withOpacity(clamped);
   }
 
+  /** 保存データから状態を復元する */
+  restore(layers: readonly Layer[]): void {
+    this.layers = [...layers];
+    let maxOrder = 0;
+    for (const l of layers) {
+      if (l.order >= maxOrder) maxOrder = l.order + 1;
+    }
+    this.nextOrder = maxOrder;
+  }
+
   /** レイヤー名を変更する */
   rename(layerId: string, name: string): void {
     const idx = this.layers.findIndex(l => l.id === layerId);

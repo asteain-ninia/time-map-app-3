@@ -3,6 +3,10 @@ import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { eventBus } from '@application/EventBus';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
+import { Feature } from '@domain/entities/Feature';
+import { Vertex } from '@domain/entities/Vertex';
+import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import { Ring } from '@domain/value-objects/Ring';
 
 describe('AddFeatureUseCase', () => {
   let useCase: AddFeatureUseCase;
@@ -221,6 +225,108 @@ describe('AddFeatureUseCase', () => {
     it('存在しないIDなら undefined', () => {
       useCase = new AddFeatureUseCase();
       expect(useCase.getFeatureById('xxx')).toBeUndefined();
+    });
+  });
+
+  describe('restore', () => {
+    it('地物と頂点を復元できる', () => {
+      useCase = new AddFeatureUseCase();
+      const vertices = new Map<string, Vertex>();
+      vertices.set('v1', new Vertex('v1', new Coordinate(10, 20)));
+
+      const anchor = new FeatureAnchor(
+        'a1',
+        { start: new TimePoint(1000) },
+        { name: '復元地物', description: '' },
+        { type: 'Point', vertexId: 'v1' },
+        { layerId: 'l1', parentId: null, childIds: [] }
+      );
+      const features = new Map<string, Feature>();
+      features.set('f1', new Feature('f1', 'Point', [anchor]));
+
+      useCase.restore(features, vertices);
+
+      expect(useCase.getFeatures()).toHaveLength(1);
+      expect(useCase.getFeatures()[0].anchors[0].property.name).toBe('復元地物');
+      expect(useCase.getVertices().size).toBe(1);
+    });
+
+    it('復元前のデータは上書きされる', () => {
+      useCase = new AddFeatureUseCase();
+      useCase.addPoint(new Coordinate(0, 0), 'l1', time);
+      expect(useCase.getFeatures()).toHaveLength(1);
+
+      useCase.restore(new Map(), new Map());
+
+      expect(useCase.getFeatures()).toHaveLength(0);
+      expect(useCase.getVertices().size).toBe(0);
+    });
+
+    it('復元後の新規追加でIDが衝突しない', () => {
+      useCase = new AddFeatureUseCase();
+      const vertices = new Map<string, Vertex>();
+      vertices.set('v-5', new Vertex('v-5', new Coordinate(10, 20)));
+
+      const anchor = new FeatureAnchor(
+        'a-3',
+        { start: new TimePoint(100) },
+        { name: 'test', description: '' },
+        { type: 'Point', vertexId: 'v-5' },
+        { layerId: 'l1', parentId: null, childIds: [] }
+      );
+      const features = new Map<string, Feature>();
+      features.set('f-10', new Feature('f-10', 'Point', [anchor]));
+
+      useCase.restore(features, vertices);
+
+      // 新しく追加
+      const newFeature = useCase.addPoint(new Coordinate(50, 60), 'l1', time);
+      // f-10の次はf-11以降
+      expect(newFeature.id).not.toBe('f-10');
+      // IDの重複なし
+      const ids = useCase.getFeatures().map(f => f.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it('ポリゴンのリングIDも採番カウンタに反映される', () => {
+      useCase = new AddFeatureUseCase();
+      const vertices = new Map<string, Vertex>();
+      vertices.set('v-1', new Vertex('v-1', new Coordinate(0, 0)));
+      vertices.set('v-2', new Vertex('v-2', new Coordinate(10, 0)));
+      vertices.set('v-3', new Vertex('v-3', new Coordinate(10, 10)));
+
+      const ring = new Ring('ring-5', ['v-1', 'v-2', 'v-3'], 'territory', null);
+      const anchor = new FeatureAnchor(
+        'a-1',
+        { start: new TimePoint(100) },
+        { name: 'poly', description: '' },
+        { type: 'Polygon', rings: [ring] },
+        { layerId: 'l1', parentId: null, childIds: [] }
+      );
+      const features = new Map<string, Feature>();
+      features.set('f-1', new Feature('f-1', 'Polygon', [anchor]));
+
+      useCase.restore(features, vertices);
+
+      // 新しいポリゴンを追加してリングIDが衝突しないことを確認
+      const newPoly = useCase.addPolygon(
+        [new Coordinate(20, 20), new Coordinate(30, 20), new Coordinate(30, 30)],
+        'l1',
+        time
+      );
+      if (newPoly.anchors[0].shape.type === 'Polygon') {
+        expect(newPoly.anchors[0].shape.rings[0].id).not.toBe('ring-5');
+      }
+    });
+
+    it('getFeaturesMapで全地物のMapを取得できる', () => {
+      useCase = new AddFeatureUseCase();
+      useCase.addPoint(new Coordinate(0, 0), 'l1', time);
+      useCase.addPoint(new Coordinate(10, 10), 'l1', time);
+
+      const map = useCase.getFeaturesMap();
+      expect(map.size).toBe(2);
+      expect(map instanceof Map).toBe(true);
     });
   });
 

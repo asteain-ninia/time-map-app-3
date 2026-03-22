@@ -39,9 +39,69 @@ export class AddFeatureUseCase {
     return this.vertices;
   }
 
+  /** 現在の全地物マップを取得する */
+  getFeaturesMap(): ReadonlyMap<string, Feature> {
+    return this.features;
+  }
+
   /** IDで地物を取得する */
   getFeatureById(id: string): Feature | undefined {
     return this.features.get(id);
+  }
+
+  /** 保存データから状態を復元する */
+  restore(
+    features: ReadonlyMap<string, Feature>,
+    vertices: ReadonlyMap<string, Vertex>
+  ): void {
+    this.features = new Map(features);
+    this.vertices = new Map(vertices);
+    // ID採番カウンタを復元データの最大値以降に設定
+    this.nextFeatureNum = this.computeNextNum(features.keys(), 'f-');
+    this.nextVertexNum = this.computeNextNum(vertices.keys(), 'v-');
+    this.nextAnchorNum = this.computeNextAnchorNum(features.values());
+    this.nextRingNum = this.computeNextRingNum(features.values());
+  }
+
+  private computeNextNum(ids: IterableIterator<string>, prefix: string): number {
+    let max = 0;
+    for (const id of ids) {
+      if (id.startsWith(prefix)) {
+        const n = parseInt(id.slice(prefix.length), 10);
+        if (!isNaN(n) && n > max) max = n;
+      }
+    }
+    return max + 1;
+  }
+
+  private computeNextAnchorNum(features: IterableIterator<Feature>): number {
+    let max = 0;
+    for (const f of features) {
+      for (const a of f.anchors) {
+        if (a.id.startsWith('a-')) {
+          const n = parseInt(a.id.slice(2), 10);
+          if (!isNaN(n) && n > max) max = n;
+        }
+      }
+    }
+    return max + 1;
+  }
+
+  private computeNextRingNum(features: IterableIterator<Feature>): number {
+    let max = 0;
+    for (const f of features) {
+      for (const a of f.anchors) {
+        if (a.shape.type === 'Polygon') {
+          for (const ring of a.shape.rings) {
+            if (ring.id.startsWith('ring-')) {
+              const n = parseInt(ring.id.slice(5), 10);
+              if (!isNaN(n) && n > max) max = n;
+            }
+          }
+        }
+      }
+    }
+    return max + 1;
   }
 
   /**

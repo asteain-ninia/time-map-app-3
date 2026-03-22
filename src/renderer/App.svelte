@@ -6,7 +6,7 @@
   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
   import StatusBar from '@presentation/components/StatusBar.svelte';
   import { createToolStore } from '@presentation/state/toolStore';
-  import { addFeature, manageLayers, navigateTime } from '@presentation/state/appState';
+  import { addFeature, manageLayers, navigateTime, saveLoad, undoRedo } from '@presentation/state/appState';
   import { eventBus } from '@application/EventBus';
   import type { Coordinate } from '@domain/value-objects/Coordinate';
   import type { Feature } from '@domain/entities/Feature';
@@ -86,10 +86,17 @@
     refreshLayerData();
   });
 
+  const unsubWorldLoaded = eventBus.on('world:loaded', () => {
+    refreshFeatureData();
+    refreshLayerData();
+    selectedFeatureId = null;
+  });
+
   onDestroy(() => {
     unsubFeatureAdded();
     unsubTimeChanged();
     unsubLayerVisibility();
+    unsubWorldLoaded();
     toolStore.stop();
   });
 
@@ -178,9 +185,33 @@
         selectedFeatureId = null;
       }
     }
-    if (e.ctrlKey && e.key === 'z' && isDrawing) {
-      toolStore.send({ type: 'UNDO_VERTEX' });
-      syncToolState();
+    if (e.ctrlKey && e.key === 'z') {
+      e.preventDefault();
+      if (isDrawing) {
+        toolStore.send({ type: 'UNDO_VERTEX' });
+        syncToolState();
+      } else {
+        // §2.3.1: 汎用Undo
+        undoRedo.undo();
+        refreshFeatureData();
+        refreshLayerData();
+      }
+    }
+    if (e.ctrlKey && e.key === 'y') {
+      e.preventDefault();
+      // §2.3.1: 汎用Redo
+      undoRedo.redo();
+      refreshFeatureData();
+      refreshLayerData();
+    }
+    // §2.5: Ctrl+S で保存、Ctrl+O で開く
+    if (e.ctrlKey && e.key === 's') {
+      e.preventDefault();
+      saveLoad.save();
+    }
+    if (e.ctrlKey && e.key === 'o') {
+      e.preventDefault();
+      saveLoad.open();
     }
   }
 </script>

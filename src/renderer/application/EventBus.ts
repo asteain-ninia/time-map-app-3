@@ -47,6 +47,16 @@ export interface FeatureRemovedEvent {
   featureId: string;
 }
 
+/** ワールド読み込み完了 */
+export interface WorldLoadedEvent {
+  filePath: string;
+}
+
+/** ワールド保存完了 */
+export interface WorldSavedEvent {
+  filePath: string;
+}
+
 /** イベントマップ: イベント名と型の対応 */
 export interface EventMap {
   'cursor:moved': CursorMovedEvent;
@@ -56,6 +66,8 @@ export interface EventMap {
   'layer:visibilityChanged': LayerVisibilityChangedEvent;
   'feature:added': FeatureAddedEvent;
   'feature:removed': FeatureRemovedEvent;
+  'world:loaded': WorldLoadedEvent;
+  'world:saved': WorldSavedEvent;
 }
 
 export type EventName = keyof EventMap;

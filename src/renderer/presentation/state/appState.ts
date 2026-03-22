@@ -9,10 +9,25 @@
 import { ManageLayersUseCase } from '@application/ManageLayersUseCase';
 import { NavigateTimeUseCase } from '@application/NavigateTimeUseCase';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
+import { SaveLoadUseCase } from '@application/SaveLoadUseCase';
+import { VertexEditUseCase } from '@application/VertexEditUseCase';
+import { UpdateFeatureAnchorUseCase } from '@application/UpdateFeatureAnchorUseCase';
+import { UndoRedoManager } from '@application/UndoRedoManager';
+import { JSONWorldRepository, createElectronFileSystem } from '@infrastructure/persistence/JSONWorldRepository';
 
 export const manageLayers = new ManageLayersUseCase();
 export const navigateTime = new NavigateTimeUseCase();
 export const addFeature = new AddFeatureUseCase();
+
+const repository = new JSONWorldRepository(createElectronFileSystem());
+const dialog = {
+  showOpenDialog: () => window.api.showOpenDialog(),
+  showSaveDialog: () => window.api.showSaveDialog(),
+};
+export const saveLoad = new SaveLoadUseCase(repository, dialog, addFeature, manageLayers, navigateTime);
+export const vertexEdit = new VertexEditUseCase(addFeature);
+export const anchorEdit = new UpdateFeatureAnchorUseCase(addFeature);
+export const undoRedo = new UndoRedoManager();
 
 /** 選択中の地物ID */
 export let selectedFeatureId: string | null = null;
