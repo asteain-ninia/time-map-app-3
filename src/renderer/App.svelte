@@ -13,6 +13,7 @@
   import type { Vertex } from '@domain/entities/Vertex';
   import type { Layer } from '@domain/entities/Layer';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
+  import { hitTest } from '@infrastructure/rendering/hitTestUtils';
 
   // --- ツール状態 ---
 
@@ -105,6 +106,11 @@
     syncToolState();
   }
 
+  /** ヒットテスト閾値（度単位、ズームに反比例） */
+  function getHitThreshold(): number {
+    return 5 / (toolStore.getSnapshot().isPanning ? 1 : 1);
+  }
+
   function onMapClick(coord: Coordinate): void {
     if (toolMode === 'add') {
       toolStore.send({ type: 'MAP_CLICK', coord });
@@ -117,6 +123,17 @@
           refreshFeatureData();
         }
       }
+    } else if (toolMode === 'view' || toolMode === 'edit') {
+      // ヒットテストで地物選択
+      const result = hitTest(
+        coord,
+        features,
+        vertices,
+        layers,
+        currentTime,
+        getHitThreshold()
+      );
+      selectedFeatureId = result?.featureId ?? null;
     }
   }
 
