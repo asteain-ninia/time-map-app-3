@@ -16,6 +16,7 @@ import { Ring } from '@domain/value-objects/Ring';
 import { Vertex } from '@domain/entities/Vertex';
 import { Feature } from '@domain/entities/Feature';
 import type { FeatureType } from '@domain/entities/Feature';
+import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import { eventBus } from './EventBus';
 
 /**
@@ -24,6 +25,7 @@ import { eventBus } from './EventBus';
 export class AddFeatureUseCase {
   private features: Map<string, Feature> = new Map();
   private vertices: Map<string, Vertex> = new Map();
+  private sharedVertexGroups: Map<string, SharedVertexGroup> = new Map();
   private nextFeatureNum = 1;
   private nextVertexNum = 1;
   private nextAnchorNum = 1;
@@ -44,6 +46,11 @@ export class AddFeatureUseCase {
     return this.features;
   }
 
+  /** 現在の全共有頂点グループマップを取得する */
+  getSharedVertexGroups(): ReadonlyMap<string, SharedVertexGroup> {
+    return this.sharedVertexGroups;
+  }
+
   /** IDで地物を取得する */
   getFeatureById(id: string): Feature | undefined {
     return this.features.get(id);
@@ -52,10 +59,12 @@ export class AddFeatureUseCase {
   /** 保存データから状態を復元する */
   restore(
     features: ReadonlyMap<string, Feature>,
-    vertices: ReadonlyMap<string, Vertex>
+    vertices: ReadonlyMap<string, Vertex>,
+    sharedVertexGroups?: ReadonlyMap<string, SharedVertexGroup>
   ): void {
     this.features = new Map(features);
     this.vertices = new Map(vertices);
+    this.sharedVertexGroups = new Map(sharedVertexGroups ?? []);
     // ID採番カウンタを復元データの最大値以降に設定
     this.nextFeatureNum = this.computeNextNum(features.keys(), 'f-');
     this.nextVertexNum = this.computeNextNum(vertices.keys(), 'v-');

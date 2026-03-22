@@ -90,7 +90,7 @@ export class SaveLoadUseCase {
       this.addFeature.getVertices(),
       this.addFeature.getFeaturesMap(),
       this.manageLayers.getLayers(),
-      new Map(),
+      this.addFeature.getSharedVertexGroups(),
       [],
       metadata
     );
@@ -107,7 +107,7 @@ export class SaveLoadUseCase {
 
   /** 読み込んだWorldの内容を各ユースケースに分配する */
   private distributeWorld(world: World): void {
-    this.addFeature.restore(world.features, world.vertices);
+    this.addFeature.restore(world.features, world.vertices, world.sharedVertexGroups);
     this.manageLayers.restore(world.layers);
     // メタデータのスライダー範囲は将来のNavigateTimeUseCase拡張で対応
   }

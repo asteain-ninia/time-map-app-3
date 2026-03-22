@@ -5,6 +5,7 @@ import { World, DEFAULT_METADATA } from '@domain/entities/World';
 import { Feature } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
 import { Layer } from '@domain/entities/Layer';
+import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
@@ -54,6 +55,38 @@ function createTestWorld(): World {
   ];
 
   return new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+}
+
+function createTestWorldWithSharedVertices(): World {
+  const vertices = new Map<string, Vertex>();
+  vertices.set('v1', new Vertex('v1', new Coordinate(10, 20)));
+  vertices.set('v2', new Vertex('v2', new Coordinate(10, 20)));
+  vertices.set('v3', new Vertex('v3', new Coordinate(30, 40)));
+
+  const anchor1 = new FeatureAnchor(
+    'a1',
+    { start: new TimePoint(1000) },
+    { name: '国A', description: '' },
+    { type: 'Point', vertexId: 'v1' },
+    { layerId: 'l1', parentId: null, childIds: [] }
+  );
+  const anchor2 = new FeatureAnchor(
+    'a2',
+    { start: new TimePoint(1000) },
+    { name: '国B', description: '' },
+    { type: 'Point', vertexId: 'v2' },
+    { layerId: 'l1', parentId: null, childIds: [] }
+  );
+  const features = new Map<string, Feature>();
+  features.set('f1', new Feature('f1', 'Point', [anchor1]));
+  features.set('f2', new Feature('f2', 'Point', [anchor2]));
+
+  const layers = [new Layer('l1', 'レイヤー1', 0)];
+
+  const sharedGroups = new Map<string, SharedVertexGroup>();
+  sharedGroups.set('sg-1', new SharedVertexGroup('sg-1', ['v1', 'v2'], new Coordinate(10, 20)));
+
+  return new World('1.0.0', vertices, features, layers, sharedGroups, [], DEFAULT_METADATA);
 }
 
 describe('SaveLoadUseCase', () => {
@@ -238,6 +271,40 @@ describe('SaveLoadUseCase', () => {
       const allFeatures = addFeature.getFeatures();
       const ids = allFeatures.map(f => f.id);
       expect(new Set(ids).size).toBe(ids.length);
+    });
+  });
+
+  describe('SharedVertexGroups', () => {
+    it('assembleWorldがSharedVertexGroupsを含める', () => {
+      // restoreで共有頂点グループを含むデータを設定
+      const world = createTestWorldWithSharedVertices();
+      addFeature.restore(world.features, world.vertices, world.sharedVertexGroups);
+      manageLayers.restore(world.layers);
+
+      const assembled = useCase.assembleWorld();
+
+      expect(assembled.sharedVertexGroups.size).toBe(1);
+      const group = assembled.sharedVertexGroups.get('sg-1');
+      expect(group).toBeDefined();
+      expect(group!.vertexIds).toEqual(['v1', 'v2']);
+      expect(group!.representativeCoordinate.x).toBe(10);
+    });
+
+    it('読み込んだSharedVertexGroupsがAddFeatureUseCaseに反映される', async () => {
+      const world = createTestWorldWithSharedVertices();
+      dialog.showOpenDialog.mockResolvedValue('/test/file.json');
+      repo.load.mockResolvedValue(world);
+
+      await useCase.open();
+
+      const groups = addFeature.getSharedVertexGroups();
+      expect(groups.size).toBe(1);
+      expect(groups.get('sg-1')!.vertexIds).toEqual(['v1', 'v2']);
+    });
+
+    it('SharedVertexGroupsが空でも正常に動作する', () => {
+      const world = useCase.assembleWorld();
+      expect(world.sharedVertexGroups.size).toBe(0);
     });
   });
 
