@@ -1,9 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { NavigateTimeUseCase } from '@application/NavigateTimeUseCase';
+  import { navigateTime } from '@presentation/state/appState';
   import { eventBus } from '@application/EventBus';
-
-  const navigateTime = new NavigateTimeUseCase();
 
   let currentYear = $state(navigateTime.getCurrentTime().year);
   let sliderMin = $state(0);

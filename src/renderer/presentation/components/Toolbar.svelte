@@ -1,10 +1,24 @@
 <script lang="ts">
-  type ToolMode = 'view' | 'add' | 'edit' | 'measure';
+  import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
 
-  let activeMode = $state<ToolMode>('view');
+  let {
+    mode = 'view' as ToolMode,
+    addToolType = 'polygon' as AddToolType,
+    onModeChange,
+    onAddToolChange,
+  }: {
+    mode?: ToolMode;
+    addToolType?: AddToolType;
+    onModeChange?: (mode: ToolMode) => void;
+    onAddToolChange?: (toolType: AddToolType) => void;
+  } = $props();
 
-  function setMode(mode: ToolMode): void {
-    activeMode = mode;
+  function setMode(m: ToolMode): void {
+    onModeChange?.(m);
+  }
+
+  function setAddTool(t: AddToolType): void {
+    onAddToolChange?.(t);
   }
 </script>
 
@@ -12,7 +26,7 @@
   <div class="tool-group">
     <button
       class="tool-button"
-      class:active={activeMode === 'view'}
+      class:active={mode === 'view'}
       onclick={() => setMode('view')}
       title="表示モード"
     >
@@ -22,7 +36,7 @@
     </button>
     <button
       class="tool-button"
-      class:active={activeMode === 'add'}
+      class:active={mode === 'add'}
       onclick={() => setMode('add')}
       title="追加モード"
     >
@@ -32,7 +46,7 @@
     </button>
     <button
       class="tool-button"
-      class:active={activeMode === 'edit'}
+      class:active={mode === 'edit'}
       onclick={() => setMode('edit')}
       title="編集モード"
     >
@@ -42,7 +56,7 @@
     </button>
     <button
       class="tool-button"
-      class:active={activeMode === 'measure'}
+      class:active={mode === 'measure'}
       onclick={() => setMode('measure')}
       title="測量モード"
     >
@@ -51,6 +65,43 @@
       </svg>
     </button>
   </div>
+
+  <!-- 追加モード時のサブツール選択 -->
+  {#if mode === 'add'}
+    <div class="tool-separator"></div>
+    <div class="tool-group">
+      <button
+        class="tool-button sub-tool"
+        class:active={addToolType === 'point'}
+        onclick={() => setAddTool('point')}
+        title="点を追加"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <circle cx="12" cy="12" r="4" fill="currentColor"/>
+        </svg>
+      </button>
+      <button
+        class="tool-button sub-tool"
+        class:active={addToolType === 'line'}
+        onclick={() => setAddTool('line')}
+        title="線を追加"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <path d="M4 20L20 4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        </svg>
+      </button>
+      <button
+        class="tool-button sub-tool"
+        class:active={addToolType === 'polygon'}
+        onclick={() => setAddTool('polygon')}
+        title="面を追加"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <polygon points="12,3 21,18 3,18" fill="currentColor" opacity="0.6" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+      </button>
+    </div>
+  {/if}
 
   <div class="tool-separator"></div>
 
@@ -106,5 +157,15 @@
     background: #094771;
     border-color: #007acc;
     color: #ffffff;
+  }
+
+  .tool-button.sub-tool {
+    width: 32px;
+    height: 32px;
+  }
+
+  .tool-button.sub-tool.active {
+    background: #0e3a5e;
+    border-color: #005a9e;
   }
 </style>

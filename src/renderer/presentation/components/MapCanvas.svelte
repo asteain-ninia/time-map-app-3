@@ -1,24 +1,50 @@
 <script lang="ts">
   import { ViewportManager } from '@infrastructure/ViewportManager';
   import { eventBus } from '@application/EventBus';
+  import { Coordinate } from '@domain/value-objects/Coordinate';
   import GridRenderer from './GridRenderer.svelte';
   import FeatureRenderer from './FeatureRenderer.svelte';
+  import DrawingPreview from './DrawingPreview.svelte';
   import type { Feature } from '@domain/entities/Feature';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { Layer } from '@domain/entities/Layer';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
+  import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
 
   let {
     features = [] as readonly Feature[],
     vertices = new Map<string, Vertex>() as ReadonlyMap<string, Vertex>,
     layers = [] as readonly Layer[],
     currentTime = undefined as TimePoint | undefined,
+    toolMode = 'view' as ToolMode,
+    isDrawing = false,
+    drawingCoords = [] as readonly Coordinate[],
+    selectedFeatureId = null as string | null,
+    onMapClick,
+    onMapDoubleClick,
+    onPanStart,
+    onPanEnd,
+    onConfirm,
+    onCancel,
   }: {
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
     layers?: readonly Layer[];
     currentTime?: TimePoint;
+    toolMode?: ToolMode;
+    isDrawing?: boolean;
+    drawingCoords?: readonly Coordinate[];
+    selectedFeatureId?: string | null;
+    onMapClick?: (coord: Coordinate) => void;
+    onMapDoubleClick?: (coord: Coordinate) => void;
+    onPanStart?: () => void;
+    onPanEnd?: () => void;
+    onConfirm?: () => void;
+    onCancel?: () => void;
   } = $props();
+
+  /** 描画確定可能か（線:2点以上、面:3点以上） */
+  let canConfirm = $derived(isDrawing && drawingCoords.length >= 2);
 
   const viewport = new ViewportManager();
 
@@ -56,6 +82,20 @@
     return () => observer.disconnect();
   });
 
+  /** パンが許可されるか判定（表示モードは左+中、その他は中ボタンのみ） */
+  function canPan(button: number): boolean {
+    if (toolMode === 'view') return button === 0 || button === 1;
+    return button === 1;
+  }
+
+  /** カーソルスタイル */
+  let cursorStyle = $derived(
+    isPanning ? 'grabbing' :
+    toolMode === 'view' ? 'grab' :
+    toolMode === 'add' ? 'crosshair' :
+    'default'
+  );
+
   function onWheel(e: WheelEvent): void {
     e.preventDefault();
     const rect = containerEl?.getBoundingClientRect();
@@ -69,11 +109,11 @@
   }
 
   function onMouseDown(e: MouseEvent): void {
-    // 左ボタン（表示モード）または中ボタンでパン開始
-    if (e.button === 0 || e.button === 1) {
+    if (canPan(e.button)) {
       isPanning = true;
       lastPanX = e.clientX;
       lastPanY = e.clientY;
+      onPanStart?.();
       e.preventDefault();
     }
   }
@@ -100,13 +140,42 @@
   }
 
   function onMouseUp(_e: MouseEvent): void {
-    isPanning = false;
+    if (isPanning) {
+      isPanning = false;
+      onPanEnd?.();
+    }
   }
 
   function onMouseLeave(_e: MouseEvent): void {
-    isPanning = false;
+    if (isPanning) {
+      isPanning = false;
+      onPanEnd?.();
+    }
     cursorGeo = null;
     eventBus.emit('cursor:left', {});
+  }
+
+  function onClick(e: MouseEvent): void {
+    // パン中やパン直後はクリックとして扱わない
+    if (e.button !== 0) return;
+    const rect = containerEl?.getBoundingClientRect();
+    if (!rect) return;
+    const geo = viewport.screenToGeo(
+      e.clientX - rect.left,
+      e.clientY - rect.top
+    );
+    onMapClick?.(new Coordinate(geo.lon, geo.lat));
+  }
+
+  function onDblClick(e: MouseEvent): void {
+    if (e.button !== 0) return;
+    const rect = containerEl?.getBoundingClientRect();
+    if (!rect) return;
+    const geo = viewport.screenToGeo(
+      e.clientX - rect.left,
+      e.clientY - rect.top
+    );
+    onMapDoubleClick?.(new Coordinate(geo.lon, geo.lat));
   }
 </script>
 
@@ -115,8 +184,9 @@
   bind:this={containerEl}
   role="application"
   aria-label="地図表示"
+  style:cursor={cursorStyle}
 >
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <svg
     class="map-svg"
     viewBox={viewBox}
@@ -126,12 +196,18 @@
     onmousemove={onMouseMove}
     onmouseup={onMouseUp}
     onmouseleave={onMouseLeave}
+    onclick={onClick}
+    ondblclick={onDblClick}
   >
     <!-- 海の背景 -->
     <rect x="0" y="0" width="360" height="180" fill="#1a1a2e" />
 
-    <!-- ベースマップ -->
-    <g transform="scale({360 / 4243.4}, {180 / 2121.7})">
+    <!-- ベースマップ（§2.1: pointer-events無効、テキスト選択不可） -->
+    <g
+      transform="scale({360 / 4243.4}, {180 / 2121.7})"
+      pointer-events="none"
+      style="user-select: none;"
+    >
       {@html baseMapContent}
     </g>
 
@@ -143,12 +219,41 @@
         {layers}
         {currentTime}
         zoom={zoomLevel}
+        {selectedFeatureId}
+      />
+    {/if}
+
+    <!-- 描画プレビュー -->
+    {#if isDrawing && drawingCoords.length > 0}
+      <DrawingPreview
+        coords={drawingCoords}
+        zoom={zoomLevel}
+        cursorGeo={cursorGeo}
       />
     {/if}
 
     <!-- グリッド線 -->
     <GridRenderer zoom={zoomLevel} />
   </svg>
+
+  <!-- 描画中の確定/キャンセルボタン（§2.3.2: 確定ボタンの押下で形状を確定） -->
+  {#if isDrawing}
+    <div class="drawing-toolbar">
+      <button
+        class="drawing-btn confirm"
+        disabled={!canConfirm}
+        onclick={() => onConfirm?.()}
+      >
+        確定 ({drawingCoords.length}点)
+      </button>
+      <button
+        class="drawing-btn cancel"
+        onclick={() => onCancel?.()}
+      >
+        キャンセル
+      </button>
+    </div>
+  {/if}
 
   <!-- カーソル座標表示 -->
   {#if cursorGeo}
@@ -163,12 +268,7 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    cursor: grab;
     position: relative;
-  }
-
-  .map-container:active {
-    cursor: grabbing;
   }
 
   .map-svg {
@@ -187,5 +287,52 @@
     font-size: 11px;
     border-radius: 3px;
     pointer-events: none;
+  }
+
+  .drawing-toolbar {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.8);
+    border-radius: 6px;
+    border: 1px solid #555;
+  }
+
+  .drawing-btn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1px solid #555;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .drawing-btn.confirm {
+    background: #094771;
+    color: #fff;
+    border-color: #007acc;
+  }
+
+  .drawing-btn.confirm:disabled {
+    background: #333;
+    color: #666;
+    border-color: #444;
+    cursor: not-allowed;
+  }
+
+  .drawing-btn.confirm:not(:disabled):hover {
+    background: #0b5a8e;
+  }
+
+  .drawing-btn.cancel {
+    background: #3c3c3c;
+    color: #ccc;
+  }
+
+  .drawing-btn.cancel:hover {
+    background: #4c4c4c;
   }
 </style>

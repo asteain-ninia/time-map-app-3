@@ -21,13 +21,19 @@
     layers,
     currentTime,
     zoom,
+    selectedFeatureId = null,
   }: {
     features: readonly Feature[];
     vertices: ReadonlyMap<string, Vertex>;
     layers: readonly Layer[];
     currentTime: TimePoint;
     zoom: number;
+    selectedFeatureId?: string | null;
   } = $props();
+
+  /** 選択色（要件定義書§2.3.3.1: シアン系ハイライト） */
+  const SELECTION_STROKE = '#00ccff';
+  const SELECTION_FILL = 'rgba(0, 204, 255, 0.2)';
 
   /** 表示中レイヤー（order昇順 = 下から描画） */
   let visibleLayers = $derived(
@@ -52,9 +58,21 @@
 {#each visibleLayers as layer (layer.id)}
   <g opacity={layer.opacity}>
     {#each getLayerFeatures(layer.id) as { feature, anchor } (feature.id)}
+      {@const isSelected = feature.id === selectedFeatureId}
       {#if anchor.shape.type === 'Point'}
         {@const vertex = vertices.get(anchor.shape.vertexId)}
         {#if vertex}
+          <!-- 選択ハイライト -->
+          {#if isSelected}
+            <circle
+              cx={geoToSvgX(vertex.x)}
+              cy={geoToSvgY(vertex.y)}
+              r={7 / zoom}
+              fill="none"
+              stroke={SELECTION_STROKE}
+              stroke-width={2 / zoom}
+            />
+          {/if}
           <circle
             cx={geoToSvgX(vertex.x)}
             cy={geoToSvgY(vertex.y)}
@@ -67,8 +85,20 @@
       {:else if anchor.shape.type === 'LineString'}
         {@const points = buildLinePoints(anchor.shape.vertexIds, vertices)}
         {#if points.includes(',')}
+          <!-- 選択ハイライト -->
+          {#if isSelected}
+            <polyline
+              {points}
+              fill="none"
+              stroke={SELECTION_STROKE}
+              stroke-width={5 / zoom}
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              opacity="0.5"
+            />
+          {/if}
           <polyline
-            points={points}
+            {points}
             fill="none"
             stroke={anchor.property.style?.fillColor ?? DEFAULT_LINE_COLOR}
             stroke-width={2 / zoom}
@@ -82,10 +112,19 @@
           <path
             {d}
             fill={anchor.property.style?.fillColor ?? DEFAULT_POLYGON_FILL}
-            stroke={anchor.property.style?.fillColor ?? DEFAULT_POLYGON_STROKE}
-            stroke-width={1 / zoom}
+            stroke={isSelected ? SELECTION_STROKE : (anchor.property.style?.fillColor ?? DEFAULT_POLYGON_STROKE)}
+            stroke-width={isSelected ? 2 / zoom : 1 / zoom}
             fill-rule="evenodd"
           />
+          <!-- 選択ハイライト（シアン塗り） -->
+          {#if isSelected}
+            <path
+              {d}
+              fill={SELECTION_FILL}
+              stroke="none"
+              fill-rule="evenodd"
+            />
+          {/if}
         {/if}
       {/if}
     {/each}

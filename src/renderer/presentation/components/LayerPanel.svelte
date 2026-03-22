@@ -1,10 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { ManageLayersUseCase } from '@application/ManageLayersUseCase';
+  import { manageLayers } from '@presentation/state/appState';
   import { eventBus } from '@application/EventBus';
   import type { Layer } from '@domain/entities/Layer';
-
-  const manageLayers = new ManageLayersUseCase();
 
   /** リアクティブなレイヤー一覧 */
   let layers = $state<readonly Layer[]>(manageLayers.getLayers());
