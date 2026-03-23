@@ -2,15 +2,8 @@ import type { Vertex } from './Vertex';
 import type { Feature } from './Feature';
 import type { Layer } from './Layer';
 import type { SharedVertexGroup } from './SharedVertexGroup';
-import type { TimePoint } from '../value-objects/TimePoint';
-
-/** タイムラインマーカー */
-export interface TimelineMarker {
-  readonly id: string;
-  readonly time: TimePoint;
-  readonly label: string;
-  readonly description?: string;
-}
+import { TimelineMarker } from './TimelineMarker';
+export { TimelineMarker } from './TimelineMarker';
 
 /** プロジェクト設定 */
 export interface WorldSettings {

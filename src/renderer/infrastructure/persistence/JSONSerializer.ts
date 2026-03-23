@@ -4,7 +4,7 @@
  * §2.5: 保存時はバージョンフィールド必須、読み込み時はバージョン検証。
  */
 
-import { World, type WorldMetadata, type WorldSettings, type TimelineMarker, DEFAULT_SETTINGS, DEFAULT_METADATA } from '@domain/entities/World';
+import { World, type WorldMetadata, type WorldSettings, TimelineMarker, DEFAULT_SETTINGS, DEFAULT_METADATA } from '@domain/entities/World';
 import { Feature, type FeatureType } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
 import { Layer } from '@domain/entities/Layer';
@@ -334,12 +334,12 @@ function deserializeSharedVertexGroup(json: JsonSharedVertexGroup): SharedVertex
 }
 
 function deserializeTimelineMarker(json: JsonTimelineMarker): TimelineMarker {
-  return {
-    id: json.id,
-    time: deserializeTimePoint(json.time),
-    label: json.label,
-    description: json.description,
-  };
+  return new TimelineMarker(
+    json.id,
+    deserializeTimePoint(json.time),
+    json.label,
+    json.description,
+  );
 }
 
 function deserializeRing(json: JsonRing): Ring {
