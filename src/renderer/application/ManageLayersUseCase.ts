@@ -8,6 +8,7 @@
  */
 
 import { Layer } from '@domain/entities/Layer';
+import type { Feature } from '@domain/entities/Feature';
 import { eventBus } from './EventBus';
 
 /**
@@ -70,5 +71,28 @@ export class ManageLayersUseCase {
     const idx = this.layers.findIndex(l => l.id === layerId);
     if (idx === -1) return;
     this.layers[idx] = this.layers[idx].withName(name);
+  }
+
+  /**
+   * レイヤーを削除する
+   *
+   * §2.1: 全時刻を通じてそのレイヤーに所属する地物が存在しない場合にのみ許可
+   *
+   * @param layerId 削除対象のレイヤーID
+   * @param allFeatures 全地物（レイヤー所属チェック用）
+   * @returns 削除成功時 true、地物が所属していて削除不可の場合 false
+   */
+  deleteLayer(layerId: string, allFeatures: readonly Feature[]): boolean {
+    const idx = this.layers.findIndex(l => l.id === layerId);
+    if (idx === -1) return false;
+
+    // 全時刻を通じてレイヤーに所属する地物がないことを確認
+    const hasFeatures = allFeatures.some(f =>
+      f.anchors.some(a => a.placement.layerId === layerId)
+    );
+    if (hasFeatures) return false;
+
+    this.layers.splice(idx, 1);
+    return true;
   }
 }

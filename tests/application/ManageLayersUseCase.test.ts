@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ManageLayersUseCase } from '@application/ManageLayersUseCase';
 import { eventBus } from '@application/EventBus';
+import { Feature } from '@domain/entities/Feature';
+import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import { TimePoint } from '@domain/value-objects/TimePoint';
 
 describe('ManageLayersUseCase', () => {
   let useCase: ManageLayersUseCase;
@@ -124,6 +127,61 @@ describe('ManageLayersUseCase', () => {
       useCase = new ManageLayersUseCase();
       useCase.rename('xxx', '存在しない');
       expect(useCase.getLayers().length).toBe(0);
+    });
+  });
+
+  describe('deleteLayer', () => {
+    it('地物のないレイヤーを削除できる', () => {
+      useCase = new ManageLayersUseCase();
+      useCase.addLayer('l1', '空レイヤー');
+
+      const result = useCase.deleteLayer('l1', []);
+      expect(result).toBe(true);
+      expect(useCase.getLayers()).toHaveLength(0);
+    });
+
+    it('地物が所属するレイヤーは削除できない', () => {
+      useCase = new ManageLayersUseCase();
+      useCase.addLayer('l1', 'テスト');
+
+      const feature = new Feature('f1', 'Point', [
+        new FeatureAnchor(
+          'a1',
+          { start: new TimePoint(2000) },
+          { name: 'test', description: '' },
+          { type: 'Point', vertexId: 'v1' },
+          { layerId: 'l1', parentId: null, childIds: [] }
+        ),
+      ]);
+
+      const result = useCase.deleteLayer('l1', [feature]);
+      expect(result).toBe(false);
+      expect(useCase.getLayers()).toHaveLength(1);
+    });
+
+    it('存在しないレイヤーIDはfalseを返す', () => {
+      useCase = new ManageLayersUseCase();
+      expect(useCase.deleteLayer('nonexistent', [])).toBe(false);
+    });
+
+    it('異なるレイヤーの地物は影響しない', () => {
+      useCase = new ManageLayersUseCase();
+      useCase.addLayer('l1', 'レイヤー1');
+      useCase.addLayer('l2', 'レイヤー2');
+
+      const feature = new Feature('f1', 'Point', [
+        new FeatureAnchor(
+          'a1',
+          { start: new TimePoint(2000) },
+          { name: 'test', description: '' },
+          { type: 'Point', vertexId: 'v1' },
+          { layerId: 'l2', parentId: null, childIds: [] }
+        ),
+      ]);
+
+      // l1にはf1が所属していないので削除可能
+      expect(useCase.deleteLayer('l1', [feature])).toBe(true);
+      expect(useCase.getLayers()).toHaveLength(1);
     });
   });
 });
