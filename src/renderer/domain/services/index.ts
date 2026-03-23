@@ -98,3 +98,12 @@ export {
   validateCuttingLine,
 } from './KnifeService';
 export type { KnifeSplitResult, KnifeValidation } from './KnifeService';
+
+export {
+  validateMerge,
+  mergePolygons,
+  validateTransfer,
+  buildAnnexation,
+  buildCession,
+} from './MergeService';
+export type { MergeResult, MergeValidation, TransferType, TerritoryTransfer, TransferValidation } from './MergeService';
