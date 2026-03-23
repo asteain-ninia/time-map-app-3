@@ -57,3 +57,19 @@ export {
   fromClipPolygon,
 } from './BooleanOperationService';
 export type { BooleanResult } from './BooleanOperationService';
+
+export {
+  findAnchorsInRange,
+  findPreviousAnchor,
+  findNextAnchor,
+  getFirstAndLastAnchors,
+  validateAnchorTimeline,
+  detectTimeGaps,
+  sortAnchorsByStartTime,
+  getEffectiveEnd,
+  timeRangesOverlap,
+  getFeatureTimeSpan,
+  stepForward,
+  stepBackward,
+} from './TimeService';
+export type { TimeValidationError, TimeGranularity } from './TimeService';
