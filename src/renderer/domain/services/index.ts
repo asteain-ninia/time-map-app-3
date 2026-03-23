@@ -2,6 +2,24 @@
  * ドメインサービス層のバレルエクスポート
  */
 export {
+  getParentFeature,
+  getChildFeatures,
+  hasChildren,
+  hasParent,
+  getRootFeatures,
+  getDescendants,
+  getAncestors,
+  deriveParentShape,
+  validateHierarchy,
+  isShapeEditable,
+  isSplittable,
+  shouldParentDisappear,
+  buildParentChildLink,
+  buildParentChildUnlink,
+} from './LayerService';
+export type { DerivedShapeResult, HierarchyValidationError } from './LayerService';
+
+export {
   segmentsIntersect,
   isPointInPolygon,
   ringsEdgesIntersect,
