@@ -107,3 +107,15 @@ export {
   buildCession,
 } from './MergeService';
 export type { MergeResult, MergeValidation, TransferType, TerritoryTransfer, TransferValidation } from './MergeService';
+
+export {
+  greatCircleDistance,
+  equirectangularDistance,
+  calculateDistance,
+  greatCirclePath,
+  sphericalPolygonArea,
+  toDMS,
+  formatCoordinate,
+  DEFAULT_PLANET,
+} from './SurveyService';
+export type { PlanetParams, DistanceResult, CoordinateDisplay, AreaResult } from './SurveyService';
