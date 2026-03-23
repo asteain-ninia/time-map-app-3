@@ -91,3 +91,10 @@ export {
   stepBackward,
 } from './TimeService';
 export type { TimeValidationError, TimeGranularity } from './TimeService';
+
+export {
+  splitByLine,
+  splitByClosed,
+  validateCuttingLine,
+} from './KnifeService';
+export type { KnifeSplitResult, KnifeValidation } from './KnifeService';
