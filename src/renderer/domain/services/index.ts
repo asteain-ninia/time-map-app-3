@@ -119,3 +119,16 @@ export {
   DEFAULT_PLANET,
 } from './SurveyService';
 export type { PlanetParams, DistanceResult, CoordinateDisplay, AreaResult } from './SurveyService';
+
+export {
+  buildAdjacencyGraph,
+  buildAdjacencyGraphWithAll,
+  greedyColoring,
+  getColorFromPalette,
+  deriveColor,
+  generateSelectedColor,
+  autoColor,
+  rgbToHsl,
+  hslToRgb,
+} from './AutoColorService';
+export type { AdjacencyGraph, ColorAssignment, AutoColorResult } from './AutoColorService';
