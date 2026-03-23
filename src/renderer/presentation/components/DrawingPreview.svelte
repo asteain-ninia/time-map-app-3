@@ -6,10 +6,12 @@
     coords,
     zoom,
     cursorGeo,
+    isPolygon = false,
   }: {
     coords: readonly Coordinate[];
     zoom: number;
     cursorGeo: { lon: number; lat: number } | null;
+    isPolygon?: boolean;
   } = $props();
 
   /** 頂点のSVGポイント列 */
@@ -26,6 +28,19 @@
       y1: geoToSvgY(last.y),
       x2: geoToSvgX(cursorGeo.lon),
       y2: geoToSvgY(cursorGeo.lat),
+    };
+  });
+
+  /** クロージング線（最後の頂点→最初の頂点、ポリゴンモード時のみ） */
+  let closingLine = $derived(() => {
+    if (!isPolygon || coords.length < 2) return null;
+    const first = coords[0];
+    const last = coords[coords.length - 1];
+    return {
+      x1: geoToSvgX(last.x),
+      y1: geoToSvgY(last.y),
+      x2: geoToSvgX(first.x),
+      y2: geoToSvgY(first.y),
     };
   });
 </script>
@@ -54,6 +69,20 @@
     stroke-width={1 / zoom}
     stroke-dasharray="{3 / zoom} {3 / zoom}"
     opacity="0.5"
+  />
+{/if}
+
+<!-- クロージング線（最後→最初、ポリゴンモード時） -->
+{#if closingLine()}
+  <line
+    x1={closingLine()!.x1}
+    y1={closingLine()!.y1}
+    x2={closingLine()!.x2}
+    y2={closingLine()!.y2}
+    stroke="#00ff88"
+    stroke-width={1 / zoom}
+    stroke-dasharray="{3 / zoom} {3 / zoom}"
+    opacity="0.35"
   />
 {/if}
 

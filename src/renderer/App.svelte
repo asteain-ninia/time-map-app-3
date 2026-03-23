@@ -239,6 +239,7 @@
           {layers}
           {currentTime}
           {toolMode}
+          {addToolType}
           {isDrawing}
           {drawingCoords}
           {selectedFeatureId}

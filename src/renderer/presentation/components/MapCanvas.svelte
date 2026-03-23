@@ -17,6 +17,7 @@
     layers = [] as readonly Layer[],
     currentTime = undefined as TimePoint | undefined,
     toolMode = 'view' as ToolMode,
+    addToolType = 'polygon' as AddToolType,
     isDrawing = false,
     drawingCoords = [] as readonly Coordinate[],
     selectedFeatureId = null as string | null,
@@ -32,6 +33,7 @@
     layers?: readonly Layer[];
     currentTime?: TimePoint;
     toolMode?: ToolMode;
+    addToolType?: AddToolType;
     isDrawing?: boolean;
     drawingCoords?: readonly Coordinate[];
     selectedFeatureId?: string | null;
@@ -229,6 +231,7 @@
         coords={drawingCoords}
         zoom={zoomLevel}
         cursorGeo={cursorGeo}
+        isPolygon={addToolType === 'polygon'}
       />
     {/if}
 
