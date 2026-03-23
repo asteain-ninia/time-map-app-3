@@ -19,6 +19,7 @@ export { AddFeatureUseCase } from './AddFeatureUseCase';
 export { SaveLoadUseCase } from './SaveLoadUseCase';
 export { VertexEditUseCase } from './VertexEditUseCase';
 export { UpdateFeatureAnchorUseCase } from './UpdateFeatureAnchorUseCase';
+export { EditFeatureUseCase } from './EditFeatureUseCase';
 export { UndoRedoManager } from './UndoRedoManager';
 export type { UndoableCommand, UndoRedoState } from './UndoRedoManager';
 export type { DialogPort } from './SaveLoadUseCase';
