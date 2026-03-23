@@ -22,6 +22,20 @@ export { UpdateFeatureAnchorUseCase } from './UpdateFeatureAnchorUseCase';
 export { EditFeatureUseCase } from './EditFeatureUseCase';
 export { DeleteFeatureUseCase } from './DeleteFeatureUseCase';
 export type { DeleteFeatureResult } from './DeleteFeatureUseCase';
+export { PrepareFeatureAnchorEditUseCase, PrepareError } from './PrepareFeatureAnchorEditUseCase';
+export { ResolveFeatureAnchorConflictsUseCase, ResolveError } from './ResolveFeatureAnchorConflictsUseCase';
+export { CommitFeatureAnchorEditUseCase, CommitError } from './CommitFeatureAnchorEditUseCase';
+export type {
+  EditMode,
+  DraftPatch,
+  BoundaryEdit,
+  DraftStatus,
+  PrepareResult,
+  ConflictResolution,
+  ResolveResult,
+  CommitResult,
+  AnchorEditDraft,
+} from './AnchorEditDraft';
 export { UndoRedoManager } from './UndoRedoManager';
 export type { UndoableCommand, UndoRedoState } from './UndoRedoManager';
 export type { DialogPort } from './SaveLoadUseCase';
