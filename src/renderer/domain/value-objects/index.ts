@@ -11,3 +11,4 @@ export type {
   AnchorPlacement,
   TimeRange
 } from './FeatureAnchor';
+export { PropertyProjection, projectFromAnchor, projectFromFeature, projectAtTime } from './PropertyProjection';
