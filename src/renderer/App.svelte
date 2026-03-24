@@ -6,15 +6,23 @@
   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
   import StatusBar from '@presentation/components/StatusBar.svelte';
   import { createToolStore } from '@presentation/state/toolStore';
-  import { addFeature, manageLayers, navigateTime, saveLoad, undoRedo } from '@presentation/state/appState';
+  import { addFeature, manageLayers, navigateTime, saveLoad, undoRedo, vertexEdit } from '@presentation/state/appState';
   import { AddFeatureCommand } from '@application/commands/AddFeatureCommand';
+  import { MoveVertexCommand } from '@application/commands/MoveVertexCommand';
   import { eventBus } from '@application/EventBus';
-  import type { Coordinate } from '@domain/value-objects/Coordinate';
+  import { Coordinate } from '@domain/value-objects/Coordinate';
   import type { Feature } from '@domain/entities/Feature';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { Layer } from '@domain/entities/Layer';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
   import { hitTest } from '@infrastructure/rendering/hitTestUtils';
+  import {
+    startDrag,
+    startInsertDrag,
+    updateDragPreview,
+    hasMoved,
+    type DragState,
+  } from '@infrastructure/rendering/vertexDragManager';
 
   // --- ツール状態 ---
 
@@ -47,6 +55,7 @@
   let currentTime = $state(navigateTime.getCurrentTime());
   let selectedFeatureId = $state<string | null>(null);
   let selectedVertexIds = $state<ReadonlySet<string>>(new Set());
+  let dragState = $state<DragState | null>(null);
 
   /** ツールストアの状態をリアクティブ変数に同期する */
   function syncToolState(): void {
@@ -180,9 +189,10 @@
     }
   }
 
-  /** 頂点ハンドルのmousedown — 頂点選択（Shift+クリックでトグル） */
+  /** 頂点ハンドルのmousedown — 頂点選択＋ドラッグ開始 */
   function onVertexMouseDown(vertexId: string, e: MouseEvent): void {
     if (e.shiftKey) {
+      // Shift+クリック: 頂点選択トグル（ドラッグなし）
       const next = new Set(selectedVertexIds);
       if (next.has(vertexId)) {
         next.delete(vertexId);
@@ -190,15 +200,94 @@
         next.add(vertexId);
       }
       selectedVertexIds = next;
-    } else {
-      selectedVertexIds = new Set([vertexId]);
+      return;
     }
-    // アクティブ地物はクリアしない（§2.3.3.1: 頂点クリック時は頂点選択セット更新）
+
+    // ドラッグ開始
+    selectedVertexIds = new Set([vertexId]);
+    const vertex = vertices.get(vertexId);
+    if (vertex) {
+      dragState = startDrag(vertexId, vertex.coordinate);
+    }
   }
 
-  /** エッジハンドルのmousedown — 後続の頂点挿入ドラッグで使用（39で実装） */
-  function onEdgeHandleMouseDown(_v1: string, _v2: string, _e: MouseEvent): void {
-    // 頂点ドラッグ移動（アイテム39）で実装
+  /** エッジハンドルのmousedown — 頂点挿入＋ドラッグ開始 */
+  function onEdgeHandleMouseDown(v1: string, v2: string, e: MouseEvent): void {
+    if (!selectedFeatureId || !currentTime) return;
+    const feature = features.find((f) => f.id === selectedFeatureId);
+    if (!feature) return;
+    const anchor = feature.getActiveAnchor(currentTime);
+    if (!anchor) return;
+
+    // エッジの中点に頂点を挿入
+    const vtx1 = vertices.get(v1);
+    const vtx2 = vertices.get(v2);
+    if (!vtx1 || !vtx2) return;
+
+    const midCoord = new Coordinate(
+      (vtx1.x + vtx2.x) / 2,
+      (vtx1.y + vtx2.y) / 2
+    );
+
+    let newVertexId: string | null = null;
+    try {
+      if (anchor.shape.type === 'LineString') {
+        const edgeIndex = anchor.shape.vertexIds.indexOf(v1);
+        if (edgeIndex >= 0) {
+          newVertexId = vertexEdit.insertVertexOnLine(
+            selectedFeatureId, currentTime, edgeIndex, midCoord
+          );
+        }
+      } else if (anchor.shape.type === 'Polygon') {
+        for (const ring of anchor.shape.rings) {
+          const ids = ring.vertexIds;
+          for (let i = 0; i < ids.length; i++) {
+            const next = (i + 1) % ids.length;
+            if (ids[i] === v1 && ids[next] === v2) {
+              newVertexId = vertexEdit.insertVertexOnPolygon(
+                selectedFeatureId, currentTime, ring.id, i, midCoord
+              );
+              break;
+            }
+          }
+          if (newVertexId) break;
+        }
+      }
+    } catch {
+      return;
+    }
+
+    if (newVertexId) {
+      refreshFeatureData();
+      selectedVertexIds = new Set([newVertexId]);
+      dragState = startInsertDrag(newVertexId, midCoord);
+    }
+  }
+
+  /** ドラッグ完了 */
+  function commitDrag(): void {
+    if (!dragState) return;
+    if (hasMoved(dragState)) {
+      // ドラッグ中に直接移動していたので、まず元に戻す
+      vertexEdit.moveVertex(dragState.vertexId, dragState.startCoord);
+      // Undo対応コマンドで正式に移動
+      undoRedo.execute(
+        new MoveVertexCommand(vertexEdit, addFeature, dragState.vertexId, dragState.previewCoord)
+      );
+      refreshFeatureData();
+    }
+    dragState = null;
+  }
+
+  /** カーソル座標更新コールバック（MapCanvasから呼ばれる） */
+  function onCursorGeoUpdate(geo: { lon: number; lat: number }): void {
+    if (dragState) {
+      const newCoord = new Coordinate(geo.lon, geo.lat);
+      dragState = updateDragPreview(dragState, newCoord);
+      // リアルタイムプレビュー: 実際の頂点を仮移動
+      vertexEdit.moveVertex(dragState.vertexId, newCoord);
+      refreshFeatureData();
+    }
   }
 
   /** キーボードイベント */
@@ -276,6 +365,8 @@
           {onCancel}
           {onVertexMouseDown}
           {onEdgeHandleMouseDown}
+          {onCursorGeoUpdate}
+          onDragEnd={commitDrag}
         />
       </div>
       <div class="sidebar-area">

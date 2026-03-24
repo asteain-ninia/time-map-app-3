@@ -31,6 +31,8 @@
     onCancel,
     onVertexMouseDown,
     onEdgeHandleMouseDown,
+    onCursorGeoUpdate,
+    onDragEnd,
   }: {
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
@@ -50,6 +52,8 @@
     onCancel?: () => void;
     onVertexMouseDown?: (vertexId: string, e: MouseEvent) => void;
     onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
+    onCursorGeoUpdate?: (geo: { lon: number; lat: number }) => void;
+    onDragEnd?: () => void;
   } = $props();
 
   /** 描画確定可能か（線:2点以上、面:3点以上） */
@@ -144,6 +148,7 @@
     cursorGeo = viewport.screenToGeo(x, y);
     if (cursorGeo) {
       eventBus.emit('cursor:moved', { lon: cursorGeo.lon, lat: cursorGeo.lat });
+      onCursorGeoUpdate?.(cursorGeo);
     }
 
     if (isPanning) {
@@ -157,6 +162,7 @@
   }
 
   function onMouseUp(_e: MouseEvent): void {
+    onDragEnd?.();
     if (isPanning) {
       isPanning = false;
       onPanEnd?.();
