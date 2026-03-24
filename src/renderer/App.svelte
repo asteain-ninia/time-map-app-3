@@ -5,6 +5,9 @@
   import SplitConfirmModal from '@presentation/components/SplitConfirmModal.svelte';
   import MergeConfirmModal from '@presentation/components/MergeConfirmModal.svelte';
   import ConflictResolutionDialog from '@presentation/components/ConflictResolutionDialog.svelte';
+  import ContextMenu from '@presentation/components/ContextMenu.svelte';
+  import type { ContextMenuEntry } from '@presentation/components/ContextMenu.svelte';
+  import { buildContextMenuItems, type ContextMenuContext, type ContextMenuActions } from '@infrastructure/rendering/contextMenuBuilder';
   import Sidebar from '@presentation/components/Sidebar.svelte';
   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
   import StatusBar from '@presentation/components/StatusBar.svelte';
@@ -120,6 +123,12 @@
   let showSplitModal = $state(false);
   let mergeTargetIds = $state<string[]>([]);
   let showMergeModal = $state(false);
+
+  // --- コンテキストメニュー ---
+  let contextMenuOpen = $state(false);
+  let contextMenuX = $state(0);
+  let contextMenuY = $state(0);
+  let contextMenuItems = $state<readonly ContextMenuEntry[]>([]);
 
   // --- 矩形選択 ---
   let boxSelectState = $state<BoxSelectState | null>(null);
@@ -787,10 +796,77 @@
     }
   }
 
+  // --- コンテキストメニュー ---
+
+  /** 右クリックメニューを表示 */
+  function onContextMenu(e: MouseEvent): void {
+    // 編集・表示モードのみ
+    if (toolMode !== 'edit' && toolMode !== 'view') return;
+    if (!selectedFeatureId) return;
+
+    e.preventDefault();
+
+    const featureType = (() => {
+      if (!currentTime) return null;
+      const f = features.find(feat => feat.id === selectedFeatureId);
+      return f?.getActiveAnchor(currentTime)?.shape.type ?? null;
+    })();
+
+    // 選択頂点が共有頂点かチェック
+    const hasShared = [...selectedVertexIds].some(vid => {
+      for (const group of sharedGroups.values()) {
+        if (group.vertexIds.includes(vid)) return true;
+      }
+      return false;
+    });
+
+    const ctx: ContextMenuContext = {
+      selectedFeatureId,
+      featureType,
+      selectedVertexCount: selectedVertexIds.size,
+      hasSharedVertex: hasShared,
+    };
+
+    const actions: ContextMenuActions = {
+      onDelete: () => {
+        // 地物削除（簡易）
+        if (selectedFeatureId) {
+          (addFeature.getFeaturesMap() as Map<string, Feature>).delete(selectedFeatureId);
+          selectedFeatureId = null;
+          selectedVertexIds = new Set();
+          refreshFeatureData();
+        }
+      },
+      onDeleteVertex,
+      onUnmergeVertex: () => {
+        // 共有解除は後続の詳細化で拡充
+      },
+      onAddHole,
+      onAddExclave,
+      onStartKnife,
+      onAddMergeTarget: () => {
+        if (selectedFeatureId) addMergeTarget(selectedFeatureId);
+      },
+    };
+
+    contextMenuItems = buildContextMenuItems(ctx, actions);
+    if (contextMenuItems.length === 0) return;
+
+    contextMenuX = e.clientX;
+    contextMenuY = e.clientY;
+    contextMenuOpen = true;
+  }
+
+  function closeContextMenu(): void {
+    contextMenuOpen = false;
+  }
+
   /** キーボードイベント */
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
-      if (showSplitModal) {
+      if (contextMenuOpen) {
+        contextMenuOpen = false;
+      } else if (showSplitModal) {
         showSplitModal = false;
       } else if (knifeDrawingState) {
         knifeDrawingState = null;
@@ -844,7 +920,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeyDown} />
+<svelte:window onkeydown={onKeyDown} oncontextmenu={onContextMenu} />
 
 <div class="app-layout">
   <div class="toolbar-area">
@@ -946,6 +1022,14 @@
   })}
   onConfirm={onMergeConfirm}
   onCancel={onCancelMerge}
+/>
+
+<ContextMenu
+  isOpen={contextMenuOpen}
+  x={contextMenuX}
+  y={contextMenuY}
+  items={contextMenuItems}
+  onClose={closeContextMenu}
 />
 
 <SplitConfirmModal
