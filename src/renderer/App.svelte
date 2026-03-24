@@ -31,6 +31,16 @@
     findSnapCandidates,
     screenToWorldSnapDistance,
   } from '@domain/services/SharedVertexService';
+  import {
+    startRingDrawing,
+    addRingVertex,
+    undoRingVertex,
+    canConfirmRing,
+    type RingDrawingState,
+  } from '@infrastructure/rendering/ringDrawingManager';
+  import { addHoleRing, addExclaveRing } from '@domain/services/RingEditService';
+  import { Vertex } from '@domain/entities/Vertex';
+  import { Ring } from '@domain/value-objects/Ring';
 
   // --- ツール状態 ---
 
@@ -66,6 +76,7 @@
   let dragState = $state<DragState | null>(null);
   let sharedGroups = $state(addFeature.getSharedVertexGroups());
   let snapIndicator = $state<SnapIndicator | null>(null);
+  let ringDrawingState = $state<RingDrawingState | null>(null);
 
   /** ツールストアの状態をリアクティブ変数に同期する */
   function syncToolState(): void {
@@ -141,6 +152,11 @@
   }
 
   function onMapClick(coord: Coordinate): void {
+    // リング描画中はクリックで頂点追加
+    if (ringDrawingState) {
+      ringDrawingState = addRingVertex(ringDrawingState, coord);
+      return;
+    }
     if (toolMode === 'add') {
       toolStore.send({ type: 'MAP_CLICK', coord });
       syncToolState();
@@ -198,6 +214,92 @@
       toolStore.send({ type: 'KEY_ESCAPE' });
       syncToolState();
     }
+  }
+
+  // --- リング描画（穴/飛び地追加） ---
+
+  function onAddHole(): void {
+    if (!selectedFeatureId) return;
+    ringDrawingState = startRingDrawing('hole', selectedFeatureId);
+  }
+
+  function onAddExclave(): void {
+    if (!selectedFeatureId) return;
+    ringDrawingState = startRingDrawing('exclave', selectedFeatureId);
+  }
+
+  function onConfirmRing(): void {
+    if (!ringDrawingState || !canConfirmRing(ringDrawingState) || !currentTime) return;
+
+    const feature = features.find((f) => f.id === ringDrawingState!.featureId);
+    if (!feature) return;
+    const anchor = feature.getActiveAnchor(currentTime);
+    if (!anchor || anchor.shape.type !== 'Polygon') return;
+
+    // 座標から頂点を作成
+    const vertexMap = addFeature.getVertices() as Map<string, Vertex>;
+    const newVertexIds: string[] = [];
+    for (const coord of ringDrawingState.coords) {
+      const id = `v-ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      vertexMap.set(id, new Vertex(id, coord.normalize()));
+      newVertexIds.push(id);
+    }
+
+    const newRingId = `ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      let result;
+      if (ringDrawingState.type === 'hole') {
+        // 最初の領土リングを親にする
+        const parentRing = anchor.shape.rings.find((r) => r.ringType === 'territory' && r.parentId === null);
+        if (!parentRing) return;
+        result = addHoleRing(anchor.shape.rings, parentRing.id, newRingId, newVertexIds);
+      } else {
+        // 飛び地: トップレベル（parentId=null）
+        result = addExclaveRing(anchor.shape.rings, null, newRingId, newVertexIds);
+      }
+
+      const newAnchor = anchor.withShape({ type: 'Polygon', rings: result.rings });
+      const newAnchors = feature.anchors.map((a) => a.id === anchor.id ? newAnchor : a);
+      const updatedFeature = feature.withAnchors(newAnchors);
+      (addFeature.getFeaturesMap() as Map<string, typeof feature>).set(feature.id, updatedFeature);
+      refreshFeatureData();
+    } catch {
+      // バリデーションエラー
+    }
+
+    ringDrawingState = null;
+  }
+
+  function onCancelRing(): void {
+    ringDrawingState = null;
+  }
+
+  function onDeleteVertex(): void {
+    // 頂点削除は後続で詳細化（コンテキストメニューと共通）
+    if (selectedVertexIds.size === 0 || !selectedFeatureId || !currentTime) return;
+    const feature = features.find((f) => f.id === selectedFeatureId);
+    if (!feature) return;
+    const anchor = feature.getActiveAnchor(currentTime);
+    if (!anchor) return;
+
+    for (const vertexId of selectedVertexIds) {
+      try {
+        if (anchor.shape.type === 'LineString') {
+          vertexEdit.deleteVertexFromLine(selectedFeatureId, currentTime, vertexId);
+        } else if (anchor.shape.type === 'Polygon') {
+          for (const ring of anchor.shape.rings) {
+            if (ring.vertexIds.includes(vertexId)) {
+              vertexEdit.deleteVertexFromPolygon(selectedFeatureId, currentTime, ring.id, vertexId);
+              break;
+            }
+          }
+        }
+      } catch {
+        // 最小頂点数エラー等
+      }
+    }
+    selectedVertexIds = new Set();
+    refreshFeatureData();
   }
 
   /** 頂点ハンドルのmousedown — 頂点選択＋ドラッグ開始 */
@@ -315,7 +417,9 @@
   /** キーボードイベント */
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
-      if (isDrawing) {
+      if (ringDrawingState) {
+        ringDrawingState = null;
+      } else if (isDrawing) {
         toolStore.send({ type: 'KEY_ESCAPE' });
         syncToolState();
       } else {
@@ -323,9 +427,14 @@
         selectedVertexIds = new Set();
       }
     }
+    if (e.key === 'Delete' && selectedVertexIds.size > 0) {
+      onDeleteVertex();
+    }
     if (e.ctrlKey && e.key === 'z') {
       e.preventDefault();
-      if (isDrawing) {
+      if (ringDrawingState) {
+        ringDrawingState = undoRingVertex(ringDrawingState);
+      } else if (isDrawing) {
         toolStore.send({ type: 'UNDO_VERTEX' });
         syncToolState();
       } else {
@@ -391,6 +500,15 @@
           {onEdgeHandleMouseDown}
           {onCursorGeoUpdate}
           onDragEnd={commitDrag}
+          isRingDrawing={ringDrawingState !== null}
+          ringDrawingCanConfirm={ringDrawingState ? canConfirmRing(ringDrawingState) : false}
+          ringDrawingCoords={ringDrawingState?.coords ?? []}
+          selectedFeatureType={selectedFeatureId && currentTime ? features.find(f => f.id === selectedFeatureId)?.getActiveAnchor(currentTime)?.shape.type ?? null : null}
+          {onAddHole}
+          {onAddExclave}
+          {onConfirmRing}
+          {onCancelRing}
+          {onDeleteVertex}
         />
       </div>
       <div class="sidebar-area">

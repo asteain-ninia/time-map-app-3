@@ -6,6 +6,7 @@
   import FeatureRenderer from './FeatureRenderer.svelte';
   import DrawingPreview from './DrawingPreview.svelte';
   import VertexHandles from './VertexHandles.svelte';
+  import EditToolbar from './EditToolbar.svelte';
   import type { Feature } from '@domain/entities/Feature';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { Layer } from '@domain/entities/Layer';
@@ -37,6 +38,15 @@
     onEdgeHandleMouseDown,
     onCursorGeoUpdate,
     onDragEnd,
+    isRingDrawing = false,
+    ringDrawingCanConfirm = false,
+    ringDrawingCoords = [] as readonly Coordinate[],
+    selectedFeatureType = null as string | null,
+    onAddHole,
+    onAddExclave,
+    onConfirmRing,
+    onCancelRing,
+    onDeleteVertex,
   }: {
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
@@ -60,6 +70,15 @@
     onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
     onCursorGeoUpdate?: (geo: { lon: number; lat: number }) => void;
     onDragEnd?: () => void;
+    isRingDrawing?: boolean;
+    ringDrawingCanConfirm?: boolean;
+    ringDrawingCoords?: readonly Coordinate[];
+    selectedFeatureType?: string | null;
+    onAddHole?: () => void;
+    onAddExclave?: () => void;
+    onConfirmRing?: () => void;
+    onCancelRing?: () => void;
+    onDeleteVertex?: () => void;
   } = $props();
 
   /** 描画確定可能か（線:2点以上、面:3点以上） */
@@ -276,6 +295,16 @@
       />
     {/if}
 
+    <!-- リング描画プレビュー（穴/飛び地追加中） -->
+    {#if isRingDrawing && ringDrawingCoords.length > 0}
+      <DrawingPreview
+        coords={ringDrawingCoords}
+        zoom={zoomLevel}
+        cursorGeo={cursorGeo}
+        isPolygon={true}
+      />
+    {/if}
+
     <!-- グリッド線 -->
     <GridRenderer zoom={zoomLevel} />
   </svg>
@@ -297,6 +326,20 @@
         キャンセル
       </button>
     </div>
+  {/if}
+
+  <!-- 編集ツールバー（選択地物がある場合、描画中でない場合） -->
+  {#if selectedAnchor() && !isDrawing && (toolMode === 'edit' || toolMode === 'view')}
+    <EditToolbar
+      featureType={selectedAnchor()?.shape.type ?? null}
+      {isRingDrawing}
+      canConfirm={ringDrawingCanConfirm}
+      {onAddHole}
+      {onAddExclave}
+      {onConfirmRing}
+      {onCancelRing}
+      {onDeleteVertex}
+    />
   {/if}
 
   <!-- カーソル座標表示 -->
