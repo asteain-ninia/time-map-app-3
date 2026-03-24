@@ -136,6 +136,13 @@
   let lastPanX = $state(0);
   let lastPanY = $state(0);
   let cursorGeo = $state<{ lon: number; lat: number } | null>(null);
+  let wrapOffsets = $state<number[]>([0]);
+
+  /** viewBoxとwrapOffsetsを一括更新 */
+  function syncViewport(): void {
+    syncViewport();
+    wrapOffsets = viewport.getWrapOffsets();
+  }
 
   /** ベースマップのSVGコンテンツ */
   let baseMapContent = $state('');
@@ -156,7 +163,7 @@
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
         viewport.setViewSize(width, height);
-        viewBox = viewport.getViewBox();
+        syncViewport();
       }
     });
     observer.observe(containerEl);
@@ -186,7 +193,7 @@
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     viewport.zoomAtCursor(-e.deltaY, x, y);
-    viewBox = viewport.getViewBox();
+    syncViewport();
     zoomLevel = viewport.getZoom();
     eventBus.emit('viewport:zoomChanged', { zoom: zoomLevel });
   }
@@ -223,7 +230,7 @@
       const dx = e.clientX - lastPanX;
       const dy = e.clientY - lastPanY;
       viewport.pan(dx, dy);
-      viewBox = viewport.getViewBox();
+      syncViewport();
       lastPanX = e.clientX;
       lastPanY = e.clientY;
     }
@@ -290,29 +297,39 @@
     onclick={onClick}
     ondblclick={onDblClick}
   >
-    <!-- 海の背景 -->
-    <rect x="0" y="0" width="360" height="180" fill="#1a1a2e" />
+    <!-- §2.1: 横方向無限スクロール — 複数オフセットでコンテンツを描画 -->
+    {#each wrapOffsets as offset}
+      <g transform="translate({offset}, 0)">
+        <!-- 海の背景 -->
+        <rect x="0" y="0" width="360" height="180" fill="#1a1a2e" />
 
-    <!-- ベースマップ（§2.1: pointer-events無効、テキスト選択不可） -->
-    <g
-      transform="scale({360 / 4243.4}, {180 / 2121.7})"
-      pointer-events="none"
-      style="user-select: none;"
-    >
-      {@html baseMapContent}
-    </g>
+        <!-- ベースマップ（§2.1: pointer-events無効、テキスト選択不可） -->
+        <g
+          transform="scale({360 / 4243.4}, {180 / 2121.7})"
+          pointer-events="none"
+          style="user-select: none;"
+        >
+          {@html baseMapContent}
+        </g>
 
-    <!-- 地物描画 -->
-    {#if currentTime}
-      <FeatureRenderer
-        {features}
-        {vertices}
-        {layers}
-        {currentTime}
-        zoom={zoomLevel}
-        {selectedFeatureId}
-      />
-    {/if}
+        <!-- 地物描画 -->
+        {#if currentTime}
+          <FeatureRenderer
+            {features}
+            {vertices}
+            {layers}
+            {currentTime}
+            zoom={zoomLevel}
+            {selectedFeatureId}
+          />
+        {/if}
+
+        <!-- グリッド線 -->
+        <GridRenderer zoom={zoomLevel} />
+      </g>
+    {/each}
+
+    <!-- 以下はラップ不要（UI要素） -->
 
     <!-- 頂点ハンドル・エッジハンドル（選択地物の編集用） -->
     {#if selectedAnchor() && !isDrawing}
@@ -382,9 +399,6 @@
         zoom={zoomLevel}
       />
     {/if}
-
-    <!-- グリッド線 -->
-    <GridRenderer zoom={zoomLevel} />
   </svg>
 
   <!-- 描画中の確定/キャンセルボタン（§2.3.2: 確定ボタンの押下で形状を確定） -->

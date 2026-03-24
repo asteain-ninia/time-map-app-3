@@ -109,12 +109,13 @@ export class ViewportManager {
     };
   }
 
-  /** SVG座標→地理座標に変換 */
+  /** SVG座標→地理座標に変換（経度は-180〜180にラップ） */
   svgToGeo(svgX: number, svgY: number): { lon: number; lat: number } {
-    return {
-      lon: svgX - 180,
-      lat: 90 - svgY
-    };
+    let lon = svgX - 180;
+    // 横方向無限スクロール対応: 経度を-180〜180にラップ
+    while (lon > 180) lon -= 360;
+    while (lon < -180) lon += 360;
+    return { lon, lat: 90 - svgY };
   }
 
   /** 地理座標→SVG座標に変換 */
@@ -129,6 +130,21 @@ export class ViewportManager {
   screenToGeo(screenX: number, screenY: number): { lon: number; lat: number } {
     const svg = this.screenToSvg(screenX, screenY);
     return this.svgToGeo(svg.x, svg.y);
+  }
+
+  /**
+   * 横方向無限スクロール用：viewBoxに表示すべきオフセット配列を返す。
+   * viewBoxが経度0〜360の範囲を超える場合、-360や+360オフセットの
+   * コンテンツも表示する必要がある。
+   */
+  getWrapOffsets(): number[] {
+    const vb = this.getViewBoxValues();
+    const offsets: number[] = [0];
+    // 左端が0未満なら左側にもう1つ表示
+    if (vb.x < 0) offsets.push(-360);
+    // 右端が360超なら右側にもう1つ表示
+    if (vb.x + vb.width > 360) offsets.push(360);
+    return offsets;
   }
 
   /** 地図全体が収まるようにズームをリセット */

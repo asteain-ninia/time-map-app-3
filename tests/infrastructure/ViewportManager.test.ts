@@ -184,4 +184,46 @@ describe('ViewportManager', () => {
       expect(vm.getZoom()).toBe(2);
     });
   });
+
+  describe('getWrapOffsets（横方向無限スクロール）', () => {
+    it('初期状態（ズーム1）ではオフセット[0]のみ', () => {
+      expect(vm.getWrapOffsets()).toEqual([0]);
+    });
+
+    it('左にパンするとオフセット-360が追加される', () => {
+      vm.setViewSize(800, 600);
+      // 左に大きくパン（centerXが0近くになるまで）
+      for (let i = 0; i < 50; i++) {
+        vm.pan(100, 0);
+      }
+      const offsets = vm.getWrapOffsets();
+      expect(offsets).toContain(0);
+      expect(offsets).toContain(-360);
+    });
+
+    it('右にパンするとオフセット360が追加される', () => {
+      vm.setViewSize(800, 600);
+      // 右に大きくパン
+      for (let i = 0; i < 50; i++) {
+        vm.pan(-100, 0);
+      }
+      const offsets = vm.getWrapOffsets();
+      expect(offsets).toContain(0);
+      expect(offsets).toContain(360);
+    });
+  });
+
+  describe('svgToGeo経度ラップ', () => {
+    it('SVG座標が360を超えると経度がラップされる', () => {
+      const geo = vm.svgToGeo(600, 90);
+      // 600 - 180 = 420 → 420 - 360 = 60
+      expect(geo.lon).toBe(60);
+    });
+
+    it('SVG座標が負の場合も経度がラップされる', () => {
+      const geo = vm.svgToGeo(-180 + 180, 90);
+      // -180 + 180 = 0 → 0 - 180 = -180 → ラップなし
+      expect(geo.lon).toBe(-180);
+    });
+  });
 });
