@@ -13,6 +13,10 @@
     onStartKnife,
     onConfirmKnife,
     onCancelKnife,
+    mergeTargetCount = 0,
+    onAddMergeTarget,
+    onStartMerge,
+    onClearMerge,
   }: {
     featureType?: string | null;
     isRingDrawing?: boolean;
@@ -27,6 +31,10 @@
     onStartKnife?: () => void;
     onConfirmKnife?: () => void;
     onCancelKnife?: () => void;
+    mergeTargetCount?: number;
+    onAddMergeTarget?: () => void;
+    onStartMerge?: () => void;
+    onClearMerge?: () => void;
   } = $props();
 </script>
 
@@ -89,6 +97,32 @@
       >
         分割
       </button>
+      <span class="separator"></span>
+      <button
+        class="edit-btn"
+        onclick={() => onAddMergeTarget?.()}
+        title="結合対象に追加/解除"
+      >
+        結合対象{#if mergeTargetCount > 0}({mergeTargetCount}){/if}
+      </button>
+      {#if mergeTargetCount >= 2}
+        <button
+          class="edit-btn confirm"
+          onclick={() => onStartMerge?.()}
+          title="選択した地物を結合"
+        >
+          結合実行
+        </button>
+      {/if}
+      {#if mergeTargetCount > 0}
+        <button
+          class="edit-btn cancel"
+          onclick={() => onClearMerge?.()}
+          title="結合対象をクリア"
+        >
+          解除
+        </button>
+      {/if}
     {/if}
   {/if}
 </div>
@@ -142,5 +176,11 @@
   .edit-btn.cancel {
     background: #3c3c3c;
     color: #ccc;
+  }
+
+  .separator {
+    width: 1px;
+    background: #555;
+    align-self: stretch;
   }
 </style>

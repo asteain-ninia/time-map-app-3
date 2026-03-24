@@ -55,6 +55,10 @@
     onStartKnife,
     onConfirmKnife,
     onCancelKnife,
+    mergeTargetCount = 0,
+    onAddMergeTarget,
+    onStartMerge,
+    onClearMerge,
   }: {
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
@@ -95,6 +99,10 @@
     onStartKnife?: () => void;
     onConfirmKnife?: () => void;
     onCancelKnife?: () => void;
+    mergeTargetCount?: number;
+    onAddMergeTarget?: () => void;
+    onStartMerge?: () => void;
+    onClearMerge?: () => void;
   } = $props();
 
   /** 描画確定可能か（線:2点以上、面:3点以上） */
@@ -377,6 +385,10 @@
       {onStartKnife}
       {onConfirmKnife}
       {onCancelKnife}
+      {mergeTargetCount}
+      {onAddMergeTarget}
+      {onStartMerge}
+      {onClearMerge}
     />
   {/if}
 

@@ -3,6 +3,7 @@
   import Toolbar from '@presentation/components/Toolbar.svelte';
   import MapCanvas from '@presentation/components/MapCanvas.svelte';
   import SplitConfirmModal from '@presentation/components/SplitConfirmModal.svelte';
+  import MergeConfirmModal from '@presentation/components/MergeConfirmModal.svelte';
   import Sidebar from '@presentation/components/Sidebar.svelte';
   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
   import StatusBar from '@presentation/components/StatusBar.svelte';
@@ -55,6 +56,7 @@
     type KnifeDrawingState,
   } from '@infrastructure/rendering/knifeDrawingManager';
   import { SplitFeatureCommand } from '@application/commands/SplitFeatureCommand';
+  import { MergeFeatureCommand } from '@application/commands/MergeFeatureCommand';
   import { addHoleRing, addExclaveRing } from '@domain/services/RingEditService';
   import { Vertex } from '@domain/entities/Vertex';
   import { Ring } from '@domain/value-objects/Ring';
@@ -97,6 +99,8 @@
   let featureDragState = $state<FeatureDragState | null>(null);
   let knifeDrawingState = $state<KnifeDrawingState | null>(null);
   let showSplitModal = $state(false);
+  let mergeTargetIds = $state<string[]>([]);
+  let showMergeModal = $state(false);
   /** 地物ドラッグの開始geo座標 */
   let featureDragStartGeo = $state<{ lon: number; lat: number } | null>(null);
   /** 地物ドラッグ中の前回geo座標（差分計算用） */
@@ -359,6 +363,49 @@
       })
     );
     return canConfirmKnifeDrawing(knifeDrawingState, polygonRings);
+  }
+
+  // --- 結合ツール ---
+
+  /** 結合対象に地物を追加する（Shift+クリックで複数選択） */
+  function addMergeTarget(featureId: string): void {
+    if (mergeTargetIds.includes(featureId)) {
+      mergeTargetIds = mergeTargetIds.filter(id => id !== featureId);
+    } else {
+      mergeTargetIds = [...mergeTargetIds, featureId];
+    }
+  }
+
+  /** 結合モーダルを表示 */
+  function onStartMerge(): void {
+    if (mergeTargetIds.length < 2) return;
+    showMergeModal = true;
+  }
+
+  /** 結合実行 */
+  function onMergeConfirm(mergedName: string): void {
+    if (mergeTargetIds.length < 2 || !currentTime) return;
+
+    undoRedo.execute(
+      new MergeFeatureCommand(addFeature, {
+        featureIds: mergeTargetIds,
+        currentTime,
+        mergedName,
+      })
+    );
+
+    refreshFeatureData();
+    showMergeModal = false;
+    mergeTargetIds = [];
+    selectedFeatureId = mergeTargetIds.length > 0 ? mergeTargetIds[0] : null;
+  }
+
+  function onCancelMerge(): void {
+    showMergeModal = false;
+  }
+
+  function clearMergeTargets(): void {
+    mergeTargetIds = [];
   }
 
   function onDeleteVertex(): void {
@@ -703,6 +750,10 @@
           {onStartKnife}
           {onConfirmKnife}
           {onCancelKnife}
+          mergeTargetCount={mergeTargetIds.length}
+          onAddMergeTarget={() => { if (selectedFeatureId) addMergeTarget(selectedFeatureId); }}
+          {onStartMerge}
+          onClearMerge={clearMergeTargets}
         />
       </div>
       <div class="sidebar-area">
@@ -717,6 +768,17 @@
 </div>
 
 <!-- 分割確認モーダル -->
+<!-- 結合確認モーダル -->
+<MergeConfirmModal
+  isOpen={showMergeModal}
+  featureNames={mergeTargetIds.map(id => {
+    const f = features.find(feat => feat.id === id);
+    return f?.getActiveAnchor(currentTime)?.property.name ?? id;
+  })}
+  onConfirm={onMergeConfirm}
+  onCancel={onCancelMerge}
+/>
+
 <SplitConfirmModal
   isOpen={showSplitModal}
   featureName={knifeDrawingState ? features.find(f => f.id === knifeDrawingState?.featureId)?.getActiveAnchor(currentTime)?.property.name ?? '' : ''}
