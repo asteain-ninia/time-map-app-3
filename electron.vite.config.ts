@@ -26,7 +26,12 @@ export default defineConfig({
     }
   },
   renderer: {
-    plugins: [svelte()],
+    plugins: [svelte({
+      onwarn: (warning, handler) => {
+        if (warning.code?.startsWith('a11y_')) return;
+        handler(warning);
+      }
+    })],
     root: resolve(__dirname, 'src/renderer'),
     publicDir: resolve(__dirname, 'src/renderer/public'),
     build: {
