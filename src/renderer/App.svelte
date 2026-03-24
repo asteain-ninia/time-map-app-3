@@ -80,6 +80,7 @@
   import type { SpatialConflict } from '@domain/services/ConflictDetectionService';
   import type { ConflictResolution } from '@application/AnchorEditDraft';
   import { addHoleRing, addExclaveRing } from '@domain/services/RingEditService';
+  import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
   import { Vertex } from '@domain/entities/Vertex';
   import { Ring } from '@domain/value-objects/Ring';
 
@@ -123,6 +124,13 @@
   let showSplitModal = $state(false);
   let mergeTargetIds = $state<string[]>([]);
   let showMergeModal = $state(false);
+
+  // --- プロパティ編集 ---
+
+  function onPropertyChange(featureId: string, anchorId: string, property: AnchorProperty): void {
+    anchorEdit.updateProperty(featureId, anchorId, property);
+    refreshFeatureData();
+  }
 
   // --- コンテキストメニュー ---
   let contextMenuOpen = $state(false);
@@ -985,7 +993,13 @@
         />
       </div>
       <div class="sidebar-area">
-        <Sidebar />
+        <Sidebar
+          selectedFeature={selectedFeatureId ? features.find(f => f.id === selectedFeatureId) ?? null : null}
+          {currentTime}
+          {features}
+          {onPropertyChange}
+          onFeatureSelect={(id) => { selectedFeatureId = id; }}
+        />
       </div>
     </div>
     <div class="bottom-area">

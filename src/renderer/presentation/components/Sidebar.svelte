@@ -1,9 +1,34 @@
 <script lang="ts">
   import LayerPanel from './LayerPanel.svelte';
+  import PropertyPanel from './PropertyPanel.svelte';
+  import type { Feature } from '@domain/entities/Feature';
+  import type { TimePoint } from '@domain/value-objects/TimePoint';
+  import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
 
   type SidebarTab = 'layers' | 'properties' | 'features';
 
+  let {
+    selectedFeature = null as Feature | null,
+    currentTime = undefined as TimePoint | undefined,
+    features = [] as readonly Feature[],
+    onPropertyChange,
+    onFeatureSelect,
+  }: {
+    selectedFeature?: Feature | null;
+    currentTime?: TimePoint;
+    features?: readonly Feature[];
+    onPropertyChange?: (featureId: string, anchorId: string, property: AnchorProperty) => void;
+    onFeatureSelect?: (featureId: string) => void;
+  } = $props();
+
   let activeTab = $state<SidebarTab>('layers');
+
+  /** 地物選択時に自動的にプロパティタブに切り替え */
+  $effect(() => {
+    if (selectedFeature && activeTab !== 'properties') {
+      activeTab = 'properties';
+    }
+  });
 </script>
 
 <div class="sidebar">
@@ -35,9 +60,33 @@
     {#if activeTab === 'layers'}
       <LayerPanel />
     {:else if activeTab === 'properties'}
-      <div class="empty-message">地物または頂点が選択されていません</div>
+      <PropertyPanel
+        feature={selectedFeature}
+        {currentTime}
+        {onPropertyChange}
+      />
     {:else if activeTab === 'features'}
-      <div class="empty-message">地物はまだありません</div>
+      {#if features.length === 0}
+        <div class="empty-message">地物はまだありません</div>
+      {:else}
+        <div class="feature-list">
+          {#each features as f}
+            <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+            <div
+              class="feature-item"
+              class:selected={selectedFeature?.id === f.id}
+              onclick={() => onFeatureSelect?.(f.id)}
+            >
+              <span class="feature-type-badge">
+                {f.featureType === 'Point' ? '点' : f.featureType === 'LineString' ? '線' : '面'}
+              </span>
+              <span class="feature-name">
+                {currentTime ? (f.getActiveAnchor(currentTime)?.property.name || f.id) : f.id}
+              </span>
+            </div>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
 </div>
@@ -86,5 +135,54 @@
     font-size: 12px;
     text-align: center;
     padding: 24px 8px;
+  }
+
+  .feature-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .feature-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #ccc;
+  }
+
+  .feature-item:hover {
+    background: #333;
+  }
+
+  .feature-item.selected {
+    background: #094771;
+    color: #fff;
+  }
+
+  .feature-type-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    background: #444;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+
+  .feature-item.selected .feature-type-badge {
+    background: #007acc;
+  }
+
+  .feature-name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>
