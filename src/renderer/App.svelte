@@ -46,6 +46,7 @@
   let layers = $state<readonly Layer[]>([]);
   let currentTime = $state(navigateTime.getCurrentTime());
   let selectedFeatureId = $state<string | null>(null);
+  let selectedVertexIds = $state<ReadonlySet<string>>(new Set());
 
   /** ツールストアの状態をリアクティブ変数に同期する */
   function syncToolState(): void {
@@ -144,6 +145,7 @@
         getHitThreshold()
       );
       selectedFeatureId = result?.featureId ?? null;
+      selectedVertexIds = new Set();
     }
   }
 
@@ -178,6 +180,27 @@
     }
   }
 
+  /** 頂点ハンドルのmousedown — 頂点選択（Shift+クリックでトグル） */
+  function onVertexMouseDown(vertexId: string, e: MouseEvent): void {
+    if (e.shiftKey) {
+      const next = new Set(selectedVertexIds);
+      if (next.has(vertexId)) {
+        next.delete(vertexId);
+      } else {
+        next.add(vertexId);
+      }
+      selectedVertexIds = next;
+    } else {
+      selectedVertexIds = new Set([vertexId]);
+    }
+    // アクティブ地物はクリアしない（§2.3.3.1: 頂点クリック時は頂点選択セット更新）
+  }
+
+  /** エッジハンドルのmousedown — 後続の頂点挿入ドラッグで使用（39で実装） */
+  function onEdgeHandleMouseDown(_v1: string, _v2: string, _e: MouseEvent): void {
+    // 頂点ドラッグ移動（アイテム39）で実装
+  }
+
   /** キーボードイベント */
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
@@ -186,6 +209,7 @@
         syncToolState();
       } else {
         selectedFeatureId = null;
+        selectedVertexIds = new Set();
       }
     }
     if (e.ctrlKey && e.key === 'z') {
@@ -243,12 +267,15 @@
           {isDrawing}
           {drawingCoords}
           {selectedFeatureId}
+          {selectedVertexIds}
           {onMapClick}
           {onMapDoubleClick}
           {onPanStart}
           {onPanEnd}
           {onConfirm}
           {onCancel}
+          {onVertexMouseDown}
+          {onEdgeHandleMouseDown}
         />
       </div>
       <div class="sidebar-area">

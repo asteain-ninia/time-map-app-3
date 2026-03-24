@@ -5,6 +5,7 @@
   import GridRenderer from './GridRenderer.svelte';
   import FeatureRenderer from './FeatureRenderer.svelte';
   import DrawingPreview from './DrawingPreview.svelte';
+  import VertexHandles from './VertexHandles.svelte';
   import type { Feature } from '@domain/entities/Feature';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { Layer } from '@domain/entities/Layer';
@@ -21,12 +22,15 @@
     isDrawing = false,
     drawingCoords = [] as readonly Coordinate[],
     selectedFeatureId = null as string | null,
+    selectedVertexIds = new Set<string>() as ReadonlySet<string>,
     onMapClick,
     onMapDoubleClick,
     onPanStart,
     onPanEnd,
     onConfirm,
     onCancel,
+    onVertexMouseDown,
+    onEdgeHandleMouseDown,
   }: {
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
@@ -37,16 +41,27 @@
     isDrawing?: boolean;
     drawingCoords?: readonly Coordinate[];
     selectedFeatureId?: string | null;
+    selectedVertexIds?: ReadonlySet<string>;
     onMapClick?: (coord: Coordinate) => void;
     onMapDoubleClick?: (coord: Coordinate) => void;
     onPanStart?: () => void;
     onPanEnd?: () => void;
     onConfirm?: () => void;
     onCancel?: () => void;
+    onVertexMouseDown?: (vertexId: string, e: MouseEvent) => void;
+    onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
   } = $props();
 
   /** 描画確定可能か（線:2点以上、面:3点以上） */
   let canConfirm = $derived(isDrawing && drawingCoords.length >= 2);
+
+  /** 選択地物のアンカー（頂点ハンドル表示用） */
+  let selectedAnchor = $derived(() => {
+    if (!selectedFeatureId || !currentTime) return null;
+    const feature = features.find((f) => f.id === selectedFeatureId);
+    if (!feature) return null;
+    return feature.getActiveAnchor(currentTime);
+  });
 
   const viewport = new ViewportManager();
 
@@ -222,6 +237,18 @@
         {currentTime}
         zoom={zoomLevel}
         {selectedFeatureId}
+      />
+    {/if}
+
+    <!-- 頂点ハンドル・エッジハンドル（選択地物の編集用） -->
+    {#if selectedAnchor() && !isDrawing}
+      <VertexHandles
+        anchor={selectedAnchor()!}
+        {vertices}
+        zoom={zoomLevel}
+        {selectedVertexIds}
+        {onVertexMouseDown}
+        {onEdgeHandleMouseDown}
       />
     {/if}
 
