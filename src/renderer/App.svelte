@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import Toolbar from '@presentation/components/Toolbar.svelte';
+  import MenuBar from '@presentation/components/MenuBar.svelte';
   import MapCanvas from '@presentation/components/MapCanvas.svelte';
   import SplitConfirmModal from '@presentation/components/SplitConfirmModal.svelte';
   import MergeConfirmModal from '@presentation/components/MergeConfirmModal.svelte';
@@ -950,6 +951,16 @@
 <svelte:window onkeydown={onKeyDown} oncontextmenu={onContextMenu} />
 
 <div class="app-layout">
+  <MenuBar
+    onNewProject={() => { /* TODO: new project */ }}
+    onOpen={() => saveLoad.open()}
+    onSave={() => saveLoad.save()}
+    onSaveAs={() => saveLoad.saveAs()}
+    onUndo={() => { undoRedo.undo(); refreshFeatureData(); refreshLayerData(); }}
+    onRedo={() => { undoRedo.redo(); refreshFeatureData(); refreshLayerData(); }}
+    onSettings={openSettings}
+  />
+  <div class="content-area">
   <div class="toolbar-area">
     <Toolbar
       mode={toolMode}
@@ -1027,6 +1038,7 @@
       <StatusBar />
     </div>
   </div>
+  </div>
 </div>
 
 <!-- 分割確認モーダル -->
@@ -1100,8 +1112,15 @@
 
   .app-layout {
     display: flex;
+    flex-direction: column;
     width: 100%;
     height: 100%;
+  }
+
+  .content-area {
+    flex: 1;
+    display: flex;
+    min-height: 0;
   }
 
   .toolbar-area {
