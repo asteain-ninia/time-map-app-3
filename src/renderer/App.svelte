@@ -86,6 +86,19 @@
   import { DEFAULT_SETTINGS, DEFAULT_METADATA, type WorldSettings, type WorldMetadata } from '@domain/entities/World';
   import { Vertex } from '@domain/entities/Vertex';
   import { Ring } from '@domain/value-objects/Ring';
+  import {
+    createDirtyState,
+    markDirty,
+    markSaved,
+    resetDirty,
+    type DirtyState,
+  } from '@infrastructure/rendering/dirtyTracker';
+  import {
+    DEFAULT_BACKUP_CONFIG,
+    getBackupFileName,
+    getRotationPlan,
+    shouldBackup,
+  } from '@infrastructure/rendering/autoBackupManager';
 
   // --- ツール状態 ---
 
@@ -143,11 +156,57 @@
     projectMetadata = { ...projectMetadata, settings: projectSettings };
   }
 
+  // --- ダーティ状態管理 ---
+  let dirtyState = $state<DirtyState>(createDirtyState());
+
+  /** 変更を記録する（各編集操作後に呼ぶ） */
+  function markAsDirty(): void {
+    dirtyState = markDirty(dirtyState);
+  }
+
+  // --- 自動バックアップ ---
+  let lastBackupTime = $state(Date.now());
+  let backupIntervalId: ReturnType<typeof setInterval> | null = null;
+
+  function startAutoBackup(): void {
+    if (backupIntervalId) return;
+    backupIntervalId = setInterval(async () => {
+      const filePath = saveLoad.getCurrentFilePath();
+      if (!filePath || !dirtyState.isDirty) return;
+      if (!shouldBackup(lastBackupTime, Date.now(), DEFAULT_BACKUP_CONFIG.intervalMs)) return;
+
+      try {
+        // ローテーション：古い世代をシフト
+        const plan = getRotationPlan(DEFAULT_BACKUP_CONFIG.maxGenerations);
+        for (const { from, to } of plan) {
+          const fromPath = getBackupFileName(filePath, from);
+          const toPath = getBackupFileName(filePath, to);
+          try {
+            const content = await window.fileAPI.readFile(fromPath);
+            await window.fileAPI.writeFile(toPath, content);
+          } catch { /* ファイルが存在しない場合はスキップ */ }
+        }
+        // 世代1に現在の状態を保存
+        const world = saveLoad.assembleWorld();
+        const { JSONSerializer } = await import('@infrastructure/persistence/JSONSerializer');
+        const serializer = new JSONSerializer();
+        const json = serializer.serialize(world);
+        await window.fileAPI.writeFile(getBackupFileName(filePath, 1), json);
+        lastBackupTime = Date.now();
+      } catch (err) {
+        console.warn('Auto-backup failed:', err);
+      }
+    }, 60_000); // チェック間隔は1分（実際のバックアップはshouldBackupで制御）
+  }
+
+  startAutoBackup();
+
   // --- プロパティ編集 ---
 
   function onPropertyChange(featureId: string, anchorId: string, property: AnchorProperty): void {
     anchorEdit.updateProperty(featureId, anchorId, property);
     refreshFeatureData();
+    markAsDirty();
   }
 
   // --- コンテキストメニュー ---
@@ -219,6 +278,15 @@
     refreshFeatureData();
     refreshLayerData();
     selectedFeatureId = null;
+    dirtyState = resetDirty();
+  });
+
+  const unsubWorldSaved = eventBus.on('world:saved', () => {
+    dirtyState = markSaved(dirtyState);
+  });
+
+  const unsubFeatureChanged = eventBus.on('feature:added', () => {
+    markAsDirty();
   });
 
   onDestroy(() => {
@@ -226,7 +294,10 @@
     unsubTimeChanged();
     unsubLayerVisibility();
     unsubWorldLoaded();
+    unsubWorldSaved();
+    unsubFeatureChanged();
     toolStore.stop();
+    if (backupIntervalId) clearInterval(backupIntervalId);
   });
 
   // --- コールバック ---
@@ -946,14 +1017,60 @@
       saveLoad.open();
     }
   }
+
+  /** 未保存変更の確認 */
+  function confirmUnsavedChanges(): boolean {
+    if (!dirtyState.isDirty) return true;
+    return confirm('未保存の変更があります。続行しますか？');
+  }
+
+  /** 新規プロジェクト */
+  function newProject(): void {
+    if (!confirmUnsavedChanges()) return;
+    addFeature.restore(new Map(), new Map(), []);
+    manageLayers.restore([]);
+    manageLayers.addLayer('default', 'レイヤー1');
+    refreshFeatureData();
+    refreshLayerData();
+    selectedFeatureId = null;
+    dirtyState = resetDirty();
+    projectSettings = { ...DEFAULT_SETTINGS };
+    projectMetadata = { ...DEFAULT_METADATA };
+  }
+
+  /** ウィンドウクローズ時の未保存警告 */
+  function onBeforeUnload(e: BeforeUnloadEvent): void {
+    if (dirtyState.isDirty) {
+      e.preventDefault();
+    }
+  }
+
+  /** D&Dでファイルを読み込む */
+  function onDrop(e: DragEvent): void {
+    e.preventDefault();
+    const file = e.dataTransfer?.files[0];
+    if (!file) return;
+    if (!file.name.endsWith('.json')) return;
+    if (!confirmUnsavedChanges()) return;
+    // Electronのfile.pathでファイルパスを取得
+    const filePath = (file as File & { path?: string }).path;
+    if (filePath) {
+      saveLoad.loadFromPath(filePath);
+    }
+  }
+
+  function onDragOver(e: DragEvent): void {
+    e.preventDefault();
+  }
 </script>
 
-<svelte:window onkeydown={onKeyDown} oncontextmenu={onContextMenu} />
+<svelte:window onkeydown={onKeyDown} oncontextmenu={onContextMenu} onbeforeunload={onBeforeUnload} />
 
-<div class="app-layout">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="app-layout" ondrop={onDrop} ondragover={onDragOver}>
   <MenuBar
-    onNewProject={() => { /* TODO: new project */ }}
-    onOpen={() => saveLoad.open()}
+    onNewProject={newProject}
+    onOpen={() => { if (confirmUnsavedChanges()) saveLoad.open(); }}
     onSave={() => saveLoad.save()}
     onSaveAs={() => saveLoad.saveAs()}
     onUndo={() => { undoRedo.undo(); refreshFeatureData(); refreshLayerData(); }}
