@@ -50,6 +50,15 @@
   } from '@infrastructure/rendering/featureDragManager';
   import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
   import {
+    startBoxSelect,
+    updateBoxSelect,
+    getSelectionBox,
+    isBoxLargeEnough,
+    findVerticesInBox,
+    mergeSelection,
+    type BoxSelectState,
+  } from '@infrastructure/rendering/boxSelectManager';
+  import {
     createSurveyState,
     addSurveyPoint,
     resetSurvey,
@@ -111,6 +120,9 @@
   let showSplitModal = $state(false);
   let mergeTargetIds = $state<string[]>([]);
   let showMergeModal = $state(false);
+
+  // --- 矩形選択 ---
+  let boxSelectState = $state<BoxSelectState | null>(null);
 
   // --- 測量モード ---
   let surveyState = $state<SurveyModeState>(createSurveyState());
@@ -524,17 +536,24 @@
     refreshFeatureData();
   }
 
-  /** 地図上のmousedown — 地物ドラッグ開始判定 */
+  /** 地図上のmousedown — 地物ドラッグ開始 or 矩形選択開始 */
   function onMapMouseDown(coord: Coordinate, screenX: number, screenY: number): void {
     if (toolMode !== 'edit' && toolMode !== 'view') return;
-    if (!selectedFeatureId || !currentTime) return;
 
-    // ヒットテストで選択中の地物上かどうか判定
-    const result = hitTest(coord, features, vertices, layers, currentTime, getHitThreshold());
-    if (result && result.featureId === selectedFeatureId) {
-      featureDragState = startFeatureDrag(selectedFeatureId, screenX, screenY);
-      featureDragStartGeo = { lon: coord.x, lat: coord.y };
-      featureDragLastGeo = { lon: coord.x, lat: coord.y };
+    if (selectedFeatureId && currentTime) {
+      // ヒットテストで選択中の地物上かどうか判定
+      const result = hitTest(coord, features, vertices, layers, currentTime, getHitThreshold());
+      if (result && result.featureId === selectedFeatureId) {
+        featureDragState = startFeatureDrag(selectedFeatureId, screenX, screenY);
+        featureDragStartGeo = { lon: coord.x, lat: coord.y };
+        featureDragLastGeo = { lon: coord.x, lat: coord.y };
+        return;
+      }
+    }
+
+    // 編集モードで地物未ヒット → 矩形選択開始（選択中地物がある場合のみ）
+    if (toolMode === 'edit' && selectedFeatureId) {
+      boxSelectState = startBoxSelect(coord, false);
     }
   }
 
@@ -603,6 +622,39 @@
         ));
       }
     }
+  }
+
+  /** 矩形選択の確定 */
+  function commitBoxSelect(): void {
+    if (!boxSelectState || !selectedFeatureId || !currentTime) {
+      boxSelectState = null;
+      return;
+    }
+
+    if (!isBoxLargeEnough(boxSelectState)) {
+      boxSelectState = null;
+      return;
+    }
+
+    // 選択中地物の頂点IDリストを取得
+    const feature = features.find(f => f.id === selectedFeatureId);
+    if (!feature) { boxSelectState = null; return; }
+    const anchor = feature.getActiveAnchor(currentTime);
+    if (!anchor) { boxSelectState = null; return; }
+
+    const vertexIds: string[] = [];
+    switch (anchor.shape.type) {
+      case 'Point': vertexIds.push(anchor.shape.vertexId); break;
+      case 'LineString': vertexIds.push(...anchor.shape.vertexIds); break;
+      case 'Polygon':
+        for (const ring of anchor.shape.rings) vertexIds.push(...ring.vertexIds);
+        break;
+    }
+
+    const box = getSelectionBox(boxSelectState);
+    const found = findVerticesInBox(box, vertexIds, vertices);
+    selectedVertexIds = mergeSelection(selectedVertexIds, found, boxSelectState.isAdditive);
+    boxSelectState = null;
   }
 
   /** 頂点ハンドルのmousedown — 頂点選択＋ドラッグ開始 */
@@ -716,6 +768,12 @@
       return;
     }
 
+    // 矩形選択
+    if (boxSelectState) {
+      boxSelectState = updateBoxSelect(boxSelectState, new Coordinate(geo.lon, geo.lat));
+      return;
+    }
+
     // 地物ドラッグ
     if (featureDragState && featureDragLastGeo) {
       const incrementalDx = geo.lon - featureDragLastGeo.lon;
@@ -822,7 +880,7 @@
           {onVertexMouseDown}
           {onEdgeHandleMouseDown}
           {onCursorGeoUpdate}
-          onDragEnd={() => { commitDrag(); commitFeatureDrag(); }}
+          onDragEnd={() => { commitDrag(); commitFeatureDrag(); commitBoxSelect(); }}
           isRingDrawing={ringDrawingState !== null}
           ringDrawingCanConfirm={ringDrawingState ? canConfirmRing(ringDrawingState) : false}
           ringDrawingCoords={ringDrawingState?.coords ?? []}
@@ -847,6 +905,7 @@
           surveyPointA={surveyState.pointA}
           surveyPointB={surveyState.pointB}
           {surveyResult}
+          boxSelectBox={boxSelectState && isBoxLargeEnough(boxSelectState) ? getSelectionBox(boxSelectState) : null}
         />
       </div>
       <div class="sidebar-area">

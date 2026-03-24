@@ -65,6 +65,7 @@
     surveyPointA = null as CoordinateType | null,
     surveyPointB = null as CoordinateType | null,
     surveyResult = null as SurveyResult | null,
+    boxSelectBox = null as { minX: number; minY: number; maxX: number; maxY: number } | null,
   }: {
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
@@ -112,6 +113,7 @@
     surveyPointA?: CoordinateType | null;
     surveyPointB?: CoordinateType | null;
     surveyResult?: SurveyResult | null;
+    boxSelectBox?: { minX: number; minY: number; maxX: number; maxY: number } | null;
   } = $props();
 
   /** 描画確定可能か（線:2点以上、面:3点以上） */
@@ -353,6 +355,21 @@
         zoom={zoomLevel}
         cursorGeo={cursorGeo}
         isPolygon={false}
+      />
+    {/if}
+
+    <!-- 矩形選択オーバーレイ -->
+    {#if boxSelectBox}
+      <rect
+        x={boxSelectBox.minX}
+        y={90 - boxSelectBox.maxY}
+        width={boxSelectBox.maxX - boxSelectBox.minX}
+        height={boxSelectBox.maxY - boxSelectBox.minY}
+        fill="rgba(0, 122, 204, 0.15)"
+        stroke="#007acc"
+        stroke-width={1 / zoomLevel}
+        stroke-dasharray="{3 / zoomLevel} {2 / zoomLevel}"
+        pointer-events="none"
       />
     {/if}
 
