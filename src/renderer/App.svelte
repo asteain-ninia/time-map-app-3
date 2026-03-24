@@ -1007,14 +1007,26 @@
       refreshFeatureData();
       refreshLayerData();
     }
-    // §2.5: Ctrl+S で保存、Ctrl+O で開く
-    if (e.ctrlKey && e.key === 's') {
+    // §2.5: Ctrl+Shift+S で名前を付けて保存、Ctrl+S で保存、Ctrl+O で開く
+    if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+      e.preventDefault();
+      saveLoad.saveAs();
+    } else if (e.ctrlKey && e.key === 's') {
       e.preventDefault();
       saveLoad.save();
     }
     if (e.ctrlKey && e.key === 'o') {
       e.preventDefault();
-      saveLoad.open();
+      if (confirmUnsavedChanges()) saveLoad.open();
+    }
+
+    // §2.7.3: ツールモード切替（入力フォーカス時は無効）
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (!e.ctrlKey && !e.altKey && !e.shiftKey && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+      if (e.key === 'v' || e.key === 'V') { onModeChange('view'); }
+      else if (e.key === 'a' || e.key === 'A') { onModeChange('add'); }
+      else if (e.key === 'e' || e.key === 'E') { onModeChange('edit'); }
+      else if (e.key === 'm' || e.key === 'M') { onModeChange('measure'); }
     }
   }
 
