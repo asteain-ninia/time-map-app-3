@@ -50,6 +50,13 @@
   } from '@infrastructure/rendering/featureDragManager';
   import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
   import {
+    createSurveyState,
+    addSurveyPoint,
+    resetSurvey,
+    computeSurveyResult,
+    type SurveyModeState,
+  } from '@infrastructure/rendering/surveyModeManager';
+  import {
     startKnifeDrawing,
     addKnifeVertex,
     undoKnifeVertex,
@@ -104,6 +111,10 @@
   let showSplitModal = $state(false);
   let mergeTargetIds = $state<string[]>([]);
   let showMergeModal = $state(false);
+
+  // --- 測量モード ---
+  let surveyState = $state<SurveyModeState>(createSurveyState());
+  let surveyResult = $derived(computeSurveyResult(surveyState));
 
   // --- 競合解決 ---
   let conflictDialogOpen = $state(false);
@@ -176,6 +187,7 @@
   function onModeChange(mode: ToolMode): void {
     toolStore.send({ type: 'MODE_CHANGE', mode });
     selectedFeatureId = null;
+    surveyState = resetSurvey(surveyState);
     syncToolState();
   }
 
@@ -198,6 +210,10 @@
     // リング描画中はクリックで頂点追加
     if (ringDrawingState) {
       ringDrawingState = addRingVertex(ringDrawingState, coord);
+      return;
+    }
+    if (toolMode === 'measure') {
+      surveyState = addSurveyPoint(surveyState, coord);
       return;
     }
     if (toolMode === 'add') {
@@ -725,6 +741,8 @@
       } else if (isDrawing) {
         toolStore.send({ type: 'KEY_ESCAPE' });
         syncToolState();
+      } else if (toolMode === 'measure' && surveyState.pointA) {
+        surveyState = resetSurvey(surveyState);
       } else {
         selectedFeatureId = null;
         selectedVertexIds = new Set();
@@ -826,6 +844,9 @@
           onAddMergeTarget={() => { if (selectedFeatureId) addMergeTarget(selectedFeatureId); }}
           {onStartMerge}
           onClearMerge={clearMergeTargets}
+          surveyPointA={surveyState.pointA}
+          surveyPointB={surveyState.pointB}
+          {surveyResult}
         />
       </div>
       <div class="sidebar-area">

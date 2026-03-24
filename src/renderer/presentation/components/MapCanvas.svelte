@@ -14,6 +14,9 @@
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
   import type { SnapIndicator } from '@infrastructure/rendering/snapIndicatorUtils';
+  import type { SurveyResult } from '@infrastructure/rendering/surveyModeManager';
+  import MeasurementOverlay from './MeasurementOverlay.svelte';
+  import type { Coordinate as CoordinateType } from '@domain/value-objects/Coordinate';
 
   let {
     features = [] as readonly Feature[],
@@ -59,6 +62,9 @@
     onAddMergeTarget,
     onStartMerge,
     onClearMerge,
+    surveyPointA = null as CoordinateType | null,
+    surveyPointB = null as CoordinateType | null,
+    surveyResult = null as SurveyResult | null,
   }: {
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
@@ -103,6 +109,9 @@
     onAddMergeTarget?: () => void;
     onStartMerge?: () => void;
     onClearMerge?: () => void;
+    surveyPointA?: CoordinateType | null;
+    surveyPointB?: CoordinateType | null;
+    surveyResult?: SurveyResult | null;
   } = $props();
 
   /** 描画確定可能か（線:2点以上、面:3点以上） */
@@ -164,6 +173,7 @@
     isFeatureDragging ? 'move' :
     toolMode === 'view' ? 'grab' :
     toolMode === 'add' ? 'crosshair' :
+    toolMode === 'measure' ? 'crosshair' :
     'default'
   );
 
@@ -346,6 +356,16 @@
       />
     {/if}
 
+    <!-- 測量オーバーレイ -->
+    {#if toolMode === 'measure'}
+      <MeasurementOverlay
+        pointA={surveyPointA}
+        pointB={surveyPointB}
+        result={surveyResult}
+        zoom={zoomLevel}
+      />
+    {/if}
+
     <!-- グリッド線 -->
     <GridRenderer zoom={zoomLevel} />
   </svg>
@@ -390,6 +410,41 @@
       {onStartMerge}
       {onClearMerge}
     />
+  {/if}
+
+  <!-- 測量情報パネル -->
+  {#if toolMode === 'measure' && surveyResult}
+    <div class="survey-panel">
+      <div class="survey-row">
+        <span class="survey-label">A:</span>
+        <span class="survey-value">{surveyResult.displayA.dms}</span>
+      </div>
+      <div class="survey-row">
+        <span class="survey-label">B:</span>
+        <span class="survey-value">{surveyResult.displayB.dms}</span>
+      </div>
+      <div class="survey-divider"></div>
+      <div class="survey-row">
+        <span class="survey-label">大円距離:</span>
+        <span class="survey-value">{surveyResult.distance.greatCircleKm < 100 ? surveyResult.distance.greatCircleKm.toFixed(1) : Math.round(surveyResult.distance.greatCircleKm).toLocaleString()} km</span>
+      </div>
+      <div class="survey-row">
+        <span class="survey-label">図法距離:</span>
+        <span class="survey-value">{surveyResult.distance.equirectangularKm < 100 ? surveyResult.distance.equirectangularKm.toFixed(1) : Math.round(surveyResult.distance.equirectangularKm).toLocaleString()} km</span>
+      </div>
+    </div>
+  {:else if toolMode === 'measure' && surveyPointA && !surveyPointB}
+    <div class="survey-panel">
+      <div class="survey-row">
+        <span class="survey-label">A:</span>
+        <span class="survey-value">{surveyPointA.y.toFixed(4)}°, {surveyPointA.x.toFixed(4)}°</span>
+      </div>
+      <div class="survey-hint">終点をクリックして距離を測定</div>
+    </div>
+  {:else if toolMode === 'measure'}
+    <div class="survey-panel">
+      <div class="survey-hint">始点をクリックして測量開始</div>
+    </div>
   {/if}
 
   <!-- カーソル座標表示 -->
@@ -471,5 +526,50 @@
 
   .drawing-btn.cancel:hover {
     background: #4c4c4c;
+  }
+
+  .survey-panel {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.85);
+    border-radius: 6px;
+    border: 1px solid #555;
+    font-size: 11px;
+    color: #e0e0e0;
+    min-width: 200px;
+    pointer-events: none;
+  }
+
+  .survey-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 2px 0;
+  }
+
+  .survey-label {
+    color: #aaa;
+    flex-shrink: 0;
+  }
+
+  .survey-value {
+    color: #ffd93d;
+    font-family: monospace;
+    text-align: right;
+  }
+
+  .survey-divider {
+    height: 1px;
+    background: #444;
+    margin: 4px 0;
+  }
+
+  .survey-hint {
+    color: #888;
+    font-style: italic;
+    text-align: center;
+    margin: 2px 0;
   }
 </style>
