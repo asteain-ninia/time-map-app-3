@@ -22,22 +22,38 @@
   let editName = $state('');
   /** 編集中の説明 */
   let editDescription = $state('');
+  /** 編集中のスタイル */
+  let editFillColor = $state('#4a90d9');
+  let editSelectedFillColor = $state('#00ccff');
+  let editAutoColor = $state(false);
 
   /** アンカー変更時にフォームを同期 */
   $effect(() => {
     if (anchor) {
       editName = anchor.property.name;
       editDescription = anchor.property.description;
+      editFillColor = anchor.property.style?.fillColor ?? '#4a90d9';
+      editSelectedFillColor = anchor.property.style?.selectedFillColor ?? '#00ccff';
+      editAutoColor = anchor.property.style?.autoColor ?? false;
     }
   });
 
   /** プロパティの変更を適用 */
   function applyChanges(): void {
     if (!feature || !anchor) return;
+    const style = anchor.shape.type === 'Polygon'
+      ? {
+          fillColor: editFillColor,
+          selectedFillColor: editSelectedFillColor,
+          autoColor: editAutoColor,
+          palette: anchor.property.style?.palette ?? 'default',
+        }
+      : anchor.property.style;
     const newProperty: AnchorProperty = {
       ...anchor.property,
       name: editName,
       description: editDescription,
+      style,
     };
     onPropertyChange?.(feature.id, anchor.id, newProperty);
   }
@@ -121,6 +137,50 @@
       <label class="field-label">レイヤー</label>
       <span class="field-value">{anchor.placement.layerId}</span>
     </div>
+
+    {#if anchor.shape.type === 'Polygon'}
+      <div class="section-header">面スタイル</div>
+
+      <div class="field">
+        <label class="field-label" for="prop-fill">塗り色</label>
+        <div class="color-field">
+          <input
+            class="color-picker"
+            id="prop-fill"
+            type="color"
+            bind:value={editFillColor}
+            onchange={applyChanges}
+            disabled={editAutoColor}
+          />
+          <span class="color-value">{editFillColor}</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="prop-sel-fill">選択色</label>
+        <div class="color-field">
+          <input
+            class="color-picker"
+            id="prop-sel-fill"
+            type="color"
+            bind:value={editSelectedFillColor}
+            onchange={applyChanges}
+          />
+          <span class="color-value">{editSelectedFillColor}</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="prop-auto-color">自動配色</label>
+        <input
+          class="field-checkbox"
+          id="prop-auto-color"
+          type="checkbox"
+          bind:checked={editAutoColor}
+          onchange={applyChanges}
+        />
+      </div>
+    {/if}
 
     <div class="section-header">アンカー一覧 ({feature.anchors.length}件)</div>
 
@@ -221,6 +281,38 @@
     color: #ccc;
     font-size: 12px;
     padding-top: 2px;
+  }
+
+  .color-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .color-picker {
+    width: 28px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid #3c3c3c;
+    border-radius: 3px;
+    background: none;
+    cursor: pointer;
+  }
+
+  .color-picker:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .color-value {
+    color: #999;
+    font-size: 11px;
+    font-family: monospace;
+  }
+
+  .field-checkbox {
+    accent-color: #007acc;
   }
 
   .anchor-list {

@@ -150,9 +150,10 @@
           {#if isSelected}
             <path
               {d}
-              fill={SELECTION_FILL}
+              fill={anchor.property.style?.selectedFillColor ?? SELECTION_FILL}
               stroke="none"
               fill-rule="evenodd"
+              opacity="0.4"
             />
           {/if}
         {/if}
