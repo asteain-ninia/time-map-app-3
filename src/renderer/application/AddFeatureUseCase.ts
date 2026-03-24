@@ -175,6 +175,21 @@ export class AddFeatureUseCase {
     return this.createFeature('Polygon', shape, layerId, currentTime, name);
   }
 
+  /**
+   * 既存のFeatureShape（Polygon）から地物を追加する
+   *
+   * ナイフツール（分割）で生成された形状をそのまま地物として登録する。
+   * 頂点は呼び出し側で事前にverticesマップに登録済みであること。
+   */
+  addPolygonFromShape(
+    shape: FeatureShape & { type: 'Polygon' },
+    layerId: string,
+    currentTime: TimePoint,
+    name?: string
+  ): Feature {
+    return this.createFeature('Polygon', shape, layerId, currentTime, name);
+  }
+
   /** 頂点を生成して登録する */
   private createVertex(coord: Coordinate): Vertex {
     const id = `v-${this.nextVertexNum++}`;

@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import Toolbar from '@presentation/components/Toolbar.svelte';
   import MapCanvas from '@presentation/components/MapCanvas.svelte';
+  import SplitConfirmModal from '@presentation/components/SplitConfirmModal.svelte';
   import Sidebar from '@presentation/components/Sidebar.svelte';
   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
   import StatusBar from '@presentation/components/StatusBar.svelte';
@@ -46,6 +47,14 @@
     type FeatureDragState,
   } from '@infrastructure/rendering/featureDragManager';
   import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
+  import {
+    startKnifeDrawing,
+    addKnifeVertex,
+    undoKnifeVertex,
+    canConfirmKnife as canConfirmKnifeDrawing,
+    type KnifeDrawingState,
+  } from '@infrastructure/rendering/knifeDrawingManager';
+  import { SplitFeatureCommand } from '@application/commands/SplitFeatureCommand';
   import { addHoleRing, addExclaveRing } from '@domain/services/RingEditService';
   import { Vertex } from '@domain/entities/Vertex';
   import { Ring } from '@domain/value-objects/Ring';
@@ -86,6 +95,8 @@
   let snapIndicator = $state<SnapIndicator | null>(null);
   let ringDrawingState = $state<RingDrawingState | null>(null);
   let featureDragState = $state<FeatureDragState | null>(null);
+  let knifeDrawingState = $state<KnifeDrawingState | null>(null);
+  let showSplitModal = $state(false);
   /** 地物ドラッグの開始geo座標 */
   let featureDragStartGeo = $state<{ lon: number; lat: number } | null>(null);
   /** 地物ドラッグ中の前回geo座標（差分計算用） */
@@ -165,6 +176,11 @@
   }
 
   function onMapClick(coord: Coordinate): void {
+    // ナイフ描画中はクリックで頂点追加
+    if (knifeDrawingState) {
+      knifeDrawingState = addKnifeVertex(knifeDrawingState, coord);
+      return;
+    }
     // リング描画中はクリックで頂点追加
     if (ringDrawingState) {
       ringDrawingState = addRingVertex(ringDrawingState, coord);
@@ -285,6 +301,64 @@
 
   function onCancelRing(): void {
     ringDrawingState = null;
+  }
+
+  // --- ナイフツール（分割） ---
+
+  function onStartKnife(): void {
+    if (!selectedFeatureId) return;
+    knifeDrawingState = startKnifeDrawing(selectedFeatureId);
+  }
+
+  /** ナイフ描画の確定ボタン → 分割モーダルを表示 */
+  function onConfirmKnife(): void {
+    if (!knifeDrawingState) return;
+    showSplitModal = true;
+  }
+
+  /** 分割モーダルで確定 → SplitFeatureCommand実行 */
+  function onSplitConfirm(newName: string): void {
+    if (!knifeDrawingState || !currentTime) return;
+
+    const cuttingLine = knifeDrawingState.coords.map(c => ({ x: c.x, y: c.y }));
+
+    undoRedo.execute(
+      new SplitFeatureCommand(addFeature, {
+        featureId: knifeDrawingState.featureId,
+        cuttingLine,
+        isClosed: knifeDrawingState.isClosed,
+        currentTime,
+        newFeatureName: newName,
+      })
+    );
+
+    refreshFeatureData();
+    knifeDrawingState = null;
+    showSplitModal = false;
+    selectedFeatureId = null;
+  }
+
+  function onCancelKnife(): void {
+    knifeDrawingState = null;
+    showSplitModal = false;
+  }
+
+  /** ナイフツールの確定可否を計算 */
+  function getKnifeCanConfirm(): boolean {
+    if (!knifeDrawingState || !selectedFeatureId || !currentTime) return false;
+    const feature = features.find(f => f.id === selectedFeatureId);
+    if (!feature) return false;
+    const anchor = feature.getActiveAnchor(currentTime);
+    if (!anchor || anchor.shape.type !== 'Polygon') return false;
+
+    const verts = addFeature.getVertices();
+    const polygonRings = anchor.shape.rings.map(ring =>
+      ring.vertexIds.map(vid => {
+        const v = verts.get(vid);
+        return v ? { x: v.x, y: v.y } : { x: 0, y: 0 };
+      })
+    );
+    return canConfirmKnifeDrawing(knifeDrawingState, polygonRings);
   }
 
   function onDeleteVertex(): void {
@@ -523,7 +597,11 @@
   /** キーボードイベント */
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
-      if (ringDrawingState) {
+      if (showSplitModal) {
+        showSplitModal = false;
+      } else if (knifeDrawingState) {
+        knifeDrawingState = null;
+      } else if (ringDrawingState) {
         ringDrawingState = null;
       } else if (isDrawing) {
         toolStore.send({ type: 'KEY_ESCAPE' });
@@ -538,7 +616,9 @@
     }
     if (e.ctrlKey && e.key === 'z') {
       e.preventDefault();
-      if (ringDrawingState) {
+      if (knifeDrawingState) {
+        knifeDrawingState = undoKnifeVertex(knifeDrawingState);
+      } else if (ringDrawingState) {
         ringDrawingState = undoRingVertex(ringDrawingState);
       } else if (isDrawing) {
         toolStore.send({ type: 'UNDO_VERTEX' });
@@ -617,6 +697,12 @@
           {onDeleteVertex}
           {onMapMouseDown}
           isFeatureDragging={featureDragState !== null && hasFeatureDragMoved(featureDragState)}
+          isKnifeDrawing={knifeDrawingState !== null}
+          knifeDrawingCoords={knifeDrawingState?.coords ?? []}
+          knifeCanConfirm={getKnifeCanConfirm()}
+          {onStartKnife}
+          {onConfirmKnife}
+          {onCancelKnife}
         />
       </div>
       <div class="sidebar-area">
@@ -629,6 +715,14 @@
     </div>
   </div>
 </div>
+
+<!-- 分割確認モーダル -->
+<SplitConfirmModal
+  isOpen={showSplitModal}
+  featureName={knifeDrawingState ? features.find(f => f.id === knifeDrawingState?.featureId)?.getActiveAnchor(currentTime)?.property.name ?? '' : ''}
+  onConfirm={onSplitConfirm}
+  onCancel={() => { showSplitModal = false; }}
+/>
 
 <style>
   :global(*) {

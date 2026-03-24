@@ -2,26 +2,50 @@
   let {
     featureType = null,
     isRingDrawing = false,
+    isKnifeDrawing = false,
     canConfirm = false,
+    canConfirmKnife = false,
     onAddHole,
     onAddExclave,
     onConfirmRing,
     onCancelRing,
     onDeleteVertex,
+    onStartKnife,
+    onConfirmKnife,
+    onCancelKnife,
   }: {
     featureType?: string | null;
     isRingDrawing?: boolean;
+    isKnifeDrawing?: boolean;
     canConfirm?: boolean;
+    canConfirmKnife?: boolean;
     onAddHole?: () => void;
     onAddExclave?: () => void;
     onConfirmRing?: () => void;
     onCancelRing?: () => void;
     onDeleteVertex?: () => void;
+    onStartKnife?: () => void;
+    onConfirmKnife?: () => void;
+    onCancelKnife?: () => void;
   } = $props();
 </script>
 
 <div class="edit-toolbar">
-  {#if isRingDrawing}
+  {#if isKnifeDrawing}
+    <button
+      class="edit-btn confirm"
+      disabled={!canConfirmKnife}
+      onclick={() => onConfirmKnife?.()}
+    >
+      分割確定
+    </button>
+    <button
+      class="edit-btn cancel"
+      onclick={() => onCancelKnife?.()}
+    >
+      キャンセル
+    </button>
+  {:else if isRingDrawing}
     <button
       class="edit-btn confirm"
       disabled={!canConfirm}
@@ -57,6 +81,13 @@
         title="飛び地リングを追加"
       >
         飛び地追加
+      </button>
+      <button
+        class="edit-btn knife"
+        onclick={() => onStartKnife?.()}
+        title="ナイフツールで分割"
+      >
+        分割
       </button>
     {/if}
   {/if}

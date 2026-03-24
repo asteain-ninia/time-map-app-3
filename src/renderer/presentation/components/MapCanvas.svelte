@@ -49,6 +49,12 @@
     onDeleteVertex,
     onMapMouseDown,
     isFeatureDragging = false,
+    isKnifeDrawing = false,
+    knifeDrawingCoords = [] as readonly Coordinate[],
+    knifeCanConfirm = false,
+    onStartKnife,
+    onConfirmKnife,
+    onCancelKnife,
   }: {
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
@@ -83,6 +89,12 @@
     onDeleteVertex?: () => void;
     onMapMouseDown?: (coord: Coordinate, screenX: number, screenY: number) => void;
     isFeatureDragging?: boolean;
+    isKnifeDrawing?: boolean;
+    knifeDrawingCoords?: readonly Coordinate[];
+    knifeCanConfirm?: boolean;
+    onStartKnife?: () => void;
+    onConfirmKnife?: () => void;
+    onCancelKnife?: () => void;
   } = $props();
 
   /** 描画確定可能か（線:2点以上、面:3点以上） */
@@ -316,6 +328,16 @@
       />
     {/if}
 
+    <!-- ナイフツール描画プレビュー（分断線） -->
+    {#if isKnifeDrawing && knifeDrawingCoords.length > 0}
+      <DrawingPreview
+        coords={knifeDrawingCoords}
+        zoom={zoomLevel}
+        cursorGeo={cursorGeo}
+        isPolygon={false}
+      />
+    {/if}
+
     <!-- グリッド線 -->
     <GridRenderer zoom={zoomLevel} />
   </svg>
@@ -344,12 +366,17 @@
     <EditToolbar
       featureType={selectedAnchor()?.shape.type ?? null}
       {isRingDrawing}
+      {isKnifeDrawing}
       canConfirm={ringDrawingCanConfirm}
+      {canConfirmKnife}
       {onAddHole}
       {onAddExclave}
       {onConfirmRing}
       {onCancelRing}
       {onDeleteVertex}
+      {onStartKnife}
+      {onConfirmKnife}
+      {onCancelKnife}
     />
   {/if}
 
