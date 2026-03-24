@@ -35,6 +35,36 @@
   const SELECTION_STROKE = '#00ccff';
   const SELECTION_FILL = 'rgba(0, 204, 255, 0.2)';
 
+  /** ラベルの最小ズーム（小さすぎるとラベルが見えないため） */
+  const LABEL_MIN_ZOOM = 2;
+
+  /** 地物の重心を計算（ラベル配置用） */
+  function getCentroid(anchor: FeatureAnchor): { x: number; y: number } | null {
+    if (anchor.shape.type === 'Point') {
+      const v = vertices.get(anchor.shape.vertexId);
+      return v ? { x: geoToSvgX(v.x), y: geoToSvgY(v.y) } : null;
+    }
+    if (anchor.shape.type === 'LineString') {
+      const ids = anchor.shape.vertexIds;
+      if (ids.length === 0) return null;
+      const mid = Math.floor(ids.length / 2);
+      const v = vertices.get(ids[mid]);
+      return v ? { x: geoToSvgX(v.x), y: geoToSvgY(v.y) } : null;
+    }
+    if (anchor.shape.type === 'Polygon') {
+      const ring = anchor.shape.rings[0];
+      if (!ring || ring.vertexIds.length === 0) return null;
+      let sx = 0, sy = 0, count = 0;
+      for (const vid of ring.vertexIds) {
+        const v = vertices.get(vid);
+        if (v) { sx += v.x; sy += v.y; count++; }
+      }
+      if (count === 0) return null;
+      return { x: geoToSvgX(sx / count), y: geoToSvgY(sy / count) };
+    }
+    return null;
+  }
+
   /** 表示中レイヤー（order昇順 = 下から描画） */
   let visibleLayers = $derived(
     layers.filter((l) => l.visible).toSorted((a, b) => a.order - b.order)
@@ -125,6 +155,28 @@
               fill-rule="evenodd"
             />
           {/if}
+        {/if}
+      {/if}
+
+      <!-- ラベル表示 -->
+      {#if anchor.property.name && zoom >= LABEL_MIN_ZOOM}
+        {@const centroid = getCentroid(anchor)}
+        {#if centroid}
+          <text
+            x={centroid.x}
+            y={centroid.y}
+            text-anchor="middle"
+            dominant-baseline="central"
+            font-size={9 / zoom}
+            fill="#e0e0e0"
+            stroke="#1a1a2e"
+            stroke-width={2 / zoom}
+            paint-order="stroke"
+            pointer-events="none"
+            style="user-select: none;"
+          >
+            {anchor.property.name}
+          </text>
         {/if}
       {/if}
     {/each}
