@@ -140,7 +140,8 @@
 
   /** viewBoxとwrapOffsetsを一括更新 */
   function syncViewport(): void {
-    syncViewport();
+    viewBox = viewport.getViewBox();
+    zoomLevel = viewport.getZoom();
     wrapOffsets = viewport.getWrapOffsets();
   }
 
