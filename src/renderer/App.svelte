@@ -20,7 +20,6 @@
   import { eventBus } from '@application/EventBus';
   import { Coordinate } from '@domain/value-objects/Coordinate';
   import type { Feature } from '@domain/entities/Feature';
-  import type { Vertex } from '@domain/entities/Vertex';
   import type { Layer } from '@domain/entities/Layer';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
   import { hitTest } from '@infrastructure/rendering/hitTestUtils';
@@ -85,6 +84,7 @@
   import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
   import { DEFAULT_SETTINGS, DEFAULT_METADATA, type WorldSettings, type WorldMetadata } from '@domain/entities/World';
   import { Vertex } from '@domain/entities/Vertex';
+  import { serialize as serializeWorld } from '@infrastructure/persistence/JSONSerializer';
   import { Ring } from '@domain/value-objects/Ring';
   import {
     createDirtyState,
@@ -188,9 +188,7 @@
         }
         // 世代1に現在の状態を保存
         const world = saveLoad.assembleWorld();
-        const { JSONSerializer } = await import('@infrastructure/persistence/JSONSerializer');
-        const serializer = new JSONSerializer();
-        const json = serializer.serialize(world);
+        const json = serializeWorld(world);
         await window.fileAPI.writeFile(getBackupFileName(filePath, 1), json);
         lastBackupTime = Date.now();
       } catch (err) {
