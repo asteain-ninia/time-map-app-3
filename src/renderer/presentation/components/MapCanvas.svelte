@@ -9,8 +9,10 @@
   import type { Feature } from '@domain/entities/Feature';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { Layer } from '@domain/entities/Layer';
+  import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
+  import type { SnapIndicator } from '@infrastructure/rendering/snapIndicatorUtils';
 
   let {
     features = [] as readonly Feature[],
@@ -23,6 +25,8 @@
     drawingCoords = [] as readonly Coordinate[],
     selectedFeatureId = null as string | null,
     selectedVertexIds = new Set<string>() as ReadonlySet<string>,
+    sharedGroups = new Map<string, SharedVertexGroup>() as ReadonlyMap<string, SharedVertexGroup>,
+    snapIndicator = null as SnapIndicator | null,
     onMapClick,
     onMapDoubleClick,
     onPanStart,
@@ -44,6 +48,8 @@
     drawingCoords?: readonly Coordinate[];
     selectedFeatureId?: string | null;
     selectedVertexIds?: ReadonlySet<string>;
+    sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
+    snapIndicator?: SnapIndicator | null;
     onMapClick?: (coord: Coordinate) => void;
     onMapDoubleClick?: (coord: Coordinate) => void;
     onPanStart?: () => void;
@@ -253,6 +259,8 @@
         {vertices}
         zoom={zoomLevel}
         {selectedVertexIds}
+        {sharedGroups}
+        {snapIndicator}
         {onVertexMouseDown}
         {onEdgeHandleMouseDown}
       />

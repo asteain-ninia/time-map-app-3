@@ -1,14 +1,19 @@
 <script lang="ts">
   import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
   import type { Vertex } from '@domain/entities/Vertex';
+  import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
+  import type { SnapIndicator } from '@infrastructure/rendering/snapIndicatorUtils';
   import { geoToSvgX, geoToSvgY } from '@infrastructure/rendering/featureRenderingUtils';
   import { getUniqueVertexIds, getShapeEdges } from '@infrastructure/rendering/vertexHandleUtils';
+  import { isVertexShared } from '@infrastructure/rendering/snapIndicatorUtils';
 
   let {
     anchor,
     vertices,
     zoom,
     selectedVertexIds = new Set<string>(),
+    sharedGroups = new Map<string, SharedVertexGroup>(),
+    snapIndicator = null,
     onVertexMouseDown,
     onEdgeHandleMouseDown,
   }: {
@@ -16,6 +21,8 @@
     vertices: ReadonlyMap<string, Vertex>;
     zoom: number;
     selectedVertexIds?: ReadonlySet<string>;
+    sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
+    snapIndicator?: SnapIndicator | null;
     onVertexMouseDown?: (vertexId: string, e: MouseEvent) => void;
     onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
   } = $props();
@@ -29,6 +36,7 @@
   /** ハンドルサイズ */
   const VERTEX_RADIUS = 5;
   const EDGE_HANDLE_RADIUS = 3.5;
+  const SNAP_INDICATOR_RADIUS = 8;
 </script>
 
 <!-- エッジハンドル（中点マーカー） -->
@@ -61,13 +69,14 @@
   {@const vertex = vertices.get(vertexId)}
   {#if vertex}
     {@const isSelected = selectedVertexIds.has(vertexId)}
+    {@const shared = isVertexShared(vertexId, sharedGroups)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <circle
       cx={geoToSvgX(vertex.x)}
       cy={geoToSvgY(vertex.y)}
       r={(isSelected ? VERTEX_RADIUS + 1 : VERTEX_RADIUS) / zoom}
-      fill={isSelected ? '#00ccff' : '#ffffff'}
-      stroke={isSelected ? '#ffffff' : '#00ccff'}
+      fill={isSelected ? '#00ccff' : shared ? '#ffaa00' : '#ffffff'}
+      stroke={isSelected ? '#ffffff' : shared ? '#ff8800' : '#00ccff'}
       stroke-width={(isSelected ? 2 : 1.5) / zoom}
       style="cursor: move;"
       onmousedown={(e) => {
@@ -77,3 +86,17 @@
     />
   {/if}
 {/each}
+
+<!-- スナップインジケーター（ドラッグ中の近接頂点表示） -->
+{#if snapIndicator}
+  <circle
+    cx={geoToSvgX(snapIndicator.x)}
+    cy={geoToSvgY(snapIndicator.y)}
+    r={SNAP_INDICATOR_RADIUS / zoom}
+    fill="none"
+    stroke={snapIndicator.isShared ? '#ffaa00' : '#00ff88'}
+    stroke-width={2 / zoom}
+    stroke-dasharray="{3 / zoom} {2 / zoom}"
+    opacity="0.8"
+  />
+{/if}

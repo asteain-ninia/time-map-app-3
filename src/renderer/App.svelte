@@ -23,6 +23,14 @@
     hasMoved,
     type DragState,
   } from '@infrastructure/rendering/vertexDragManager';
+  import {
+    buildSnapIndicator,
+    type SnapIndicator,
+  } from '@infrastructure/rendering/snapIndicatorUtils';
+  import {
+    findSnapCandidates,
+    screenToWorldSnapDistance,
+  } from '@domain/services/SharedVertexService';
 
   // --- ツール状態 ---
 
@@ -56,6 +64,8 @@
   let selectedFeatureId = $state<string | null>(null);
   let selectedVertexIds = $state<ReadonlySet<string>>(new Set());
   let dragState = $state<DragState | null>(null);
+  let sharedGroups = $state(addFeature.getSharedVertexGroups());
+  let snapIndicator = $state<SnapIndicator | null>(null);
 
   /** ツールストアの状態をリアクティブ変数に同期する */
   function syncToolState(): void {
@@ -70,6 +80,7 @@
   function refreshFeatureData(): void {
     features = addFeature.getFeatures();
     vertices = addFeature.getVertices();
+    sharedGroups = addFeature.getSharedVertexGroups();
   }
 
   /** レイヤーデータを更新する */
@@ -277,6 +288,7 @@
       refreshFeatureData();
     }
     dragState = null;
+    snapIndicator = null;
   }
 
   /** カーソル座標更新コールバック（MapCanvasから呼ばれる） */
@@ -286,6 +298,16 @@
       dragState = updateDragPreview(dragState, newCoord);
       // リアルタイムプレビュー: 実際の頂点を仮移動
       vertexEdit.moveVertex(dragState.vertexId, newCoord);
+
+      // スナップ候補を検索（ドラッグ中の頂点を除外）
+      const snapDist = screenToWorldSnapDistance(50, window.innerWidth, 1);
+      const candidates = findSnapCandidates(
+        geo.lon, geo.lat, vertices,
+        new Set([dragState.vertexId]),
+        snapDist
+      );
+      snapIndicator = buildSnapIndicator(candidates, vertices, sharedGroups);
+
       refreshFeatureData();
     }
   }
@@ -357,6 +379,8 @@
           {drawingCoords}
           {selectedFeatureId}
           {selectedVertexIds}
+          {sharedGroups}
+          {snapIndicator}
           {onMapClick}
           {onMapDoubleClick}
           {onPanStart}
