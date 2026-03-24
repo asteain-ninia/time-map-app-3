@@ -4,6 +4,7 @@
   import MapCanvas from '@presentation/components/MapCanvas.svelte';
   import SplitConfirmModal from '@presentation/components/SplitConfirmModal.svelte';
   import MergeConfirmModal from '@presentation/components/MergeConfirmModal.svelte';
+  import ConflictResolutionDialog from '@presentation/components/ConflictResolutionDialog.svelte';
   import Sidebar from '@presentation/components/Sidebar.svelte';
   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
   import StatusBar from '@presentation/components/StatusBar.svelte';
@@ -57,6 +58,8 @@
   } from '@infrastructure/rendering/knifeDrawingManager';
   import { SplitFeatureCommand } from '@application/commands/SplitFeatureCommand';
   import { MergeFeatureCommand } from '@application/commands/MergeFeatureCommand';
+  import type { SpatialConflict } from '@domain/services/ConflictDetectionService';
+  import type { ConflictResolution } from '@application/AnchorEditDraft';
   import { addHoleRing, addExclaveRing } from '@domain/services/RingEditService';
   import { Vertex } from '@domain/entities/Vertex';
   import { Ring } from '@domain/value-objects/Ring';
@@ -101,6 +104,13 @@
   let showSplitModal = $state(false);
   let mergeTargetIds = $state<string[]>([]);
   let showMergeModal = $state(false);
+
+  // --- 競合解決 ---
+  let conflictDialogOpen = $state(false);
+  let conflictList = $state<readonly SpatialConflict[]>([]);
+  let conflictCurrentIndex = $state(0);
+  let conflictResolutions = $state<readonly ConflictResolution[]>([]);
+  let conflictError = $state('');
   /** 地物ドラッグの開始geo座標 */
   let featureDragStartGeo = $state<{ lon: number; lat: number } | null>(null);
   /** 地物ドラッグ中の前回geo座標（差分計算用） */
@@ -406,6 +416,68 @@
 
   function clearMergeTargets(): void {
     mergeTargetIds = [];
+  }
+
+  // --- 競合解決ダイアログ ---
+
+  /** 競合解決ダイアログを開く */
+  function openConflictDialog(conflicts: readonly SpatialConflict[]): void {
+    conflictList = conflicts;
+    conflictCurrentIndex = 0;
+    conflictResolutions = [];
+    conflictError = '';
+    conflictDialogOpen = true;
+  }
+
+  function onConflictSelectPreferred(featureId: string): void {
+    const idx = conflictCurrentIndex;
+    const filtered = conflictResolutions.filter(r => r.conflictIndex !== idx);
+    conflictResolutions = [...filtered, { conflictIndex: idx, preferFeatureId: featureId }];
+  }
+
+  function onConflictNext(): void {
+    if (conflictCurrentIndex < conflictList.length - 1) {
+      conflictCurrentIndex++;
+    }
+  }
+
+  function onConflictPrev(): void {
+    if (conflictCurrentIndex > 0) {
+      conflictCurrentIndex--;
+    }
+  }
+
+  function onConflictJumpTo(index: number): void {
+    if (index >= 0 && index < conflictList.length) {
+      conflictCurrentIndex = index;
+    }
+  }
+
+  function onConflictCommit(): void {
+    // 競合解決の適用は後続の Resolve UseCase と連携して行う
+    // 現時点ではダイアログの解決結果を保存して閉じる
+    conflictDialogOpen = false;
+  }
+
+  function onConflictCancel(): void {
+    conflictDialogOpen = false;
+    conflictList = [];
+    conflictResolutions = [];
+  }
+
+  /** 競合名マップの生成 */
+  function getConflictFeatureNameMap(): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const conflict of conflictList) {
+      for (const fid of [conflict.featureIdA, conflict.featureIdB]) {
+        if (!map.has(fid)) {
+          const f = features.find(feat => feat.id === fid);
+          const name = f?.getActiveAnchor(currentTime)?.property.name ?? fid;
+          map.set(fid, name);
+        }
+      }
+    }
+    return map;
   }
 
   function onDeleteVertex(): void {
@@ -768,6 +840,23 @@
 </div>
 
 <!-- 分割確認モーダル -->
+<!-- 競合解決ダイアログ -->
+<ConflictResolutionDialog
+  isOpen={conflictDialogOpen}
+  conflicts={conflictList}
+  currentIndex={conflictCurrentIndex}
+  resolutions={conflictResolutions}
+  allResolved={conflictResolutions.length >= conflictList.length && conflictList.length > 0}
+  errorMessage={conflictError}
+  featureNameMap={getConflictFeatureNameMap()}
+  onSelectPreferred={onConflictSelectPreferred}
+  onNext={onConflictNext}
+  onPrev={onConflictPrev}
+  onJumpTo={onConflictJumpTo}
+  onCommit={onConflictCommit}
+  onCancel={onConflictCancel}
+/>
+
 <!-- 結合確認モーダル -->
 <MergeConfirmModal
   isOpen={showMergeModal}
