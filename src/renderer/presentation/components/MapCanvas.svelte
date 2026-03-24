@@ -47,6 +47,8 @@
     onConfirmRing,
     onCancelRing,
     onDeleteVertex,
+    onMapMouseDown,
+    isFeatureDragging = false,
   }: {
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
@@ -68,7 +70,7 @@
     onCancel?: () => void;
     onVertexMouseDown?: (vertexId: string, e: MouseEvent) => void;
     onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
-    onCursorGeoUpdate?: (geo: { lon: number; lat: number }) => void;
+    onCursorGeoUpdate?: (geo: { lon: number; lat: number }, screenX: number, screenY: number) => void;
     onDragEnd?: () => void;
     isRingDrawing?: boolean;
     ringDrawingCanConfirm?: boolean;
@@ -79,6 +81,8 @@
     onConfirmRing?: () => void;
     onCancelRing?: () => void;
     onDeleteVertex?: () => void;
+    onMapMouseDown?: (coord: Coordinate, screenX: number, screenY: number) => void;
+    isFeatureDragging?: boolean;
   } = $props();
 
   /** 描画確定可能か（線:2点以上、面:3点以上） */
@@ -137,6 +141,7 @@
   /** カーソルスタイル */
   let cursorStyle = $derived(
     isPanning ? 'grabbing' :
+    isFeatureDragging ? 'move' :
     toolMode === 'view' ? 'grab' :
     toolMode === 'add' ? 'crosshair' :
     'default'
@@ -161,6 +166,12 @@
       lastPanY = e.clientY;
       onPanStart?.();
       e.preventDefault();
+    } else if (e.button === 0 && onMapMouseDown) {
+      const rect = containerEl?.getBoundingClientRect();
+      if (rect) {
+        const geo = viewport.screenToGeo(e.clientX - rect.left, e.clientY - rect.top);
+        onMapMouseDown(new Coordinate(geo.lon, geo.lat), e.clientX, e.clientY);
+      }
     }
   }
 
@@ -173,7 +184,7 @@
     cursorGeo = viewport.screenToGeo(x, y);
     if (cursorGeo) {
       eventBus.emit('cursor:moved', { lon: cursorGeo.lon, lat: cursorGeo.lat });
-      onCursorGeoUpdate?.(cursorGeo);
+      onCursorGeoUpdate?.(cursorGeo, e.clientX, e.clientY);
     }
 
     if (isPanning) {
@@ -204,8 +215,8 @@
   }
 
   function onClick(e: MouseEvent): void {
-    // パン中やパン直後はクリックとして扱わない
-    if (e.button !== 0) return;
+    // パン中やドラッグ後はクリックとして扱わない
+    if (e.button !== 0 || isFeatureDragging) return;
     const rect = containerEl?.getBoundingClientRect();
     if (!rect) return;
     const geo = viewport.screenToGeo(

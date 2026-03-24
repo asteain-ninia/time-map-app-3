@@ -38,6 +38,14 @@
     canConfirmRing,
     type RingDrawingState,
   } from '@infrastructure/rendering/ringDrawingManager';
+  import {
+    startFeatureDrag,
+    updateFeatureDrag,
+    hasFeatureDragMoved,
+    getFeatureDragDelta,
+    type FeatureDragState,
+  } from '@infrastructure/rendering/featureDragManager';
+  import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
   import { addHoleRing, addExclaveRing } from '@domain/services/RingEditService';
   import { Vertex } from '@domain/entities/Vertex';
   import { Ring } from '@domain/value-objects/Ring';
@@ -77,6 +85,11 @@
   let sharedGroups = $state(addFeature.getSharedVertexGroups());
   let snapIndicator = $state<SnapIndicator | null>(null);
   let ringDrawingState = $state<RingDrawingState | null>(null);
+  let featureDragState = $state<FeatureDragState | null>(null);
+  /** 地物ドラッグの開始geo座標 */
+  let featureDragStartGeo = $state<{ lon: number; lat: number } | null>(null);
+  /** 地物ドラッグ中の前回geo座標（差分計算用） */
+  let featureDragLastGeo = $state<{ lon: number; lat: number } | null>(null);
 
   /** ツールストアの状態をリアクティブ変数に同期する */
   function syncToolState(): void {
@@ -302,6 +315,87 @@
     refreshFeatureData();
   }
 
+  /** 地図上のmousedown — 地物ドラッグ開始判定 */
+  function onMapMouseDown(coord: Coordinate, screenX: number, screenY: number): void {
+    if (toolMode !== 'edit' && toolMode !== 'view') return;
+    if (!selectedFeatureId || !currentTime) return;
+
+    // ヒットテストで選択中の地物上かどうか判定
+    const result = hitTest(coord, features, vertices, layers, currentTime, getHitThreshold());
+    if (result && result.featureId === selectedFeatureId) {
+      featureDragState = startFeatureDrag(selectedFeatureId, screenX, screenY);
+      featureDragStartGeo = { lon: coord.x, lat: coord.y };
+      featureDragLastGeo = { lon: coord.x, lat: coord.y };
+    }
+  }
+
+  /** 地物ドラッグの確定 */
+  function commitFeatureDrag(): void {
+    if (!featureDragState || !currentTime || !featureDragStartGeo || !featureDragLastGeo) {
+      featureDragState = null;
+      featureDragStartGeo = null;
+      featureDragLastGeo = null;
+      return;
+    }
+
+    if (hasFeatureDragMoved(featureDragState)) {
+      const totalDx = featureDragLastGeo.lon - featureDragStartGeo.lon;
+      const totalDy = featureDragLastGeo.lat - featureDragStartGeo.lat;
+
+      // プレビュー中に直接移動した分を元に戻す（逆方向に移動）
+      applyFeatureTranslation(featureDragState.featureId, -totalDx, -totalDy);
+
+      // Undo対応コマンドで正式に移動
+      undoRedo.execute(
+        new MoveFeatureCommand(addFeature, {
+          featureId: featureDragState.featureId,
+          dx: totalDx,
+          dy: totalDy,
+          currentTime,
+        })
+      );
+      refreshFeatureData();
+    }
+
+    featureDragState = null;
+    featureDragStartGeo = null;
+    featureDragLastGeo = null;
+  }
+
+  /** 地物の全頂点を平行移動する（プレビュー用） */
+  function applyFeatureTranslation(featureId: string, dx: number, dy: number): void {
+    const feature = features.find(f => f.id === featureId);
+    if (!feature || !currentTime) return;
+    const anchor = feature.getActiveAnchor(currentTime);
+    if (!anchor) return;
+
+    const mutableVertices = addFeature.getVertices() as Map<string, Vertex>;
+    const vertexIds: string[] = [];
+
+    switch (anchor.shape.type) {
+      case 'Point':
+        vertexIds.push(anchor.shape.vertexId);
+        break;
+      case 'LineString':
+        vertexIds.push(...anchor.shape.vertexIds);
+        break;
+      case 'Polygon':
+        for (const ring of anchor.shape.rings) {
+          vertexIds.push(...ring.vertexIds);
+        }
+        break;
+    }
+
+    for (const vid of vertexIds) {
+      const vertex = mutableVertices.get(vid);
+      if (vertex) {
+        mutableVertices.set(vid, vertex.withCoordinate(
+          new Coordinate(vertex.coordinate.x + dx, vertex.coordinate.y + dy)
+        ));
+      }
+    }
+  }
+
   /** 頂点ハンドルのmousedown — 頂点選択＋ドラッグ開始 */
   function onVertexMouseDown(vertexId: string, e: MouseEvent): void {
     if (e.shiftKey) {
@@ -394,14 +488,13 @@
   }
 
   /** カーソル座標更新コールバック（MapCanvasから呼ばれる） */
-  function onCursorGeoUpdate(geo: { lon: number; lat: number }): void {
+  function onCursorGeoUpdate(geo: { lon: number; lat: number }, screenX: number, screenY: number): void {
+    // 頂点ドラッグ
     if (dragState) {
       const newCoord = new Coordinate(geo.lon, geo.lat);
       dragState = updateDragPreview(dragState, newCoord);
-      // リアルタイムプレビュー: 実際の頂点を仮移動
       vertexEdit.moveVertex(dragState.vertexId, newCoord);
 
-      // スナップ候補を検索（ドラッグ中の頂点を除外）
       const snapDist = screenToWorldSnapDistance(50, window.innerWidth, 1);
       const candidates = findSnapCandidates(
         geo.lon, geo.lat, vertices,
@@ -409,6 +502,19 @@
         snapDist
       );
       snapIndicator = buildSnapIndicator(candidates, vertices, sharedGroups);
+
+      refreshFeatureData();
+      return;
+    }
+
+    // 地物ドラッグ
+    if (featureDragState && featureDragLastGeo) {
+      const incrementalDx = geo.lon - featureDragLastGeo.lon;
+      const incrementalDy = geo.lat - featureDragLastGeo.lat;
+
+      featureDragState = updateFeatureDrag(featureDragState, screenX, screenY);
+      applyFeatureTranslation(featureDragState.featureId, incrementalDx, incrementalDy);
+      featureDragLastGeo = { lon: geo.lon, lat: geo.lat };
 
       refreshFeatureData();
     }
@@ -499,7 +605,7 @@
           {onVertexMouseDown}
           {onEdgeHandleMouseDown}
           {onCursorGeoUpdate}
-          onDragEnd={commitDrag}
+          onDragEnd={() => { commitDrag(); commitFeatureDrag(); }}
           isRingDrawing={ringDrawingState !== null}
           ringDrawingCanConfirm={ringDrawingState ? canConfirmRing(ringDrawingState) : false}
           ringDrawingCoords={ringDrawingState?.coords ?? []}
@@ -509,6 +615,8 @@
           {onConfirmRing}
           {onCancelRing}
           {onDeleteVertex}
+          {onMapMouseDown}
+          isFeatureDragging={featureDragState !== null && hasFeatureDragMoved(featureDragState)}
         />
       </div>
       <div class="sidebar-area">
