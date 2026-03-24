@@ -5,6 +5,7 @@
   import SplitConfirmModal from '@presentation/components/SplitConfirmModal.svelte';
   import MergeConfirmModal from '@presentation/components/MergeConfirmModal.svelte';
   import ConflictResolutionDialog from '@presentation/components/ConflictResolutionDialog.svelte';
+  import ProjectSettingsDialog from '@presentation/components/ProjectSettingsDialog.svelte';
   import ContextMenu from '@presentation/components/ContextMenu.svelte';
   import type { ContextMenuEntry } from '@presentation/components/ContextMenu.svelte';
   import { buildContextMenuItems, type ContextMenuContext, type ContextMenuActions } from '@infrastructure/rendering/contextMenuBuilder';
@@ -81,6 +82,7 @@
   import type { ConflictResolution } from '@application/AnchorEditDraft';
   import { addHoleRing, addExclaveRing } from '@domain/services/RingEditService';
   import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
+  import { DEFAULT_SETTINGS, DEFAULT_METADATA, type WorldSettings, type WorldMetadata } from '@domain/entities/World';
   import { Vertex } from '@domain/entities/Vertex';
   import { Ring } from '@domain/value-objects/Ring';
 
@@ -124,6 +126,21 @@
   let showSplitModal = $state(false);
   let mergeTargetIds = $state<string[]>([]);
   let showMergeModal = $state(false);
+
+  // --- プロジェクト設定 ---
+  let settingsDialogOpen = $state(false);
+  let projectSettings = $state<WorldSettings>({ ...DEFAULT_SETTINGS });
+  let projectMetadata = $state<WorldMetadata>({ ...DEFAULT_METADATA });
+
+  function openSettings(): void {
+    settingsDialogOpen = true;
+  }
+
+  function onSettingsSave(metaPatch: Partial<WorldMetadata>, settingsPatch: Partial<WorldSettings>): void {
+    projectMetadata = { ...projectMetadata, ...metaPatch };
+    projectSettings = { ...projectSettings, ...settingsPatch };
+    projectMetadata = { ...projectMetadata, settings: projectSettings };
+  }
 
   // --- プロパティ編集 ---
 
@@ -872,7 +889,9 @@
   /** キーボードイベント */
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
-      if (contextMenuOpen) {
+      if (settingsDialogOpen) {
+        settingsDialogOpen = false;
+      } else if (contextMenuOpen) {
         contextMenuOpen = false;
       } else if (showSplitModal) {
         showSplitModal = false;
@@ -937,6 +956,7 @@
       {addToolType}
       {onModeChange}
       {onAddToolChange}
+      onSettingsClick={openSettings}
     />
   </div>
   <div class="main-area">
@@ -1036,6 +1056,14 @@
   })}
   onConfirm={onMergeConfirm}
   onCancel={onCancelMerge}
+/>
+
+<ProjectSettingsDialog
+  isOpen={settingsDialogOpen}
+  metadata={projectMetadata}
+  settings={projectSettings}
+  onSave={onSettingsSave}
+  onClose={() => { settingsDialogOpen = false; }}
 />
 
 <ContextMenu
