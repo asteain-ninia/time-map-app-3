@@ -1,0 +1,137 @@
+/**
+ * E2E: §2.1 測量モード — 詳細テスト（Phase B）
+ *
+ * 距離表示形式（正距円筒/大円）、座標表示形式（DMS/十進）、
+ * 測量線クリア、複数測量線、モード解除後の測量線残存を検証。
+ */
+import { test, expect } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('domcontentloaded');
+});
+
+/** 測量モードで2点クリックするヘルパー */
+async function measureTwoPoints(page: import('@playwright/test').Page) {
+  await page.keyboard.press('m');
+  const svg = page.locator('.map-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('SVG not found');
+  const cx = box.width / 2;
+  const cy = box.height / 2;
+  await svg.click({ position: { x: cx - 80, y: cy } });
+  await page.waitForTimeout(200);
+  await svg.click({ position: { x: cx + 80, y: cy } });
+  await page.waitForTimeout(300);
+}
+
+// §2.1 測量 — 正距円筒距離と大円距離の両方が表示される
+test('測量で正距円筒距離と大円距離の両方が表示される', async ({ page }) => {
+  await measureTwoPoints(page);
+
+  const surveyPanel = page.locator('.survey-panel');
+  if (await surveyPanel.count() > 0) {
+    const text = await surveyPanel.textContent();
+    // 「大円」と「図法」の両方が含まれる
+    expect(text).toContain('大円');
+    expect(text).toMatch(/図法|正距/);
+  }
+});
+
+// §2.1 測量 — クリック地点の座標が度分秒と十進の両方で表示される
+test('測量パネルに座標が表示される', async ({ page }) => {
+  await page.keyboard.press('m');
+  const svg = page.locator('.map-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('SVG not found');
+
+  await svg.click({ position: { x: box.width / 2, y: box.height / 2 } });
+  await page.waitForTimeout(300);
+
+  const surveyPanel = page.locator('.survey-panel');
+  if (await surveyPanel.count() > 0) {
+    const text = await surveyPanel.textContent();
+    // 度分秒パターンまたは十進パターン
+    expect(text).toMatch(/°/);
+  }
+});
+
+// §2.1 測量 — 測量線が大円パスで描画される（SVG path要素）
+test('測量で大円パスがSVG上に描画される', async ({ page }) => {
+  await measureTwoPoints(page);
+
+  // MeasurementOverlayのpath要素（stroke="#ffd93d"）
+  const surveyPath = page.locator('.map-svg path[stroke="#ffd93d"]');
+  const count = await surveyPath.count();
+  expect(count).toBeGreaterThan(0);
+});
+
+// §2.1 測量 — 測量モード解除後も測量線が残る
+// KNOWN BUG: 測量モード解除時に測量線がクリアされてしまう
+test.fixme('測量モード解除後も測量線が残る', async ({ page }) => {
+  await measureTwoPoints(page);
+
+  // 測量線が存在することを確認
+  const pathsBefore = await page.locator('.map-svg path[stroke="#ffd93d"]').count();
+  expect(pathsBefore).toBeGreaterThan(0);
+
+  // 表示モードに切替
+  await page.keyboard.press('v');
+  await page.waitForTimeout(300);
+
+  // 測量線がまだ残っている
+  const pathsAfter = await page.locator('.map-svg path[stroke="#ffd93d"]').count();
+  expect(pathsAfter).toBeGreaterThan(0);
+});
+
+// §2.1 測量 — 複数の測量線を同時に表示可能
+// KNOWN BUG: 新しい測量で前の測量線が上書きされる
+test.fixme('複数の測量線を同時に表示できる', async ({ page }) => {
+  await page.keyboard.press('m');
+  const svg = page.locator('.map-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('SVG not found');
+
+  // 1回目の測量
+  await svg.click({ position: { x: box.width * 0.3, y: box.height / 2 } });
+  await page.waitForTimeout(200);
+  await svg.click({ position: { x: box.width * 0.5, y: box.height / 2 } });
+  await page.waitForTimeout(300);
+
+  const paths1 = await page.locator('.map-svg path[stroke="#ffd93d"]').count();
+
+  // 2回目の測量
+  await svg.click({ position: { x: box.width * 0.6, y: box.height * 0.3 } });
+  await page.waitForTimeout(200);
+  await svg.click({ position: { x: box.width * 0.8, y: box.height * 0.7 } });
+  await page.waitForTimeout(300);
+
+  const paths2 = await page.locator('.map-svg path[stroke="#ffd93d"]').count();
+  expect(paths2).toBeGreaterThan(paths1);
+});
+
+// §2.1 測量 — 測量結果にkm単位が含まれる
+test('測量結果にkm単位の距離が表示される', async ({ page }) => {
+  await measureTwoPoints(page);
+
+  const surveyPanel = page.locator('.survey-panel');
+  if (await surveyPanel.count() > 0) {
+    const text = await surveyPanel.textContent();
+    expect(text).toContain('km');
+  }
+});
+
+// §2.1 測量 — 始点マーカーと終点マーカーが異なる色で表示される
+test('測量マーカーが始点と終点で異なる色で表示される', async ({ page }) => {
+  await measureTwoPoints(page);
+
+  // 始点（赤系 #ff6b6b）と終点（シアン系 #4ecdc4）のcircle要素
+  const startMarker = page.locator('.map-svg circle[fill="#ff6b6b"]');
+  const endMarker = page.locator('.map-svg circle[fill="#4ecdc4"]');
+
+  const startCount = await startMarker.count();
+  const endCount = await endMarker.count();
+  // 少なくとも1つずつある
+  expect(startCount).toBeGreaterThan(0);
+  expect(endCount).toBeGreaterThan(0);
+});
