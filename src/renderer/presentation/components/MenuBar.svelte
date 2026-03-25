@@ -34,7 +34,16 @@
     action?.();
     closeMenu();
   }
+
+  function onKeyDown(e: KeyboardEvent): void {
+    if (e.key === 'Escape' && openMenu) {
+      closeMenu();
+      e.stopPropagation();
+    }
+  }
 </script>
+
+<svelte:window onkeydown={onKeyDown} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 {#if openMenu}
