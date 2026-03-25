@@ -27,8 +27,11 @@
   let editSelectedFillColor = $state('#00ccff');
   let editAutoColor = $state(false);
 
-  /** アンカー変更時にフォームを同期 */
+  /** featureまたはanchor変更時にフォームを同期 */
   $effect(() => {
+    // feature.idを明示的に読み取り、地物変更時の再トリガーを保証する
+    const _featureId = feature?.id;
+    const _anchorId = anchor?.id;
     if (anchor) {
       editName = anchor.property.name;
       editDescription = anchor.property.description;

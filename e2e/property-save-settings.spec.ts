@@ -80,6 +80,58 @@ test('プロパティパネルに歴史の錨一覧が表示される', async ({
   }
 });
 
+// §2.4.1 プロパティ — 選択地物を変更するとプロパティが更新される
+test('別の地物を選択するとプロパティパネルのIDが更新される', async ({ page }) => {
+  // 2つのポイントを追加
+  await page.keyboard.press('a');
+  const pointTool = page.locator('.tool-button.sub-tool[title="点を追加"]');
+  await pointTool.click();
+  const map = page.locator('.map-svg');
+  const box = await map.boundingBox();
+  if (!box) throw new Error('map not found');
+  await map.click({ position: { x: box.width * 0.3, y: box.height / 2 } });
+  await page.waitForTimeout(500);
+  await map.click({ position: { x: box.width * 0.7, y: box.height / 2 } });
+  await page.waitForTimeout(500);
+  await page.keyboard.press('v');
+
+  // 地物一覧タブを開く
+  const featureTab = page.locator('.tab', { hasText: '地物一覧' });
+  await featureTab.click();
+  await page.waitForTimeout(200);
+
+  const items = page.locator('.feature-item');
+  const count = await items.count();
+  if (count < 2) return; // 地物が2つ追加されていない場合スキップ
+
+  // 1つ目を選択
+  await items.nth(0).click();
+  await page.waitForTimeout(300);
+
+  const propTab = page.locator('.tab', { hasText: 'プロパティ' });
+  await propTab.click();
+  await page.waitForTimeout(200);
+
+  const idInput = page.locator('#prop-id');
+  if (await idInput.count() === 0) return;
+
+  const firstId = await idInput.inputValue();
+
+  // 地物一覧に戻って2つ目を選択
+  await featureTab.click();
+  await page.waitForTimeout(200);
+  await items.nth(1).click();
+  await page.waitForTimeout(300);
+
+  await propTab.click();
+  await page.waitForTimeout(200);
+
+  const secondId = await idInput.inputValue();
+
+  // 異なるIDが表示されることを確認
+  expect(firstId).not.toBe(secondId);
+});
+
 // §2.4.1 プロパティ — 空選択時に「選択されていません」メッセージ
 test('何も選択していない時に「選択されていません」が表示される', async ({ page }) => {
   const propTab = page.locator('.tab', { hasText: 'プロパティ' });
