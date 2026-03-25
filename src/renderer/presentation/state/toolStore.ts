@@ -62,16 +62,19 @@ export function createToolStore(onShapeConfirmed?: OnShapeConfirmed) {
     };
   }
 
+  /** 最後に送信されたイベントを記録（確定/キャンセル判別用） */
+  let lastEvent: ToolEvent | null = null;
+
   /** 確定を検出する */
   function detectConfirmation(): void {
     const snap = actor.getSnapshot();
     // add.drawing → add.idle への遷移で、前回のdrawingCoordsが非空なら確定
+    // KEY_ESCAPE（キャンセル）は除外
     if (
       snap.matches({ add: 'idle' }) &&
-      !prevSnapshot.matches({ add: 'idle' }) &&
+      prevSnapshot.matches({ add: 'drawing' }) &&
       prevSnapshot.context.drawingCoords.length > 0 &&
-      // ESCキャンセル時は除外（clearDrawingが実行される）
-      snap.context.drawingCoords.length > 0
+      lastEvent?.type !== 'KEY_ESCAPE'
     ) {
       onShapeConfirmed?.(
         prevSnapshot.context.addToolType,
@@ -92,6 +95,7 @@ export function createToolStore(onShapeConfirmed?: OnShapeConfirmed) {
   return {
     /** イベントを送信する */
     send(event: ToolEvent): void {
+      lastEvent = event;
       actor.send(event);
     },
 

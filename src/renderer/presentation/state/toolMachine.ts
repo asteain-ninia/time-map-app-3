@@ -144,10 +144,12 @@ export const toolMachine = setup({
             MAP_DOUBLE_CLICK: {
               target: 'idle',
               guard: 'canConfirmShape',
+              actions: 'clearDrawing',
             },
             CONFIRM: {
               target: 'idle',
               guard: 'canConfirmShape',
+              actions: 'clearDrawing',
             },
             UNDO_VERTEX: [
               // 頂点が残っていれば1つ戻す
