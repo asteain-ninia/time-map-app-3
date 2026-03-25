@@ -299,6 +299,11 @@
     markAsDirty();
   });
 
+  // Undo/Redo操作時にDirty状態を更新（コマンド経由の全操作をカバー）
+  const unsubUndoRedo = undoRedo.subscribe(() => {
+    markAsDirty();
+  });
+
   onDestroy(() => {
     unsubFeatureAdded();
     unsubTimeChanged();
@@ -307,6 +312,7 @@
     unsubWorldSaved();
     unsubFeatureChanged();
     unsubFeatureRemoved();
+    unsubUndoRedo();
     toolStore.stop();
     if (backupIntervalId) clearInterval(backupIntervalId);
   });
@@ -651,6 +657,7 @@
     }
     selectedVertexIds = new Set();
     refreshFeatureData();
+    markAsDirty();
   }
 
   /** 地図上のmousedown — 地物ドラッグ開始 or 矩形選択開始 */
