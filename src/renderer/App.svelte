@@ -14,8 +14,9 @@
   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
   import StatusBar from '@presentation/components/StatusBar.svelte';
   import { createToolStore } from '@presentation/state/toolStore';
-  import { addFeature, manageLayers, navigateTime, saveLoad, undoRedo, vertexEdit } from '@presentation/state/appState';
+  import { addFeature, deleteFeature, manageLayers, navigateTime, saveLoad, undoRedo, vertexEdit } from '@presentation/state/appState';
   import { AddFeatureCommand } from '@application/commands/AddFeatureCommand';
+  import { DeleteFeatureCommand } from '@application/commands/DeleteFeatureCommand';
   import { MoveVertexCommand } from '@application/commands/MoveVertexCommand';
   import { eventBus } from '@application/EventBus';
   import { Coordinate } from '@domain/value-objects/Coordinate';
@@ -287,6 +288,11 @@
     markAsDirty();
   });
 
+  const unsubFeatureRemoved = eventBus.on('feature:removed', () => {
+    refreshFeatureData();
+    markAsDirty();
+  });
+
   onDestroy(() => {
     unsubFeatureAdded();
     unsubTimeChanged();
@@ -294,6 +300,7 @@
     unsubWorldLoaded();
     unsubWorldSaved();
     unsubFeatureChanged();
+    unsubFeatureRemoved();
     toolStore.stop();
     if (backupIntervalId) clearInterval(backupIntervalId);
   });
@@ -924,12 +931,15 @@
 
     const actions: ContextMenuActions = {
       onDelete: () => {
-        // 地物削除（簡易）
         if (selectedFeatureId) {
-          (addFeature.getFeaturesMap() as Map<string, Feature>).delete(selectedFeatureId);
+          const cmd = new DeleteFeatureCommand(
+            deleteFeature, addFeature, selectedFeatureId, currentTime
+          );
+          undoRedo.execute(cmd);
           selectedFeatureId = null;
           selectedVertexIds = new Set();
           refreshFeatureData();
+          markAsDirty();
         }
       },
       onDeleteVertex,

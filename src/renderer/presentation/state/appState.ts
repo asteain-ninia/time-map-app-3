@@ -12,12 +12,14 @@ import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { SaveLoadUseCase } from '@application/SaveLoadUseCase';
 import { VertexEditUseCase } from '@application/VertexEditUseCase';
 import { UpdateFeatureAnchorUseCase } from '@application/UpdateFeatureAnchorUseCase';
+import { DeleteFeatureUseCase } from '@application/DeleteFeatureUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
 import { JSONWorldRepository, createElectronFileSystem } from '@infrastructure/persistence/JSONWorldRepository';
 
 export const manageLayers = new ManageLayersUseCase();
 export const navigateTime = new NavigateTimeUseCase();
 export const addFeature = new AddFeatureUseCase();
+export const deleteFeature = new DeleteFeatureUseCase(addFeature);
 
 const repository = new JSONWorldRepository(createElectronFileSystem());
 const dialog = {
