@@ -155,6 +155,8 @@
     projectMetadata = { ...projectMetadata, ...metaPatch };
     projectSettings = { ...projectSettings, ...settingsPatch };
     projectMetadata = { ...projectMetadata, settings: projectSettings };
+    saveLoad.setMetadata(projectMetadata);
+    markAsDirty();
   }
 
   // --- ダーティ状態管理 ---
@@ -278,6 +280,10 @@
     refreshLayerData();
     selectedFeatureId = null;
     dirtyState = resetDirty();
+    // メタデータ・設定を復元
+    const loaded = saveLoad.getMetadata();
+    projectMetadata = loaded;
+    projectSettings = loaded.settings;
   });
 
   const unsubWorldSaved = eventBus.on('world:saved', () => {

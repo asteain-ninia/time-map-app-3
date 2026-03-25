@@ -21,6 +21,7 @@ export interface DialogPort {
 
 export class SaveLoadUseCase {
   private currentFilePath: string | null = null;
+  private metadata: WorldMetadata = { ...DEFAULT_METADATA };
 
   constructor(
     private readonly repository: WorldRepository,
@@ -29,6 +30,16 @@ export class SaveLoadUseCase {
     private readonly manageLayers: ManageLayersUseCase,
     private readonly navigateTime: NavigateTimeUseCase
   ) {}
+
+  /** メタデータを設定する（プロジェクト設定変更時に呼ぶ） */
+  setMetadata(metadata: WorldMetadata): void {
+    this.metadata = metadata;
+  }
+
+  /** メタデータを取得する */
+  getMetadata(): WorldMetadata {
+    return this.metadata;
+  }
 
   /** 現在のファイルパスを取得する */
   getCurrentFilePath(): string | null {
@@ -79,12 +90,6 @@ export class SaveLoadUseCase {
 
   /** 現在の状態をWorldに組み立てる */
   assembleWorld(): World {
-    const metadata: WorldMetadata = {
-      ...DEFAULT_METADATA,
-      sliderMin: 0,
-      sliderMax: 10000,
-    };
-
     return new World(
       '1.0.0',
       this.addFeature.getVertices(),
@@ -92,7 +97,7 @@ export class SaveLoadUseCase {
       this.manageLayers.getLayers(),
       this.addFeature.getSharedVertexGroups(),
       [],
-      metadata
+      this.metadata
     );
   }
 
@@ -109,6 +114,6 @@ export class SaveLoadUseCase {
   private distributeWorld(world: World): void {
     this.addFeature.restore(world.features, world.vertices, world.sharedVertexGroups);
     this.manageLayers.restore(world.layers);
-    // メタデータのスライダー範囲は将来のNavigateTimeUseCase拡張で対応
+    this.metadata = world.metadata;
   }
 }

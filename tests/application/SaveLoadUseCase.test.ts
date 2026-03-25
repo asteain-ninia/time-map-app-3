@@ -308,6 +308,52 @@ describe('SaveLoadUseCase', () => {
     });
   });
 
+  describe('metadata', () => {
+    it('setMetadataで設定したメタデータがassembleWorldに反映される', () => {
+      const customMeta = {
+        ...DEFAULT_METADATA,
+        worldName: 'テスト世界',
+        worldDescription: '説明文',
+        sliderMin: 500,
+        sliderMax: 5000,
+      };
+      useCase.setMetadata(customMeta);
+
+      const world = useCase.assembleWorld();
+
+      expect(world.metadata.worldName).toBe('テスト世界');
+      expect(world.metadata.worldDescription).toBe('説明文');
+      expect(world.metadata.sliderMin).toBe(500);
+      expect(world.metadata.sliderMax).toBe(5000);
+    });
+
+    it('読み込み後にgetMetadataで復元されたメタデータを取得できる', async () => {
+      const customMeta = {
+        ...DEFAULT_METADATA,
+        worldName: '読み込みテスト',
+        sliderMax: 8000,
+      };
+      const world = new World(
+        '1.0.0', new Map(), new Map(), [], new Map(), [], customMeta
+      );
+      dialog.showOpenDialog.mockResolvedValue('/test/file.json');
+      repo.load.mockResolvedValue(world);
+
+      await useCase.open();
+
+      const meta = useCase.getMetadata();
+      expect(meta.worldName).toBe('読み込みテスト');
+      expect(meta.sliderMax).toBe(8000);
+    });
+
+    it('初期メタデータはDEFAULT_METADATAと一致する', () => {
+      const meta = useCase.getMetadata();
+      expect(meta.worldName).toBe(DEFAULT_METADATA.worldName);
+      expect(meta.sliderMin).toBe(DEFAULT_METADATA.sliderMin);
+      expect(meta.sliderMax).toBe(DEFAULT_METADATA.sliderMax);
+    });
+  });
+
   describe('getCurrentFilePath', () => {
     it('初期状態はnull', () => {
       expect(useCase.getCurrentFilePath()).toBeNull();
