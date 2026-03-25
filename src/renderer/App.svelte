@@ -183,14 +183,14 @@
           const fromPath = getBackupFileName(filePath, from);
           const toPath = getBackupFileName(filePath, to);
           try {
-            const content = await window.fileAPI.readFile(fromPath);
-            await window.fileAPI.writeFile(toPath, content);
+            const content = await window.api.readFile(fromPath);
+            await window.api.writeFile(toPath, content);
           } catch { /* ファイルが存在しない場合はスキップ */ }
         }
         // 世代1に現在の状態を保存
         const world = saveLoad.assembleWorld();
         const json = serializeWorld(world);
-        await window.fileAPI.writeFile(getBackupFileName(filePath, 1), json);
+        await window.api.writeFile(getBackupFileName(filePath, 1), json);
         lastBackupTime = Date.now();
       } catch (err) {
         console.warn('Auto-backup failed:', err);
