@@ -1,0 +1,68 @@
+diff --git a/src/renderer/App.svelte b/src/renderer/App.svelte
+index 5979765..82c47d8 100644
+--- a/src/renderer/App.svelte
++++ b/src/renderer/App.svelte
+@@ -11,6 +11,7 @@
+   import type { ContextMenuEntry } from '@presentation/components/ContextMenu.svelte';
+   import { buildContextMenuItems, type ContextMenuContext, type ContextMenuActions } from '@infrastructure/rendering/contextMenuBuilder';
+   import Sidebar from '@presentation/components/Sidebar.svelte';
++  import MinimalChild from '@presentation/components/MinimalChild.svelte';
+   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
+   import StatusBar from '@presentation/components/StatusBar.svelte';
+   import { createToolStore } from '@presentation/state/toolStore';
+@@ -130,7 +131,14 @@
+   let vertices = $state<ReadonlyMap<string, Vertex>>(new Map());
+   let layers = $state<readonly Layer[]>([]);
+   let currentTime = $state(navigateTime.getCurrentTime());
++  // 選択状態: App が唯一の owner。Sidebar には prop + callback で接続
+   let selectedFeatureId = $state<string | null>(null);
++  let selectedFeature = $derived(selectedFeatureId ? features.find(f => f.id === selectedFeatureId) ?? null : null);
++
++  $effect(() => {
++    console.log('EFFECT_selectedFeatureId:', selectedFeatureId);
++  });
++
+   let selectedVertexIds = $state<ReadonlySet<string>>(new Set());
+   let dragState = $state<DragState | null>(null);
+   let sharedGroups = $state(addFeature.getSharedVertexGroups());
+@@ -319,6 +327,11 @@
+ 
+   // --- コールバック ---
+ 
++  function handleFeatureSelect(id: string | null): void {
++    console.log('handleFeatureSelect called:', id);
++    selectedFeatureId = id;
++  }
++
+   function onModeChange(mode: ToolMode): void {
+     toolStore.send({ type: 'MODE_CHANGE', mode });
+     selectedFeatureId = null;
+@@ -1149,7 +1162,7 @@
+           isRingDrawing={ringDrawingState !== null}
+           ringDrawingCanConfirm={ringDrawingState ? canConfirmRing(ringDrawingState) : false}
+           ringDrawingCoords={ringDrawingState?.coords ?? []}
+-          selectedFeatureType={selectedFeatureId && currentTime ? features.find(f => f.id === selectedFeatureId)?.getActiveAnchor(currentTime)?.shape.type ?? null : null}
++          selectedFeatureType={selectedFeature && currentTime ? selectedFeature.getActiveAnchor(currentTime)?.shape.type ?? null : null}
+           {onAddHole}
+           {onAddExclave}
+           {onConfirmRing}
+@@ -1173,13 +1186,17 @@
+           boxSelectBox={boxSelectState && isBoxLargeEnough(boxSelectState) ? getSelectionBox(boxSelectState) : null}
+         />
+       </div>
++      <p id="app-debug" style="color: lime; font-size: 10px; position: fixed; bottom: 40px; right: 0; z-index: 9999;">APP: {selectedFeatureId}</p>
++      <div id="minimal-test" style="position: fixed; bottom: 60px; right: 0; z-index: 9999;">
++        <MinimalChild value={selectedFeatureId} onUpdate={(v) => { selectedFeatureId = v; }} />
++      </div>
+       <div class="sidebar-area">
+         <Sidebar
+-          selectedFeature={selectedFeatureId ? features.find(f => f.id === selectedFeatureId) ?? null : null}
+           {currentTime}
+           {features}
++          {selectedFeatureId}
++          onFeatureSelect={handleFeatureSelect}
+           {onPropertyChange}
+-          onFeatureSelect={(id) => { selectedFeatureId = id; }}
+         />
+       </div>
+     </div>

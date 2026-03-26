@@ -1,0 +1,196 @@
+diff --git a/src/renderer/presentation/components/Sidebar.svelte b/src/renderer/presentation/components/Sidebar.svelte
+index c630d7d..b4901d4 100644
+--- a/src/renderer/presentation/components/Sidebar.svelte
++++ b/src/renderer/presentation/components/Sidebar.svelte
+@@ -8,50 +8,37 @@
+   type SidebarTab = 'layers' | 'properties' | 'features';
+ 
+   let {
+-    selectedFeature = null as Feature | null,
+     currentTime = undefined as TimePoint | undefined,
+     features = [] as readonly Feature[],
+-    onPropertyChange,
++    selectedFeatureId = null as string | null,
+     onFeatureSelect,
++    onPropertyChange,
+   }: {
+-    selectedFeature?: Feature | null;
+     currentTime?: TimePoint;
+     features?: readonly Feature[];
++    selectedFeatureId?: string | null;
++    onFeatureSelect?: (id: string | null) => void;
+     onPropertyChange?: (featureId: string, anchorId: string, property: AnchorProperty) => void;
+-    onFeatureSelect?: (featureId: string) => void;
+   } = $props();
+ 
+-  let activeTab = $state<SidebarTab>('layers');
++  /** 選択地物を解決 */
++  let selectedFeature = $derived(
++    selectedFeatureId ? features.find(f => f.id === selectedFeatureId) ?? null : null
++  );
+ 
+-  /** 地物選択時に自動的にプロパティタブに切り替え */
+-  $effect(() => {
+-    if (selectedFeature && activeTab !== 'properties') {
+-      activeTab = 'properties';
+-    }
+-  });
++  let activeTab = $state<SidebarTab>('layers');
+ </script>
+ 
+ <div class="sidebar">
++  <p style="color: yellow; font-size: 10px;">DEBUG: {selectedFeatureId}</p>
+   <div class="tab-bar">
+-    <button
+-      class="tab"
+-      class:active={activeTab === 'layers'}
+-      onclick={() => activeTab = 'layers'}
+-    >
++    <button class="tab" class:active={activeTab === 'layers'} onclick={() => activeTab = 'layers'}>
+       レイヤー
+     </button>
+-    <button
+-      class="tab"
+-      class:active={activeTab === 'properties'}
+-      onclick={() => activeTab = 'properties'}
+-    >
++    <button class="tab" class:active={activeTab === 'properties'} onclick={() => activeTab = 'properties'}>
+       プロパティ
+     </button>
+-    <button
+-      class="tab"
+-      class:active={activeTab === 'features'}
+-      onclick={() => activeTab = 'features'}
+-    >
++    <button class="tab" class:active={activeTab === 'features'} onclick={() => activeTab = 'features'}>
+       地物一覧
+     </button>
+   </div>
+@@ -70,12 +57,12 @@
+         <div class="empty-message">地物はまだありません</div>
+       {:else}
+         <div class="feature-list">
+-          {#each features as f}
++          {#each features as f (f.id)}
+             <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+             <div
+               class="feature-item"
+-              class:selected={selectedFeature?.id === f.id}
+-              onclick={() => onFeatureSelect?.(f.id)}
++              class:selected={selectedFeatureId === f.id}
++              onclick={() => { console.log('SIDEBAR_CLICK', f.id, 'prop:', selectedFeatureId); onFeatureSelect?.(f.id); }}
+             >
+               <span class="feature-type-badge">
+                 {f.featureType === 'Point' ? '点' : f.featureType === 'LineString' ? '線' : '面'}
+@@ -92,97 +79,18 @@
+ </div>
+ 
+ <style>
+-  .sidebar {
+-    height: 100%;
+-    display: flex;
+-    flex-direction: column;
+-  }
+-
+-  .tab-bar {
+-    display: flex;
+-    border-bottom: 1px solid #3c3c3c;
+-  }
+-
+-  .tab {
+-    flex: 1;
+-    padding: 8px 4px;
+-    background: transparent;
+-    border: none;
+-    border-bottom: 2px solid transparent;
+-    color: #888;
+-    cursor: pointer;
+-    font-size: 12px;
+-  }
+-
+-  .tab:hover {
+-    color: #e0e0e0;
+-  }
+-
+-  .tab.active {
+-    color: #e0e0e0;
+-    border-bottom-color: #007acc;
+-  }
+-
+-  .tab-content {
+-    flex: 1;
+-    padding: 12px;
+-    min-height: 0;
+-    overflow-y: auto;
+-  }
+-
+-  .empty-message {
+-    color: #888;
+-    font-size: 12px;
+-    text-align: center;
+-    padding: 24px 8px;
+-  }
+-
+-  .feature-list {
+-    display: flex;
+-    flex-direction: column;
+-    gap: 2px;
+-  }
+-
+-  .feature-item {
+-    display: flex;
+-    align-items: center;
+-    gap: 6px;
+-    padding: 4px 8px;
+-    border-radius: 4px;
+-    cursor: pointer;
+-    font-size: 12px;
+-    color: #ccc;
+-  }
+-
+-  .feature-item:hover {
+-    background: #333;
+-  }
+-
+-  .feature-item.selected {
+-    background: #094771;
+-    color: #fff;
+-  }
+-
+-  .feature-type-badge {
+-    display: inline-flex;
+-    align-items: center;
+-    justify-content: center;
+-    width: 18px;
+-    height: 18px;
+-    border-radius: 3px;
+-    background: #444;
+-    font-size: 10px;
+-    flex-shrink: 0;
+-  }
+-
+-  .feature-item.selected .feature-type-badge {
+-    background: #007acc;
+-  }
+-
+-  .feature-name {
+-    flex: 1;
+-    white-space: nowrap;
+-    overflow: hidden;
+-    text-overflow: ellipsis;
+-  }
++  .sidebar { height: 100%; display: flex; flex-direction: column; }
++  .tab-bar { display: flex; border-bottom: 1px solid #3c3c3c; }
++  .tab { flex: 1; padding: 8px 4px; background: transparent; border: none; border-bottom: 2px solid transparent; color: #888; cursor: pointer; font-size: 12px; }
++  .tab:hover { color: #e0e0e0; }
++  .tab.active { color: #e0e0e0; border-bottom-color: #007acc; }
++  .tab-content { flex: 1; padding: 12px; min-height: 0; overflow-y: auto; }
++  .empty-message { color: #888; font-size: 12px; text-align: center; padding: 24px 8px; }
++  .feature-list { display: flex; flex-direction: column; gap: 2px; }
++  .feature-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; color: #ccc; }
++  .feature-item:hover { background: #333; }
++  .feature-item.selected { background: #094771; color: #fff; }
++  .feature-type-badge { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 3px; background: #444; font-size: 10px; flex-shrink: 0; }
++  .feature-item.selected .feature-type-badge { background: #007acc; }
++  .feature-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+ </style>

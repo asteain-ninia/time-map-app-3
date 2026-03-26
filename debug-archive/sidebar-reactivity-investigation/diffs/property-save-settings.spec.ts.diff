@@ -1,0 +1,106 @@
+diff --git a/e2e/property-save-settings.spec.ts b/e2e/property-save-settings.spec.ts
+index 23e477f..0583f61 100644
+--- a/e2e/property-save-settings.spec.ts
++++ b/e2e/property-save-settings.spec.ts
+@@ -132,6 +132,101 @@ test('別の地物を選択するとプロパティパネルのIDが更新され
+   expect(firstId).not.toBe(secondId);
+ });
+ 
++// §2.4.1 プロパティ — 表示モードで地物をクリックするとプロパティが即座に更新される（タブ切替不要）
++test('表示モードで地図上の地物をクリックするとプロパティタブが即座に更新される', async ({ page }) => {
++  // 2つのポイントを追加
++  await page.keyboard.press('a');
++  const pointTool = page.locator('.tool-button.sub-tool[title="点を追加"]');
++  await pointTool.click();
++  const map = page.locator('.map-svg');
++  const box = await map.boundingBox();
++  if (!box) throw new Error('map not found');
++  await map.click({ position: { x: box.width * 0.3, y: box.height / 2 } });
++  await page.waitForTimeout(500);
++  await map.click({ position: { x: box.width * 0.7, y: box.height / 2 } });
++  await page.waitForTimeout(500);
++
++  // 表示モードに切替
++  await page.keyboard.press('v');
++  await page.waitForTimeout(200);
++
++  // プロパティタブを開いた状態にする
++  const propTab = page.locator('.tab', { hasText: 'プロパティ' });
++  await propTab.click();
++  await page.waitForTimeout(200);
++
++  // 地図上で地物Aをクリック（左側）
++  await map.click({ position: { x: box.width * 0.3, y: box.height / 2 } });
++  await page.waitForTimeout(500);
++
++  const idInput = page.locator('#prop-id');
++  if (await idInput.count() === 0) return;
++  const firstId = await idInput.inputValue();
++  expect(firstId).toBeTruthy(); // IDが表示されること
++
++  // タブ切替なしで地図上の地物Bをクリック（右側）
++  await map.click({ position: { x: box.width * 0.7, y: box.height / 2 } });
++  await page.waitForTimeout(500);
++
++  const secondId = await idInput.inputValue();
++  expect(secondId).toBeTruthy();
++  expect(firstId).not.toBe(secondId); // タブ切替なしでIDが更新される
++
++  // 何もないところをクリックして選択解除
++  await map.click({ position: { x: box.width * 0.5, y: box.height * 0.1 } });
++  await page.waitForTimeout(500);
++
++  const emptyMsg = page.locator('.empty-message');
++  if (await emptyMsg.count() > 0) {
++    const text = await emptyMsg.textContent();
++    expect(text).toContain('選択されていません');
++  }
++
++  // 再選択 — 選択解除後に地物をクリックするとプロパティが復活する
++  await map.click({ position: { x: box.width * 0.3, y: box.height / 2 } });
++  await page.waitForTimeout(500);
++  const reselectedId = await idInput.inputValue();
++  expect(reselectedId).toBeTruthy(); // 再選択後にIDが表示される
++});
++
++// §2.4.1 プロパティ — 地物一覧の選択状態が即座に反映される
++test('地物一覧で選択した地物のハイライトが即座に反映される', async ({ page }) => {
++  // 2つのポイントを追加
++  await page.keyboard.press('a');
++  const pointTool = page.locator('.tool-button.sub-tool[title="点を追加"]');
++  await pointTool.click();
++  const map = page.locator('.map-svg');
++  const box = await map.boundingBox();
++  if (!box) throw new Error('map not found');
++  await map.click({ position: { x: box.width * 0.3, y: box.height / 2 } });
++  await page.waitForTimeout(500);
++  await map.click({ position: { x: box.width * 0.7, y: box.height / 2 } });
++  await page.waitForTimeout(500);
++  await page.keyboard.press('v');
++
++  // 地物一覧タブを開く
++  const featureTab = page.locator('.tab', { hasText: '地物一覧' });
++  await featureTab.click();
++  await page.waitForTimeout(200);
++
++  const items = page.locator('.feature-item');
++  const count = await items.count();
++  if (count < 2) return;
++
++  // 1つ目を選択
++  await items.nth(0).click();
++  await page.waitForTimeout(300);
++  await expect(items.nth(0)).toHaveClass(/selected/);
++
++  // 2つ目を選択 — タブ切替なしで即座にハイライトが移動する
++  await items.nth(1).click();
++  await page.waitForTimeout(300);
++  await expect(items.nth(1)).toHaveClass(/selected/);
++  // 1つ目のハイライトは消えている
++  const firstClasses = await items.nth(0).getAttribute('class');
++  expect(firstClasses).not.toContain('selected');
++});
++
+ // §2.4.1 プロパティ — 空選択時に「選択されていません」メッセージ
+ test('何も選択していない時に「選択されていません」が表示される', async ({ page }) => {
+   const propTab = page.locator('.tab', { hasText: 'プロパティ' });
