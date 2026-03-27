@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { join } from 'path';
-import { readFile, writeFile } from 'fs/promises';
+import { access, readFile, writeFile } from 'fs/promises';
 
 const MIN_WIDTH = 800;
 const MIN_HEIGHT = 600;
@@ -46,6 +46,15 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('file:write', async (_event, filePath: string, data: string): Promise<void> => {
     await writeFile(filePath, data, 'utf-8');
+  });
+
+  ipcMain.handle('file:exists', async (_event, filePath: string): Promise<boolean> => {
+    try {
+      await access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
   });
 
   ipcMain.handle('dialog:open', async (): Promise<string | null> => {

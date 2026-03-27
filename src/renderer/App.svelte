@@ -97,7 +97,7 @@
   import {
     DEFAULT_BACKUP_CONFIG,
     getBackupFileName,
-    getRotationPlan,
+    rotateBackupFiles,
     shouldBackup,
   } from '@infrastructure/rendering/autoBackupManager';
 
@@ -180,15 +180,7 @@
 
       try {
         // ローテーション：古い世代をシフト
-        const plan = getRotationPlan(DEFAULT_BACKUP_CONFIG.maxGenerations);
-        for (const { from, to } of plan) {
-          const fromPath = getBackupFileName(filePath, from);
-          const toPath = getBackupFileName(filePath, to);
-          try {
-            const content = await window.api.readFile(fromPath);
-            await window.api.writeFile(toPath, content);
-          } catch { /* ファイルが存在しない場合はスキップ */ }
-        }
+        await rotateBackupFiles(filePath, DEFAULT_BACKUP_CONFIG.maxGenerations, window.api);
         // 世代1に現在の状態を保存
         const world = saveLoad.assembleWorld();
         const json = serializeWorld(world);

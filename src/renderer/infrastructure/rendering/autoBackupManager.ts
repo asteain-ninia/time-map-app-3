@@ -19,6 +19,13 @@ export const DEFAULT_BACKUP_CONFIG: AutoBackupConfig = {
   maxGenerations: 5,
 };
 
+/** 自動バックアップで使用するファイルI/O */
+export interface BackupFilePort {
+  existsFile(filePath: string): Promise<boolean>;
+  readFile(filePath: string): Promise<string>;
+  writeFile(filePath: string, data: string): Promise<void>;
+}
+
 /**
  * バックアップファイル名を生成する
  * 元ファイル: /path/to/file.json → /path/to/file.backup-1.json
@@ -50,6 +57,27 @@ export function getRotationPlan(
     plan.push({ from: i, to: i + 1 });
   }
   return plan;
+}
+
+/**
+ * 既存バックアップのみをローテーションする
+ *
+ * 未生成世代に対する readFile を防ぎ、IPC handler の ENOENT ログを出さない。
+ */
+export async function rotateBackupFiles(
+  originalPath: string,
+  maxGenerations: number,
+  filePort: BackupFilePort
+): Promise<void> {
+  const plan = getRotationPlan(maxGenerations);
+
+  for (const { from, to } of plan) {
+    const fromPath = getBackupFileName(originalPath, from);
+    if (!(await filePort.existsFile(fromPath))) continue;
+
+    const content = await filePort.readFile(fromPath);
+    await filePort.writeFile(getBackupFileName(originalPath, to), content);
+  }
 }
 
 /**

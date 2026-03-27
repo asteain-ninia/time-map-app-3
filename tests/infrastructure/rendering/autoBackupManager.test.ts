@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   DEFAULT_BACKUP_CONFIG,
   getBackupFileName,
   getRotationPlan,
+  rotateBackupFiles,
   shouldBackup,
 } from '@infrastructure/rendering/autoBackupManager';
 
@@ -69,6 +70,43 @@ describe('autoBackupManager', () => {
 
     it('間隔未満でfalse', () => {
       expect(shouldBackup(0, 299999, 300000)).toBe(false);
+    });
+  });
+
+  describe('rotateBackupFiles', () => {
+    it('存在する世代だけをローテーションする', async () => {
+      const contents = new Map<string, string>([
+        ['/path/to/file.backup-1.json', 'gen1'],
+        ['/path/to/file.backup-3.json', 'gen3'],
+      ]);
+      const writes: Array<{ path: string; data: string }> = [];
+      const filePort = {
+        existsFile: async (filePath: string) => contents.has(filePath),
+        readFile: async (filePath: string) => contents.get(filePath) ?? '',
+        writeFile: async (filePath: string, data: string) => {
+          writes.push({ path: filePath, data });
+        },
+      };
+
+      await rotateBackupFiles('/path/to/file.json', 5, filePort);
+
+      expect(writes).toEqual([
+        { path: '/path/to/file.backup-4.json', data: 'gen3' },
+        { path: '/path/to/file.backup-2.json', data: 'gen1' },
+      ]);
+    });
+
+    it('存在しない世代に readFile を呼ばない', async () => {
+      const readFile = vi.fn(async (_filePath: string) => '');
+      const filePort = {
+        existsFile: async (_filePath: string) => false,
+        readFile,
+        writeFile: async (_filePath: string, _data: string) => undefined,
+      };
+
+      await rotateBackupFiles('/path/to/file.json', 5, filePort);
+
+      expect(readFile).not.toHaveBeenCalled();
     });
   });
 });
