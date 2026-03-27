@@ -428,7 +428,7 @@
       {isRingDrawing}
       {isKnifeDrawing}
       canConfirm={ringDrawingCanConfirm}
-      {canConfirmKnife}
+      canConfirmKnife={knifeCanConfirm}
       {onAddHole}
       {onAddExclave}
       {onConfirmRing}

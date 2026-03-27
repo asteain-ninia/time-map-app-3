@@ -22,12 +22,15 @@
   } = $props();
 
   let activeTab = $state<SidebarTab>('layers');
+  let lastAutoOpenedFeatureId = $state<string | null>(null);
 
-  /** 地物選択時に自動的にプロパティタブに切り替え */
+  /** 新しい地物が選択された時だけプロパティタブへ移動する */
   $effect(() => {
-    if (selectedFeature && activeTab !== 'properties') {
+    const selectedFeatureId = selectedFeature?.id ?? null;
+    if (selectedFeatureId && selectedFeatureId !== lastAutoOpenedFeatureId && activeTab !== 'properties') {
       activeTab = 'properties';
     }
+    lastAutoOpenedFeatureId = selectedFeatureId;
   });
 </script>
 
