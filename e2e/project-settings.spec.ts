@@ -96,3 +96,27 @@ test('プロジェクト設定にグリッド間隔セレクタがある', async
     await expect(gridSelect.first()).toBeVisible();
   }
 });
+
+// §2.6.2 保存したグリッド設定が地図描画に反映される
+test('プロジェクト設定で変更したグリッド設定が地図に反映される', async ({ page }) => {
+  const initialGridLineCount = await page.locator('.grid-layer line').count();
+
+  const toolsTrigger = page.locator('.menu-trigger', { hasText: 'ツール' });
+  await toolsTrigger.click();
+  await page.waitForTimeout(200);
+  const settingsAction = page.locator('.menu-action', { hasText: 'プロジェクト設定' });
+  await settingsAction.click();
+  await page.waitForTimeout(300);
+
+  await page.locator('#ps-gi').selectOption('30');
+  await page.locator('#ps-gc').fill('#123456');
+  await page.locator('#ps-go').fill('0.7');
+  await page.locator('.dialog .btn.confirm').click();
+  await page.waitForTimeout(300);
+
+  const updatedGridLineCount = await page.locator('.grid-layer line').count();
+  expect(updatedGridLineCount).toBeLessThan(initialGridLineCount);
+
+  const styledGridLine = page.locator('.grid-layer line[stroke="#123456"]').first();
+  await expect(styledGridLine).toHaveAttribute('stroke-opacity', '0.7');
+});

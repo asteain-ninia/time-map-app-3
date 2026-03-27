@@ -1127,6 +1127,9 @@
           {features}
           {vertices}
           {layers}
+          gridInterval={projectSettings.gridInterval}
+          gridColor={projectSettings.gridColor}
+          gridOpacity={projectSettings.gridOpacity}
           {currentTime}
           {toolMode}
           {addToolType}

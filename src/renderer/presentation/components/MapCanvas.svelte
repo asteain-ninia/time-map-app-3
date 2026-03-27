@@ -22,6 +22,9 @@
     features = [] as readonly Feature[],
     vertices = new Map<string, Vertex>() as ReadonlyMap<string, Vertex>,
     layers = [] as readonly Layer[],
+    gridInterval = 10,
+    gridColor = '#888888',
+    gridOpacity = 0.3,
     currentTime = undefined as TimePoint | undefined,
     toolMode = 'view' as ToolMode,
     addToolType = 'polygon' as AddToolType,
@@ -70,6 +73,9 @@
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
     layers?: readonly Layer[];
+    gridInterval?: number;
+    gridColor?: string;
+    gridOpacity?: number;
     currentTime?: TimePoint;
     toolMode?: ToolMode;
     addToolType?: AddToolType;
@@ -326,7 +332,12 @@
         {/if}
 
         <!-- グリッド線 -->
-        <GridRenderer zoom={zoomLevel} />
+        <GridRenderer
+          zoom={zoomLevel}
+          interval={gridInterval}
+          color={gridColor}
+          opacity={gridOpacity}
+        />
 
         <!-- 頂点ハンドル・エッジハンドル（選択地物の編集用） -->
         {#if selectedAnchor() && !isDrawing}
