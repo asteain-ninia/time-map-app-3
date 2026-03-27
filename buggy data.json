@@ -1,0 +1,268 @@
+{
+  "version": "1.0.0",
+  "layers": [
+    {
+      "id": "default",
+      "name": "レイヤー1",
+      "order": 0,
+      "visible": true,
+      "opacity": 1
+    }
+  ],
+  "vertices": [
+    {
+      "id": "v-1",
+      "x": -78.69767441860465,
+      "y": 11.930232558139537
+    },
+    {
+      "id": "v-2",
+      "x": -72.62790697674419,
+      "y": 26.581395348837205
+    },
+    {
+      "id": "v-3",
+      "x": -61.95348837209302,
+      "y": 11.511627906976742
+    },
+    {
+      "id": "v-4",
+      "x": -121.72011193530633,
+      "y": 11.185238175702452
+    },
+    {
+      "id": "v-5",
+      "x": 162.9310508553914,
+      "y": 33.789889338493154
+    },
+    {
+      "id": "v-6",
+      "x": 129.86128341353088,
+      "y": 4.068959105935008
+    },
+    {
+      "id": "v-7",
+      "x": -574.1751953283979,
+      "y": 55.33840796623767
+    },
+    {
+      "id": "v-8",
+      "x": -891.1359558014829,
+      "y": 77.2400328142536
+    },
+    {
+      "id": "v-9",
+      "x": -793.5973242109003,
+      "y": 38.530184245667314
+    },
+    {
+      "id": "v-10",
+      "x": 170.49578030705425,
+      "y": -26.678650091134855
+    },
+    {
+      "id": "v-11",
+      "x": 1.9042029886065848,
+      "y": -23.622609414667522
+    },
+    {
+      "id": "v-12",
+      "x": -134.59894722693434,
+      "y": -25.40529980927346
+    },
+    {
+      "id": "v-13",
+      "x": 164.28023924371882,
+      "y": -39.412152909748755
+    },
+    {
+      "id": "v-edit-1774583384049-yf92r1",
+      "x": 22.243345203606623,
+      "y": -57.982864214693194
+    },
+    {
+      "id": "v-edit-1774583806352-7vkv1n",
+      "x": -179.88612405089316,
+      "y": -50.730933795518894
+    }
+  ],
+  "sharedVertexGroups": [],
+  "timelineMarkers": [],
+  "features": [
+    {
+      "id": "f-1",
+      "featureType": "Polygon",
+      "anchors": [
+        {
+          "id": "a-1",
+          "timeRange": {
+            "start": {
+              "year": 1000
+            }
+          },
+          "property": {
+            "name": "面1",
+            "description": ""
+          },
+          "shape": {
+            "type": "Polygon",
+            "rings": [
+              {
+                "id": "ring-1",
+                "vertexIds": [
+                  "v-1",
+                  "v-2",
+                  "v-3"
+                ],
+                "ringType": "territory",
+                "parentId": null
+              }
+            ]
+          },
+          "placement": {
+            "layerId": "default",
+            "parentId": null,
+            "childIds": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "f-2",
+      "featureType": "Polygon",
+      "anchors": [
+        {
+          "id": "a-2",
+          "timeRange": {
+            "start": {
+              "year": 1000
+            }
+          },
+          "property": {
+            "name": "面2",
+            "description": ""
+          },
+          "shape": {
+            "type": "Polygon",
+            "rings": [
+              {
+                "id": "ring-2",
+                "vertexIds": [
+                  "v-4",
+                  "v-5",
+                  "v-6"
+                ],
+                "ringType": "territory",
+                "parentId": null
+              }
+            ]
+          },
+          "placement": {
+            "layerId": "default",
+            "parentId": null,
+            "childIds": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "f-3",
+      "featureType": "Polygon",
+      "anchors": [
+        {
+          "id": "a-3",
+          "timeRange": {
+            "start": {
+              "year": 1000
+            }
+          },
+          "property": {
+            "name": "面3",
+            "description": ""
+          },
+          "shape": {
+            "type": "Polygon",
+            "rings": [
+              {
+                "id": "ring-3",
+                "vertexIds": [
+                  "v-7",
+                  "v-8",
+                  "v-9"
+                ],
+                "ringType": "territory",
+                "parentId": null
+              }
+            ]
+          },
+          "placement": {
+            "layerId": "default",
+            "parentId": null,
+            "childIds": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "f-4",
+      "featureType": "Polygon",
+      "anchors": [
+        {
+          "id": "a-4",
+          "timeRange": {
+            "start": {
+              "year": 1000
+            }
+          },
+          "property": {
+            "name": "面4",
+            "description": ""
+          },
+          "shape": {
+            "type": "Polygon",
+            "rings": [
+              {
+                "id": "ring-4",
+                "vertexIds": [
+                  "v-10",
+                  "v-11",
+                  "v-12",
+                  "v-13",
+                  "v-edit-1774583384049-yf92r1",
+                  "v-edit-1774583806352-7vkv1n"
+                ],
+                "ringType": "territory",
+                "parentId": null
+              }
+            ]
+          },
+          "placement": {
+            "layerId": "default",
+            "parentId": null,
+            "childIds": []
+          }
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "sliderMin": 0,
+    "sliderMax": 10000,
+    "worldName": "新しい世界",
+    "worldDescription": "",
+    "settings": {
+      "zoomMin": 1,
+      "zoomMax": 50,
+      "gridInterval": 10,
+      "gridColor": "#888888",
+      "gridOpacity": 0.3,
+      "autoSaveInterval": 300,
+      "equatorLength": 40000,
+      "oblateness": 0.00335,
+      "labelAreaThreshold": 0.0005,
+      "defaultAutoColor": true,
+      "defaultPalette": "クラシック",
+      "customPalettes": []
+    }
+  }
+}
