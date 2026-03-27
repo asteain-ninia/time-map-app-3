@@ -13,6 +13,7 @@ import type { Layer } from '@domain/entities/Layer';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { FeatureAnchor, FeatureShape } from '@domain/value-objects/FeatureAnchor';
 import type { Coordinate } from '@domain/value-objects/Coordinate';
+import { unwrapLongitudeSequence } from './featureRenderingUtils';
 
 /** ヒットテスト結果 */
 export interface HitTestResult {
@@ -90,6 +91,19 @@ function resolveRingCoords(
   return coords;
 }
 
+/** リング座標列を東西端またぎ込みで連続化する */
+function unwrapRingCoords(
+  coords: readonly Array<{ x: number; y: number }>
+): Array<{ x: number; y: number }> {
+  const longitudes = unwrapLongitudeSequence(coords.map((coord) => coord.x));
+  return coords.map((coord, index) => ({ x: longitudes[index], y: coord.y }));
+}
+
+/** クリック経度の候補（中央世界と隣接ラップ） */
+function getWrappedClickLongitudes(lon: number): number[] {
+  return [lon, lon - 360, lon + 360];
+}
+
 /**
  * 点情報のヒットテスト
  */
@@ -113,16 +127,18 @@ function hitTestLine(
   vertices: ReadonlyMap<string, Vertex>,
   threshold: number
 ): boolean {
-  const coords = resolveRingCoords(shape.vertexIds, vertices);
+  const coords = unwrapRingCoords(resolveRingCoords(shape.vertexIds, vertices));
   if (coords.length < 2) return false;
 
-  for (let i = 0; i < coords.length - 1; i++) {
-    const dist = pointToSegmentDistance(
-      clickLon, clickLat,
-      coords[i].x, coords[i].y,
-      coords[i + 1].x, coords[i + 1].y
-    );
-    if (dist <= threshold) return true;
+  for (const candidateLon of getWrappedClickLongitudes(clickLon)) {
+    for (let i = 0; i < coords.length - 1; i++) {
+      const dist = pointToSegmentDistance(
+        candidateLon, clickLat,
+        coords[i].x, coords[i].y,
+        coords[i + 1].x, coords[i + 1].y
+      );
+      if (dist <= threshold) return true;
+    }
   }
   return false;
 }
@@ -135,16 +151,19 @@ function hitTestPolygon(
   shape: FeatureShape & { type: 'Polygon' },
   vertices: ReadonlyMap<string, Vertex>
 ): boolean {
-  // evenodd: 全リングの内外判定をトグルする
-  let inside = false;
-  for (const ring of shape.rings) {
-    const coords = resolveRingCoords(ring.vertexIds, vertices);
-    if (coords.length < 3) continue;
-    if (isPointInRing(clickLon, clickLat, coords)) {
-      inside = !inside;
+  for (const candidateLon of getWrappedClickLongitudes(clickLon)) {
+    // evenodd: 全リングの内外判定をトグルする
+    let inside = false;
+    for (const ring of shape.rings) {
+      const coords = unwrapRingCoords(resolveRingCoords(ring.vertexIds, vertices));
+      if (coords.length < 3) continue;
+      if (isPointInRing(candidateLon, clickLat, coords)) {
+        inside = !inside;
+      }
     }
+    if (inside) return true;
   }
-  return inside;
+  return false;
 }
 
 /**

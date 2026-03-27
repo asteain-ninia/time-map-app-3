@@ -9,6 +9,7 @@
     geoToSvgY,
     buildPolygonPath,
     buildLinePoints,
+    unwrapLongitudeSequence,
     DEFAULT_POINT_COLOR,
     DEFAULT_LINE_COLOR,
     DEFAULT_POLYGON_FILL,
@@ -54,12 +55,19 @@
     if (anchor.shape.type === 'Polygon') {
       const ring = anchor.shape.rings[0];
       if (!ring || ring.vertexIds.length === 0) return null;
-      let sx = 0, sy = 0, count = 0;
+      const longitudes: number[] = [];
+      let sy = 0, count = 0;
       for (const vid of ring.vertexIds) {
         const v = vertices.get(vid);
-        if (v) { sx += v.x; sy += v.y; count++; }
+        if (v) {
+          longitudes.push(v.x);
+          sy += v.y;
+          count++;
+        }
       }
       if (count === 0) return null;
+      const unwrappedLongitudes = unwrapLongitudeSequence(longitudes);
+      const sx = unwrappedLongitudes.reduce((sum, lon) => sum + lon, 0);
       return { x: geoToSvgX(sx / count), y: geoToSvgY(sy / count) };
     }
     return null;

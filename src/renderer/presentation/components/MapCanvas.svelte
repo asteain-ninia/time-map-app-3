@@ -327,54 +327,62 @@
 
         <!-- グリッド線 -->
         <GridRenderer zoom={zoomLevel} />
+
+        <!-- 頂点ハンドル・エッジハンドル（選択地物の編集用） -->
+        {#if selectedAnchor() && !isDrawing}
+          <VertexHandles
+            anchor={selectedAnchor()!}
+            {vertices}
+            zoom={zoomLevel}
+            {selectedVertexIds}
+            {sharedGroups}
+            {snapIndicator}
+            {onVertexMouseDown}
+            {onEdgeHandleMouseDown}
+          />
+        {/if}
+
+        <!-- 描画プレビュー -->
+        {#if isDrawing && drawingCoords.length > 0}
+          <DrawingPreview
+            coords={drawingCoords}
+            zoom={zoomLevel}
+            cursorGeo={cursorGeo}
+            isPolygon={addToolType === 'polygon'}
+          />
+        {/if}
+
+        <!-- リング描画プレビュー（穴/飛び地追加中） -->
+        {#if isRingDrawing && ringDrawingCoords.length > 0}
+          <DrawingPreview
+            coords={ringDrawingCoords}
+            zoom={zoomLevel}
+            cursorGeo={cursorGeo}
+            isPolygon={true}
+          />
+        {/if}
+
+        <!-- ナイフツール描画プレビュー（分断線） -->
+        {#if isKnifeDrawing && knifeDrawingCoords.length > 0}
+          <DrawingPreview
+            coords={knifeDrawingCoords}
+            zoom={zoomLevel}
+            cursorGeo={cursorGeo}
+            isPolygon={false}
+          />
+        {/if}
+
+        <!-- 測量オーバーレイ -->
+        {#if toolMode === 'measure'}
+          <MeasurementOverlay
+            pointA={surveyPointA}
+            pointB={surveyPointB}
+            result={surveyResult}
+            zoom={zoomLevel}
+          />
+        {/if}
       </g>
     {/each}
-
-    <!-- 以下はラップ不要（UI要素） -->
-
-    <!-- 頂点ハンドル・エッジハンドル（選択地物の編集用） -->
-    {#if selectedAnchor() && !isDrawing}
-      <VertexHandles
-        anchor={selectedAnchor()!}
-        {vertices}
-        zoom={zoomLevel}
-        {selectedVertexIds}
-        {sharedGroups}
-        {snapIndicator}
-        {onVertexMouseDown}
-        {onEdgeHandleMouseDown}
-      />
-    {/if}
-
-    <!-- 描画プレビュー -->
-    {#if isDrawing && drawingCoords.length > 0}
-      <DrawingPreview
-        coords={drawingCoords}
-        zoom={zoomLevel}
-        cursorGeo={cursorGeo}
-        isPolygon={addToolType === 'polygon'}
-      />
-    {/if}
-
-    <!-- リング描画プレビュー（穴/飛び地追加中） -->
-    {#if isRingDrawing && ringDrawingCoords.length > 0}
-      <DrawingPreview
-        coords={ringDrawingCoords}
-        zoom={zoomLevel}
-        cursorGeo={cursorGeo}
-        isPolygon={true}
-      />
-    {/if}
-
-    <!-- ナイフツール描画プレビュー（分断線） -->
-    {#if isKnifeDrawing && knifeDrawingCoords.length > 0}
-      <DrawingPreview
-        coords={knifeDrawingCoords}
-        zoom={zoomLevel}
-        cursorGeo={cursorGeo}
-        isPolygon={false}
-      />
-    {/if}
 
     <!-- 矩形選択オーバーレイ -->
     {#if boxSelectBox}
@@ -391,15 +399,6 @@
       />
     {/if}
 
-    <!-- 測量オーバーレイ -->
-    {#if toolMode === 'measure'}
-      <MeasurementOverlay
-        pointA={surveyPointA}
-        pointB={surveyPointB}
-        result={surveyResult}
-        zoom={zoomLevel}
-      />
-    {/if}
   </svg>
 
   <!-- 描画中の確定/キャンセルボタン（§2.3.2: 確定ボタンの押下で形状を確定） -->

@@ -83,6 +83,30 @@ test('横方向無限スクロール: 大きく右パンしても地図が表示
   expect(count).toBeGreaterThanOrEqual(2);
 });
 
+// §2.1 横方向無限スクロール — 1周以上パンしても対応する複製グループが更新される
+test('横方向無限スクロール: 複数周パンしても表示タイルが追随する', async ({ page }) => {
+  const svg = page.locator('.map-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('SVG not found');
+
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+
+  for (let i = 0; i < 4; i++) {
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 600, cy, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(100);
+  }
+
+  const transforms = await svg.locator('g[transform*="translate"]').evaluateAll((els) =>
+    els.map((el) => el.getAttribute('transform') || '')
+  );
+
+  expect(transforms.some((transform) => transform.includes('-720'))).toBe(true);
+});
+
 // ============================================================
 // §2.1 パン操作 — 中ボタンドラッグ
 // ============================================================

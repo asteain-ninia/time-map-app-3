@@ -1,6 +1,11 @@
 <script lang="ts">
   import type { Coordinate } from '@domain/value-objects/Coordinate';
-  import { geoToSvgX, geoToSvgY } from '@infrastructure/rendering/featureRenderingUtils';
+  import {
+    geoToSvgX,
+    geoToSvgY,
+    unwrapLongitudeSequence,
+    wrapLongitudeNearReference,
+  } from '@infrastructure/rendering/featureRenderingUtils';
 
   let {
     coords,
@@ -14,19 +19,36 @@
     isPolygon?: boolean;
   } = $props();
 
+  /** 描画座標を東西端またぎ込みで連続化した地理座標列 */
+  let unwrappedCoords = $derived(() => {
+    const longitudes = unwrapLongitudeSequence(coords.map((coord) => coord.x));
+    return coords.map((coord, index) => ({
+      lon: longitudes[index],
+      lat: coord.y,
+    }));
+  });
+
+  /** 連続化済み座標のSVG座標列 */
+  let svgCoords = $derived(() =>
+    unwrappedCoords().map((coord) => ({
+      x: geoToSvgX(coord.lon),
+      y: geoToSvgY(coord.lat),
+    }))
+  );
+
   /** 頂点のSVGポイント列 */
-  let pointsStr = $derived(
-    coords.map((c) => `${geoToSvgX(c.x)},${geoToSvgY(c.y)}`).join(' ')
+  let pointsStr = $derived(() =>
+    svgCoords().map((coord) => `${coord.x},${coord.y}`).join(' ')
   );
 
   /** カーソル位置までの仮線（最後の頂点→カーソル） */
   let cursorLine = $derived(() => {
     if (!cursorGeo || coords.length === 0) return null;
-    const last = coords[coords.length - 1];
+    const last = unwrappedCoords()[coords.length - 1];
     return {
-      x1: geoToSvgX(last.x),
-      y1: geoToSvgY(last.y),
-      x2: geoToSvgX(cursorGeo.lon),
+      x1: geoToSvgX(last.lon),
+      y1: geoToSvgY(last.lat),
+      x2: geoToSvgX(wrapLongitudeNearReference(cursorGeo.lon, last.lon)),
       y2: geoToSvgY(cursorGeo.lat),
     };
   });
@@ -34,13 +56,13 @@
   /** クロージング線（最後の頂点→最初の頂点、ポリゴンモード時のみ） */
   let closingLine = $derived(() => {
     if (!isPolygon || coords.length < 2) return null;
-    const first = coords[0];
-    const last = coords[coords.length - 1];
+    const first = unwrappedCoords()[0];
+    const last = unwrappedCoords()[coords.length - 1];
     return {
-      x1: geoToSvgX(last.x),
-      y1: geoToSvgY(last.y),
-      x2: geoToSvgX(first.x),
-      y2: geoToSvgY(first.y),
+      x1: geoToSvgX(last.lon),
+      y1: geoToSvgY(last.lat),
+      x2: geoToSvgX(first.lon),
+      y2: geoToSvgY(first.lat),
     };
   });
 </script>
@@ -48,7 +70,8 @@
 <!-- 描画中のライン -->
 {#if coords.length >= 2}
   <polyline
-    points={pointsStr}
+    class="drawing-preview-polyline"
+    points={pointsStr()}
     fill="none"
     stroke="#00ccff"
     stroke-width={2 / zoom}
@@ -61,6 +84,7 @@
 <!-- カーソルへの仮線 -->
 {#if cursorLine()}
   <line
+    class="drawing-preview-cursor-line"
     x1={cursorLine()!.x1}
     y1={cursorLine()!.y1}
     x2={cursorLine()!.x2}
@@ -75,6 +99,7 @@
 <!-- クロージング線（最後→最初、ポリゴンモード時） -->
 {#if closingLine()}
   <line
+    class="drawing-preview-closing-line"
     x1={closingLine()!.x1}
     y1={closingLine()!.y1}
     x2={closingLine()!.x2}
@@ -87,10 +112,11 @@
 {/if}
 
 <!-- 配置済み頂点マーカー -->
-{#each coords as c, i (i)}
+{#each svgCoords() as coord, i (i)}
   <circle
-    cx={geoToSvgX(c.x)}
-    cy={geoToSvgY(c.y)}
+    class="drawing-preview-vertex"
+    cx={coord.x}
+    cy={coord.y}
     r={4 / zoom}
     fill={i === 0 ? '#00ff88' : '#00ccff'}
     stroke="#ffffff"

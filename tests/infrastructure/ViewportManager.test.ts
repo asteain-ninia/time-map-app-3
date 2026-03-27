@@ -192,8 +192,8 @@ describe('ViewportManager', () => {
 
     it('左にパンするとオフセット-360が追加される', () => {
       vm.setViewSize(800, 600);
-      // 左に大きくパン（centerXが0近くになるまで）
-      for (let i = 0; i < 50; i++) {
+      // 左隣の世界が見え始める程度にパン
+      for (let i = 0; i < 3; i++) {
         vm.pan(100, 0);
       }
       const offsets = vm.getWrapOffsets();
@@ -203,13 +203,24 @@ describe('ViewportManager', () => {
 
     it('右にパンするとオフセット360が追加される', () => {
       vm.setViewSize(800, 600);
-      // 右に大きくパン
-      for (let i = 0; i < 50; i++) {
+      // 右隣の世界が見え始める程度にパン
+      for (let i = 0; i < 3; i++) {
         vm.pan(-100, 0);
       }
       const offsets = vm.getWrapOffsets();
       expect(offsets).toContain(0);
       expect(offsets).toContain(360);
+    });
+
+    it('1周以上パンすると必要なタイル範囲まで再計算される', () => {
+      vm.setViewSize(800, 600);
+      for (let i = 0; i < 20; i++) {
+        vm.pan(100, 0);
+      }
+      const offsets = vm.getWrapOffsets();
+      expect(offsets).toContain(-1080);
+      expect(offsets).toContain(-720);
+      expect(offsets).not.toContain(0);
     });
   });
 

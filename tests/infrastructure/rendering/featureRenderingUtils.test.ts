@@ -5,6 +5,8 @@ import {
   buildRingPath,
   buildPolygonPath,
   buildLinePoints,
+  wrapLongitudeNearReference,
+  unwrapLongitudeSequence,
 } from '@infrastructure/rendering/featureRenderingUtils';
 import { Vertex } from '@domain/entities/Vertex';
 import { Coordinate } from '@domain/value-objects/Coordinate';
@@ -49,6 +51,26 @@ describe('geoToSvgY', () => {
   });
 });
 
+describe('wrapLongitudeNearReference', () => {
+  it('参照値に近い周回へ寄せる', () => {
+    expect(wrapLongitudeNearReference(-170, 175)).toBe(190);
+  });
+
+  it('すでに近い場合はそのまま返す', () => {
+    expect(wrapLongitudeNearReference(20, 30)).toBe(20);
+  });
+});
+
+describe('unwrapLongitudeSequence', () => {
+  it('東西端またぎの経度列を連続化する', () => {
+    expect(unwrapLongitudeSequence([170, -170, -160])).toEqual([170, 190, 200]);
+  });
+
+  it('西から東へまたぐ場合も連続化する', () => {
+    expect(unwrapLongitudeSequence([-170, 170, 160])).toEqual([-170, -190, -200]);
+  });
+});
+
 describe('buildRingPath', () => {
   it('3頂点の閉じたパスを生成する', () => {
     const vertices = makeVertices(
@@ -85,6 +107,16 @@ describe('buildRingPath', () => {
     const vertices = makeVertices(['v1', 0, 0], ['v2', 10, 0]);
     const path = buildRingPath(['v1', 'v_missing', 'v2'], vertices);
     expect(path).toBe('');
+  });
+
+  it('東西端をまたぐリングを短い経路で生成する', () => {
+    const vertices = makeVertices(
+      ['v1', 170, 0],
+      ['v2', -170, 0],
+      ['v3', -170, 10]
+    );
+    const path = buildRingPath(['v1', 'v2', 'v3'], vertices);
+    expect(path).toBe('M350 90 L370 90 L370 80 Z');
   });
 });
 
@@ -172,5 +204,11 @@ describe('buildLinePoints', () => {
     const vertices = makeVertices(['v1', 0, 0], ['v2', 10, 0]);
     const points = buildLinePoints(['v1', 'v_missing', 'v2'], vertices);
     expect(points).toBe('180,90 190,90');
+  });
+
+  it('東西端をまたぐラインを短い経路で生成する', () => {
+    const vertices = makeVertices(['v1', 170, 0], ['v2', -170, 0]);
+    const points = buildLinePoints(['v1', 'v2'], vertices);
+    expect(points).toBe('350,90 370,90');
   });
 });

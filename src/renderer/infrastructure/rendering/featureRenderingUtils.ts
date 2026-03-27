@@ -11,19 +11,48 @@ export function geoToSvgY(lat: number): number {
   return 90 - lat;
 }
 
+/**
+ * 経度を参照値に最も近い周回へ寄せる。
+ * 例: -170 を 175 に近い周回へ寄せると 190 になる。
+ */
+export function wrapLongitudeNearReference(lon: number, referenceLon: number): number {
+  let adjusted = lon;
+  while (adjusted - referenceLon > 180) adjusted -= 360;
+  while (adjusted - referenceLon < -180) adjusted += 360;
+  return adjusted;
+}
+
+/** 経度列を連続した経路になるようアンラップする */
+export function unwrapLongitudeSequence(longitudes: readonly number[]): number[] {
+  if (longitudes.length === 0) return [];
+
+  const unwrapped = [longitudes[0]];
+  for (let i = 1; i < longitudes.length; i++) {
+    unwrapped.push(wrapLongitudeNearReference(longitudes[i], unwrapped[i - 1]));
+  }
+  return unwrapped;
+}
+
 /** 頂点IDリストからSVGパス文字列を生成（閉じたリング用） */
 export function buildRingPath(
   vertexIds: readonly string[],
   vertices: ReadonlyMap<string, Vertex>
 ): string {
-  const points: Array<{ x: number; y: number }> = [];
+  const coords: Array<{ lon: number; lat: number }> = [];
   for (const id of vertexIds) {
     const v = vertices.get(id);
     if (v) {
-      points.push({ x: geoToSvgX(v.x), y: geoToSvgY(v.y) });
+      coords.push({ lon: v.x, lat: v.y });
     }
   }
-  if (points.length < 3) return '';
+  if (coords.length < 3) return '';
+
+  const unwrappedLongitudes = unwrapLongitudeSequence(coords.map((coord) => coord.lon));
+  const points = coords.map((coord, index) => ({
+    x: geoToSvgX(unwrappedLongitudes[index]),
+    y: geoToSvgY(coord.lat),
+  }));
+
   return (
     points
       .map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x} ${p.y}`)
@@ -47,13 +76,17 @@ export function buildLinePoints(
   vertexIds: readonly string[],
   vertices: ReadonlyMap<string, Vertex>
 ): string {
-  const points: string[] = [];
+  const coords: Array<{ lon: number; lat: number }> = [];
   for (const id of vertexIds) {
     const v = vertices.get(id);
     if (v) {
-      points.push(`${geoToSvgX(v.x)},${geoToSvgY(v.y)}`);
+      coords.push({ lon: v.x, lat: v.y });
     }
   }
+  const unwrappedLongitudes = unwrapLongitudeSequence(coords.map((coord) => coord.lon));
+  const points = coords.map(
+    (coord, index) => `${geoToSvgX(unwrappedLongitudes[index])},${geoToSvgY(coord.lat)}`
+  );
   return points.join(' ');
 }
 

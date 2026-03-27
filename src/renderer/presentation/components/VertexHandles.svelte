@@ -3,7 +3,11 @@
   import type { Vertex } from '@domain/entities/Vertex';
   import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
   import type { SnapIndicator } from '@infrastructure/rendering/snapIndicatorUtils';
-  import { geoToSvgX, geoToSvgY } from '@infrastructure/rendering/featureRenderingUtils';
+  import {
+    geoToSvgX,
+    geoToSvgY,
+    wrapLongitudeNearReference,
+  } from '@infrastructure/rendering/featureRenderingUtils';
   import { getUniqueVertexIds, getShapeEdges } from '@infrastructure/rendering/vertexHandleUtils';
   import { isVertexShared } from '@infrastructure/rendering/snapIndicatorUtils';
 
@@ -44,10 +48,13 @@
   {@const v1 = vertices.get(edge.v1)}
   {@const v2 = vertices.get(edge.v2)}
   {#if v1 && v2}
-    {@const mx = (geoToSvgX(v1.x) + geoToSvgX(v2.x)) / 2}
+    {@const x1 = geoToSvgX(v1.x)}
+    {@const x2 = geoToSvgX(wrapLongitudeNearReference(v2.x, v1.x))}
+    {@const mx = (x1 + x2) / 2}
     {@const my = (geoToSvgY(v1.y) + geoToSvgY(v2.y)) / 2}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <rect
+      class="edge-handle"
       x={mx - EDGE_HANDLE_RADIUS / zoom}
       y={my - EDGE_HANDLE_RADIUS / zoom}
       width={EDGE_HANDLE_RADIUS * 2 / zoom}
@@ -72,6 +79,7 @@
     {@const shared = isVertexShared(vertexId, sharedGroups)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <circle
+      class="vertex-handle"
       cx={geoToSvgX(vertex.x)}
       cy={geoToSvgY(vertex.y)}
       r={(isSelected ? VERTEX_RADIUS + 1 : VERTEX_RADIUS) / zoom}
@@ -90,6 +98,7 @@
 <!-- スナップインジケーター（ドラッグ中の近接頂点表示） -->
 {#if snapIndicator}
   <circle
+    class="snap-indicator"
     cx={geoToSvgX(snapIndicator.x)}
     cy={geoToSvgY(snapIndicator.y)}
     r={SNAP_INDICATOR_RADIUS / zoom}

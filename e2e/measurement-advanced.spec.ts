@@ -11,6 +11,22 @@ test.beforeEach(async ({ page }) => {
   await page.waitForLoadState('domcontentloaded');
 });
 
+async function panToWrappedState(page: import('@playwright/test').Page) {
+  const svg = page.locator('.map-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('SVG not found');
+
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 350, cy, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+
+  return { svg, box };
+}
+
 /** 測量モードで2点クリックするヘルパー */
 async function measureTwoPoints(page: import('@playwright/test').Page) {
   await page.keyboard.press('m');
@@ -56,6 +72,21 @@ test('測量パネルに座標が表示される', async ({ page }) => {
   }
 });
 
+// §2.1 測量 — 中央付近のクリックは中央経度付近に描画される
+test('中央で測量開始すると始点マーカーが中央経度付近に描画される', async ({ page }) => {
+  await page.keyboard.press('m');
+  const svg = page.locator('.map-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('SVG not found');
+
+  await svg.click({ position: { x: box.width / 2, y: box.height / 2 } });
+  await page.waitForTimeout(300);
+
+  const markerX = Number(await page.locator('.measurement-marker-start').getAttribute('cx'));
+  expect(markerX).toBeGreaterThan(170);
+  expect(markerX).toBeLessThan(190);
+});
+
 // §2.1 測量 — 測量線が大円パスで描画される（SVG path要素）
 test('測量で大円パスがSVG上に描画される', async ({ page }) => {
   await measureTwoPoints(page);
@@ -64,6 +95,47 @@ test('測量で大円パスがSVG上に描画される', async ({ page }) => {
   const surveyPath = page.locator('.map-svg path[stroke="#ffd93d"]');
   const count = await surveyPath.count();
   expect(count).toBeGreaterThan(0);
+});
+
+// §2.1 測量 — 横方向無限スクロール中も複製地図に描画される
+test('横方向無限スクロール中も測量線とマーカーが複製地図に描画される', async ({ page }) => {
+  const { svg, box } = await panToWrappedState(page);
+  await page.keyboard.press('m');
+
+  await svg.click({ position: { x: box.width * 0.35, y: box.height / 2 } });
+  await page.waitForTimeout(200);
+  await svg.click({ position: { x: box.width * 0.65, y: box.height / 2 } });
+  await page.waitForTimeout(300);
+
+  expect(await svg.locator('g[transform*="translate"]').count()).toBeGreaterThanOrEqual(2);
+  expect(await svg.locator('.measurement-path').count()).toBeGreaterThanOrEqual(2);
+  expect(await svg.locator('.measurement-marker').count()).toBeGreaterThanOrEqual(4);
+});
+
+// §2.1 東西端またぎ — 測量線は短い経路で描画される
+test('東西端をまたぐ測量線が短い経路で描画される', async ({ page }) => {
+  const { svg, box } = await panToWrappedState(page);
+  await page.keyboard.press('m');
+
+  await svg.click({ position: { x: box.width * 0.36, y: box.height * 0.5 } });
+  await page.waitForTimeout(200);
+  await svg.click({ position: { x: box.width * 0.40, y: box.height * 0.5 } });
+  await page.waitForTimeout(300);
+
+  const spans = await svg.locator('.measurement-path').evaluateAll((els) =>
+    els.map((el) => {
+      const matches = (el.getAttribute('d') || '').match(/-?\d+(?:\.\d+)?/g) || [];
+      const xs: number[] = [];
+      for (let i = 0; i < matches.length; i += 2) {
+        xs.push(Number(matches[i]));
+      }
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      return maxX - minX;
+    })
+  );
+
+  expect(spans.some((span) => span < 40)).toBe(true);
 });
 
 // §2.1 測量 — 測量モード解除後も測量線が残る

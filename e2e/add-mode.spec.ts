@@ -10,6 +10,22 @@ test.beforeEach(async ({ page }) => {
   await page.waitForLoadState('domcontentloaded');
 });
 
+async function panToWrappedState(page: import('@playwright/test').Page) {
+  const map = page.locator('.map-svg');
+  const box = await map.boundingBox();
+  if (!box) throw new Error('map not found');
+
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 350, cy, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+
+  return { map, box };
+}
+
 // §2.3.2 追加モード切替 — ツールバーのトグルボタン
 test('追加モードで追加ツール群が表示される', async ({ page }) => {
   await page.keyboard.press('a');
@@ -75,6 +91,48 @@ test('線ツールで2点クリック後に確定ボタンが表示される', a
   // 確定ボタンが表示される
   const confirmBtn = page.locator('.drawing-btn.confirm');
   await expect(confirmBtn).toBeVisible({ timeout: 3000 });
+});
+
+// §2.1 横方向無限スクロール — 描画プレビューも複製地図に表示される
+test('横方向無限スクロール中も描画プレビューが複製地図に表示される', async ({ page }) => {
+  const { map, box } = await panToWrappedState(page);
+  await page.keyboard.press('a');
+  const lineTool = page.locator('.tool-button.sub-tool[title="線を追加"]');
+  await lineTool.click();
+
+  await map.click({ position: { x: box.width * 0.35, y: box.height * 0.4 } });
+  await page.waitForTimeout(200);
+  await map.click({ position: { x: box.width * 0.55, y: box.height * 0.45 } });
+  await page.waitForTimeout(200);
+
+  expect(await map.locator('g[transform*="translate"]').count()).toBeGreaterThanOrEqual(2);
+  expect(await map.locator('.drawing-preview-polyline').count()).toBeGreaterThanOrEqual(2);
+  expect(await map.locator('.drawing-preview-vertex').count()).toBeGreaterThanOrEqual(4);
+});
+
+// §2.1 東西端またぎ — 線プレビューは長い反対回りではなく短い経路で描画される
+test('東西端をまたぐ線プレビューが短い経路で描画される', async ({ page }) => {
+  const { map, box } = await panToWrappedState(page);
+  await page.keyboard.press('a');
+  const lineTool = page.locator('.tool-button.sub-tool[title="線を追加"]');
+  await lineTool.click();
+
+  await map.click({ position: { x: box.width * 0.36, y: box.height * 0.5 } });
+  await page.waitForTimeout(200);
+  await map.click({ position: { x: box.width * 0.40, y: box.height * 0.5 } });
+  await page.waitForTimeout(200);
+
+  const spans = await map.locator('.drawing-preview-polyline').evaluateAll((els) =>
+    els.map((el) => {
+      const points = (el.getAttribute('points') || '')
+        .trim()
+        .split(/\s+/)
+        .map((pair) => Number(pair.split(',')[0]));
+      return Math.abs(points[points.length - 1] - points[0]);
+    })
+  );
+
+  expect(spans.some((span) => span < 40)).toBe(true);
 });
 
 // §2.3.2 線情報追加ツール — 確定で線地物が追加される

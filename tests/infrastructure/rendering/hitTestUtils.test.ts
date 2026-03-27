@@ -198,6 +198,21 @@ describe('hitTest', () => {
       );
       expect(result).toBeNull();
     });
+
+    it('東西端をまたぐ線でも seam 付近のクリックでヒットする', () => {
+      const vertices = makeVertices(['v1', 170, 0], ['v2', -170, 0]);
+      const feature = makeLineFeature('ln-wrap', ['v1', 'v2'], 'l1');
+      const result = hitTest(
+        new Coordinate(179, 0.2),
+        [feature],
+        vertices,
+        [layer],
+        time,
+        1.0
+      );
+      expect(result).not.toBeNull();
+      expect(result!.featureId).toBe('ln-wrap');
+    });
   });
 
   describe('面情報のヒットテスト', () => {
@@ -238,6 +253,26 @@ describe('hitTest', () => {
         1.0
       );
       expect(result).toBeNull();
+    });
+
+    it('東西端をまたぐポリゴン内部のクリックでヒットする', () => {
+      const vertices = makeVertices(
+        ['v1', 170, -10],
+        ['v2', -170, -10],
+        ['v3', -170, 10],
+        ['v4', 170, 10]
+      );
+      const feature = makePolygonFeature('pg-wrap', ['v1', 'v2', 'v3', 'v4'], 'l1');
+      const result = hitTest(
+        new Coordinate(179, 0),
+        [feature],
+        vertices,
+        [layer],
+        time,
+        1.0
+      );
+      expect(result).not.toBeNull();
+      expect(result!.featureId).toBe('pg-wrap');
     });
   });
 

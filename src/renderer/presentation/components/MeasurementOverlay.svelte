@@ -1,6 +1,11 @@
 <script lang="ts">
   import type { Coordinate } from '@domain/value-objects/Coordinate';
   import type { SurveyResult } from '@infrastructure/rendering/surveyModeManager';
+  import {
+    geoToSvgX,
+    geoToSvgY,
+    unwrapLongitudeSequence,
+  } from '@infrastructure/rendering/featureRenderingUtils';
 
   let {
     pointA = null as Coordinate | null,
@@ -14,10 +19,6 @@
     zoom?: number;
   } = $props();
 
-  /** SVG座標系: x=経度(0-360), y=90-緯度(0-180) */
-  function toSvgX(lon: number): number { return lon; }
-  function toSvgY(lat: number): number { return 90 - lat; }
-
   /** ポイントマーカーの半径 */
   let markerRadius = $derived(4 / zoom);
   /** ストローク幅 */
@@ -25,23 +26,32 @@
   /** フォントサイズ */
   let fontSize = $derived(10 / zoom);
 
+  /** 大円パスを連続した経路になるようアンラップした点列 */
+  let pathPoints = $derived(() => {
+    if (!result || result.greatCirclePoints.length === 0) return [];
+    const longitudes = unwrapLongitudeSequence(result.greatCirclePoints.map((point) => point.lon));
+    return result.greatCirclePoints.map((point, index) => ({
+      x: geoToSvgX(longitudes[index]),
+      y: geoToSvgY(point.lat),
+    }));
+  });
+
   /** 大円パスのd属性 */
   let pathD = $derived(() => {
-    if (!result || result.greatCirclePoints.length === 0) return '';
-    const pts = result.greatCirclePoints;
-    const parts = [`M ${toSvgX(pts[0].lon)} ${toSvgY(pts[0].lat)}`];
-    for (let i = 1; i < pts.length; i++) {
-      parts.push(`L ${toSvgX(pts[i].lon)} ${toSvgY(pts[i].lat)}`);
+    if (pathPoints().length === 0) return '';
+    const points = pathPoints();
+    const parts = [`M ${points[0].x} ${points[0].y}`];
+    for (let i = 1; i < points.length; i++) {
+      parts.push(`L ${points[i].x} ${points[i].y}`);
     }
     return parts.join(' ');
   });
 
   /** 距離ラベルの位置（パスの中点付近） */
   let labelPos = $derived(() => {
-    if (!result || result.greatCirclePoints.length < 2) return null;
-    const mid = Math.floor(result.greatCirclePoints.length / 2);
-    const pt = result.greatCirclePoints[mid];
-    return { x: toSvgX(pt.lon), y: toSvgY(pt.lat) };
+    if (pathPoints().length < 2) return null;
+    const mid = Math.floor(pathPoints().length / 2);
+    return pathPoints()[mid];
   });
 
   /** 距離テキスト */
@@ -59,8 +69,9 @@
 <!-- 始点マーカー -->
 {#if pointA}
   <circle
-    cx={toSvgX(pointA.x)}
-    cy={toSvgY(pointA.y)}
+    class="measurement-marker measurement-marker-start"
+    cx={geoToSvgX(pointA.x)}
+    cy={geoToSvgY(pointA.y)}
     r={markerRadius}
     fill="#ff6b6b"
     stroke="#fff"
@@ -72,8 +83,9 @@
 <!-- 終点マーカー -->
 {#if pointB}
   <circle
-    cx={toSvgX(pointB.x)}
-    cy={toSvgY(pointB.y)}
+    class="measurement-marker measurement-marker-end"
+    cx={geoToSvgX(pointB.x)}
+    cy={geoToSvgY(pointB.y)}
     r={markerRadius}
     fill="#4ecdc4"
     stroke="#fff"
@@ -85,6 +97,7 @@
 <!-- 大円パス -->
 {#if result && pathD()}
   <path
+    class="measurement-path"
     d={pathD()}
     fill="none"
     stroke="#ffd93d"
@@ -97,7 +110,7 @@
 
 <!-- 距離ラベル -->
 {#if result && labelPos()}
-  <g pointer-events="none">
+  <g class="measurement-label" pointer-events="none">
     <!-- 背景 -->
     <rect
       x={labelPos()!.x - distanceText().length * fontSize * 0.28}

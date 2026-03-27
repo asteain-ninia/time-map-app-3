@@ -134,16 +134,19 @@ export class ViewportManager {
 
   /**
    * 横方向無限スクロール用：viewBoxに表示すべきオフセット配列を返す。
-   * viewBoxが経度0〜360の範囲を超える場合、-360や+360オフセットの
-   * コンテンツも表示する必要がある。
+   * 現在のviewBoxと交差する360度幅の世界タイルを全て返す。
    */
   getWrapOffsets(): number[] {
     const vb = this.getViewBoxValues();
-    const offsets: number[] = [0];
-    // 左端が0未満なら左側にもう1つ表示
-    if (vb.x < 0) offsets.push(-360);
-    // 右端が360超なら右側にもう1つ表示
-    if (vb.x + vb.width > 360) offsets.push(360);
+    const epsilon = 1e-9;
+    const startTile = Math.floor(vb.x / 360);
+    const endTile = Math.floor((vb.x + vb.width - epsilon) / 360);
+    const offsets: number[] = [];
+
+    for (let tile = startTile; tile <= endTile; tile++) {
+      offsets.push(tile * 360);
+    }
+
     return offsets;
   }
 
