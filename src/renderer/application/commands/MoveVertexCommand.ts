@@ -7,6 +7,7 @@
  */
 
 import { Coordinate } from '@domain/value-objects/Coordinate';
+import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { Vertex } from '@domain/entities/Vertex';
 import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import type { VertexEditUseCase } from '../VertexEditUseCase';
@@ -14,6 +15,7 @@ import type { AddFeatureUseCase } from '../AddFeatureUseCase';
 import type { UndoableCommand } from '../UndoRedoManager';
 import {
   findGroupForVertex,
+  isSharedVertexMergeAllowed,
   mergeVertices,
   moveSharedVertices,
 } from '@domain/services/SharedVertexService';
@@ -28,7 +30,8 @@ export class MoveVertexCommand implements UndoableCommand {
     private readonly featureUseCase: AddFeatureUseCase,
     private readonly vertexId: string,
     private readonly newCoordinate: Coordinate,
-    private readonly mergeTargetVertexId: string | null = null
+    private readonly mergeTargetVertexId: string | null = null,
+    private readonly currentTime?: TimePoint
   ) {}
 
   execute(): void {
@@ -40,8 +43,18 @@ export class MoveVertexCommand implements UndoableCommand {
     this.oldCoordinates.clear();
     this.oldSharedGroups = new Map(sharedGroups);
 
+    const canMergeWithTarget =
+      this.mergeTargetVertexId !== null &&
+      this.mergeTargetVertexId !== this.vertexId &&
+      isSharedVertexMergeAllowed(
+        this.vertexId,
+        this.mergeTargetVertexId,
+        this.featureUseCase.getFeatures(),
+        sharedGroups,
+        this.currentTime
+      );
     const mergeTargetVertex =
-      this.mergeTargetVertexId && this.mergeTargetVertexId !== this.vertexId
+      canMergeWithTarget && this.mergeTargetVertexId
         ? vertices.get(this.mergeTargetVertexId)
         : undefined;
     const finalCoordinate = mergeTargetVertex?.coordinate ?? this.newCoordinate;

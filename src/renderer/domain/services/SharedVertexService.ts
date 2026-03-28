@@ -11,7 +11,10 @@
  */
 
 import { Coordinate } from '@domain/value-objects/Coordinate';
+import type { TimePoint } from '@domain/value-objects/TimePoint';
 import { Vertex } from '@domain/entities/Vertex';
+import type { Feature } from '@domain/entities/Feature';
+import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 
 /** スナップ候補 */
@@ -134,6 +137,130 @@ export function getLinkedVertexIds(
   const group = findGroupForVertex(vertexId, groups);
   if (!group) return [];
   return [...group.vertexIds];
+}
+
+function anchorContainsVertex(anchor: FeatureAnchor, vertexId: string): boolean {
+  switch (anchor.shape.type) {
+    case 'Point':
+      return anchor.shape.vertexId === vertexId;
+    case 'LineString':
+      return anchor.shape.vertexIds.includes(vertexId);
+    case 'Polygon':
+      return anchor.shape.rings.some((ring) => ring.vertexIds.includes(vertexId));
+  }
+}
+
+function getAnchorsForValidation(
+  feature: Feature,
+  currentTime?: TimePoint
+): readonly FeatureAnchor[] {
+  if (!currentTime) return feature.anchors;
+  const activeAnchor = feature.getActiveAnchor(currentTime);
+  return activeAnchor ? [activeAnchor] : [];
+}
+
+function getAdjacentVertexIdsInAnchor(anchor: FeatureAnchor, vertexId: string): string[] {
+  switch (anchor.shape.type) {
+    case 'Point':
+      return [];
+    case 'LineString': {
+      const index = anchor.shape.vertexIds.indexOf(vertexId);
+      if (index === -1) return [];
+
+      const adjacent: string[] = [];
+      if (index > 0) adjacent.push(anchor.shape.vertexIds[index - 1]);
+      if (index < anchor.shape.vertexIds.length - 1) adjacent.push(anchor.shape.vertexIds[index + 1]);
+      return adjacent;
+    }
+    case 'Polygon': {
+      for (const ring of anchor.shape.rings) {
+        const index = ring.vertexIds.indexOf(vertexId);
+        if (index === -1) continue;
+
+        const lastIndex = ring.vertexIds.length - 1;
+        if (lastIndex <= 0) return [];
+
+        const prevIndex = index === 0 ? lastIndex : index - 1;
+        const nextIndex = index === lastIndex ? 0 : index + 1;
+        return [ring.vertexIds[prevIndex], ring.vertexIds[nextIndex]];
+      }
+      return [];
+    }
+  }
+}
+
+export function areVerticesInSameFeature(
+  vertexIdA: string,
+  vertexIdB: string,
+  features: readonly Feature[],
+  currentTime?: TimePoint
+): boolean {
+  for (const feature of features) {
+    const anchors = getAnchorsForValidation(feature, currentTime);
+    if (
+      anchors.some((anchor) =>
+        anchorContainsVertex(anchor, vertexIdA) &&
+        anchorContainsVertex(anchor, vertexIdB)
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function wouldCreateAdjacentSharedVertexConflict(
+  draggedVertexId: string,
+  targetVertexId: string,
+  features: readonly Feature[],
+  groups: ReadonlyMap<string, SharedVertexGroup>,
+  currentTime?: TimePoint
+): boolean {
+  const draggedVertexIds = getLinkedVertexIds(draggedVertexId, groups);
+  const sourceVertexIds = draggedVertexIds.length > 0 ? draggedVertexIds : [draggedVertexId];
+  const targetVertexIds = new Set(
+    (() => {
+      const linkedTargetIds = getLinkedVertexIds(targetVertexId, groups);
+      return linkedTargetIds.length > 0 ? linkedTargetIds : [targetVertexId];
+    })()
+  );
+
+  for (const feature of features) {
+    const anchors = getAnchorsForValidation(feature, currentTime);
+    for (const anchor of anchors) {
+      for (const sourceVertexId of sourceVertexIds) {
+        if (!anchorContainsVertex(anchor, sourceVertexId)) continue;
+        const adjacentVertexIds = getAdjacentVertexIdsInAnchor(anchor, sourceVertexId);
+        if (adjacentVertexIds.some((adjacentVertexId) => targetVertexIds.has(adjacentVertexId))) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+export function isSharedVertexMergeAllowed(
+  draggedVertexId: string,
+  targetVertexId: string,
+  features: readonly Feature[],
+  groups: ReadonlyMap<string, SharedVertexGroup>,
+  currentTime?: TimePoint
+): boolean {
+  if (draggedVertexId === targetVertexId) return false;
+  if (areVerticesInSameFeature(draggedVertexId, targetVertexId, features, currentTime)) {
+    return false;
+  }
+
+  return !wouldCreateAdjacentSharedVertexConflict(
+    draggedVertexId,
+    targetVertexId,
+    features,
+    groups,
+    currentTime
+  );
 }
 
 /**

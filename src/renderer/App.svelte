@@ -40,6 +40,7 @@
     findGroupForVertex,
     findSnapCandidates,
     getLinkedVertexIds,
+    isSharedVertexMergeAllowed,
     moveSharedVertices,
     screenToWorldSnapDistance,
   } from '@domain/services/SharedVertexService';
@@ -246,6 +247,34 @@
     features = addFeature.getFeatures();
     vertices = new Map(addFeature.getVertices());
     sharedGroups = new Map(addFeature.getSharedVertexGroups());
+  }
+
+  function collectFeatureVertexIds(featureId: string): Set<string> {
+    const feature = features.find((candidate) => candidate.id === featureId);
+    if (!feature) return new Set();
+
+    const vertexIds = new Set<string>();
+    for (const anchor of feature.anchors) {
+      switch (anchor.shape.type) {
+        case 'Point':
+          vertexIds.add(anchor.shape.vertexId);
+          break;
+        case 'LineString':
+          for (const vertexId of anchor.shape.vertexIds) {
+            vertexIds.add(vertexId);
+          }
+          break;
+        case 'Polygon':
+          for (const ring of anchor.shape.rings) {
+            for (const vertexId of ring.vertexIds) {
+              vertexIds.add(vertexId);
+            }
+          }
+          break;
+      }
+    }
+
+    return vertexIds;
   }
 
   /** レイヤーデータを更新する */
@@ -910,7 +939,8 @@
           dragState.vertexId,
           dragState.previewCoord,
           // 複数スナップ候補のうち最近接（[0]）のみを共有化対象とする
-          snapIndicators[0]?.targetVertexId ?? null
+          snapIndicators[0]?.targetVertexId ?? null,
+          currentTime
         )
       );
       refreshFeatureData();
@@ -936,15 +966,29 @@
       const currentVertices = addFeature.getVertices();
       const currentSharedGroups = addFeature.getSharedVertexGroups();
       const linkedVertexIds = getLinkedVertexIds(dragState.vertexId, currentSharedGroups);
-      const excludedVertexIds =
+      const excludedVertexIds = new Set(
         linkedVertexIds.length > 0
-          ? new Set(linkedVertexIds)
-          : new Set([dragState.vertexId]);
+          ? linkedVertexIds
+          : [dragState.vertexId]
+      );
+      if (selectedFeatureId) {
+        for (const vertexId of collectFeatureVertexIds(selectedFeatureId)) {
+          excludedVertexIds.add(vertexId);
+        }
+      }
       const snapDist = screenToWorldSnapDistance(50, viewWidthPx, zoom);
       const candidates = findSnapCandidates(
         geo.lon, geo.lat, currentVertices,
         excludedVertexIds,
         snapDist
+      ).filter((candidate) =>
+        isSharedVertexMergeAllowed(
+          dragState.vertexId,
+          candidate.vertexId,
+          features,
+          currentSharedGroups,
+          currentTime ?? undefined
+        )
       );
       snapIndicators = buildSnapIndicators(
         candidates,
