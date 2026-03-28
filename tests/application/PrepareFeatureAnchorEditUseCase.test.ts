@@ -140,9 +140,9 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
 
       const result = prepare.prepare(poly2.id, 'property_only', time, {});
 
-      // 競合が検出される可能性がある
-      // （detectConflictsForFeatureの実装に依存）
-      expect(result.status).toBeDefined();
+      expect(result.status).toBe('requires_resolution');
+      expect(result.conflicts).toHaveLength(1);
+      expect(result.conflicts[0].featureIdA).toBe(poly2.id);
     });
 
     it('ポイント地物は競合なし', () => {

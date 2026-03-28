@@ -12,6 +12,10 @@ import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
 import type { AddFeatureUseCase } from '../AddFeatureUseCase';
 import type { UndoableCommand } from '../UndoRedoManager';
+import {
+  createTransientPolygonFeature,
+  validatePolygonOrThrow,
+} from '../polygonValidation';
 
 /** 追加する地物の種類とパラメータ */
 export type AddFeatureParams =
@@ -37,6 +41,28 @@ export class AddFeatureCommand implements UndoableCommand {
   execute(): void {
     // 追加前の頂点IDを記録
     const verticesBefore = new Set(this.featureUseCase.getVertices().keys());
+
+    if (this.params.type === 'polygon') {
+      const transient = createTransientPolygonFeature(
+        this.params.coords,
+        this.params.layerId,
+        this.params.time,
+        'pending-add',
+        'pending-add-ring',
+        'pending-add-v'
+      );
+      const validationVertices = new Map(this.featureUseCase.getVertices());
+      for (const [vertexId, vertex] of transient.vertices) {
+        validationVertices.set(vertexId, vertex);
+      }
+      validatePolygonOrThrow(
+        transient.feature,
+        this.featureUseCase.getFeatures(),
+        validationVertices,
+        this.params.time,
+        this.params.layerId
+      );
+    }
 
     let feature: Feature;
     switch (this.params.type) {

@@ -15,6 +15,10 @@ import type { TimePoint } from '@domain/value-objects/TimePoint';
 import {
   getLinkedVertexIds,
 } from '@domain/services/SharedVertexService';
+import {
+  collectImpactedFeatureIdsByVertexIds,
+  validatePolygonFeatureIdsOrThrow,
+} from '../polygonValidation';
 
 export interface MoveFeatureParams {
   featureId: string;
@@ -59,6 +63,31 @@ export class MoveFeatureCommand implements UndoableCommand {
         allVertexIds.add(linkedVid);
       }
     }
+
+    const validationVertices = new Map(vertices);
+    for (const vid of allVertexIds) {
+      const vertex = validationVertices.get(vid);
+      if (!vertex) continue;
+
+      validationVertices.set(vid, vertex.withCoordinate(
+        new Coordinate(
+          vertex.coordinate.x + dx,
+          vertex.coordinate.y + dy
+        )
+      ));
+    }
+
+    const impactedFeatureIds = collectImpactedFeatureIdsByVertexIds(
+      this.featureUseCase.getFeatures(),
+      allVertexIds,
+      currentTime
+    );
+    validatePolygonFeatureIdsOrThrow(
+      impactedFeatureIds,
+      this.featureUseCase.getFeatures(),
+      validationVertices,
+      currentTime
+    );
 
     // 元の座標を保存（Undo用）
     this.originalCoords.clear();

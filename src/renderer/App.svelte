@@ -55,7 +55,6 @@
     startFeatureDrag,
     updateFeatureDrag,
     hasFeatureDragMoved,
-    getFeatureDragDelta,
     type FeatureDragState,
   } from '@infrastructure/rendering/featureDragManager';
   import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
@@ -88,12 +87,16 @@
   import { MergeFeatureCommand } from '@application/commands/MergeFeatureCommand';
   import type { SpatialConflict } from '@domain/services/ConflictDetectionService';
   import type { ConflictResolution } from '@application/AnchorEditDraft';
-  import { addHoleRing, addExclaveRing } from '@domain/services/RingEditService';
+  import { addHoleRing, addExclaveRing, validateRingPlacement } from '@domain/services/RingEditService';
   import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
   import { DEFAULT_SETTINGS, DEFAULT_METADATA, type WorldSettings, type WorldMetadata } from '@domain/entities/World';
   import { Vertex } from '@domain/entities/Vertex';
   import { serialize as serializeWorld } from '@infrastructure/persistence/JSONSerializer';
-  import { Ring } from '@domain/value-objects/Ring';
+  import {
+    PolygonValidationError,
+    createTransientPolygonFeature,
+    validatePolygonOrThrow,
+  } from '@application/polygonValidation';
   import {
     createDirtyState,
     markDirty,
@@ -117,14 +120,19 @@
     const layerId = layers[0].id;
     const time = navigateTime.getCurrentTime();
 
-    if (addToolType === 'point' && coords.length >= 1) {
-      undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'point', coord: coords[0], layerId, time }));
-    } else if (addToolType === 'line' && coords.length >= 2) {
-      undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'line', coords, layerId, time }));
-    } else if (addToolType === 'polygon' && coords.length >= 3) {
-      undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'polygon', coords, layerId, time }));
+    try {
+      if (addToolType === 'point' && coords.length >= 1) {
+        undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'point', coord: coords[0], layerId, time }));
+      } else if (addToolType === 'line' && coords.length >= 2) {
+        undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'line', coords, layerId, time }));
+      } else if (addToolType === 'polygon' && coords.length >= 3) {
+        undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'polygon', coords, layerId, time }));
+      }
+      validationMessage = '';
+      refreshFeatureData();
+    } catch (error) {
+      validationMessage = getValidationMessage(error);
     }
-    refreshFeatureData();
   });
 
   // --- リアクティブ状態 ---
@@ -170,10 +178,69 @@
 
   // --- ダーティ状態管理 ---
   let dirtyState = $state<DirtyState>(createDirtyState());
+  let validationMessage = $state('');
 
   /** 変更を記録する（各編集操作後に呼ぶ） */
   function markAsDirty(): void {
     dirtyState = markDirty(dirtyState);
+  }
+
+  function getValidationMessage(error: unknown): string {
+    if (error instanceof PolygonValidationError) {
+      return error.message;
+    }
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return '形状を確定できません';
+  }
+
+  function buildValidationVertices(
+    updates: readonly { vertexId: string; coordinate: Coordinate }[]
+  ): Map<string, Vertex> {
+    const validationVertices = new Map(addFeature.getVertices());
+    for (const update of updates) {
+      const existing = validationVertices.get(update.vertexId);
+      validationVertices.set(
+        update.vertexId,
+        existing
+          ? existing.withCoordinate(update.coordinate)
+          : new Vertex(update.vertexId, update.coordinate.normalize())
+      );
+    }
+    return validationVertices;
+  }
+
+  function validatePendingPolygon(coords: readonly Coordinate[]): string | null {
+    if (addToolType !== 'polygon' || !currentTime) return null;
+
+    const layerList = manageLayers.getLayers();
+    if (layerList.length === 0) return null;
+
+    try {
+      const transient = createTransientPolygonFeature(
+        coords,
+        layerList[0].id,
+        currentTime,
+        'pending-drawing',
+        'pending-drawing-ring',
+        'pending-drawing-v'
+      );
+      const validationVertices = new Map(addFeature.getVertices());
+      for (const [vertexId, vertex] of transient.vertices) {
+        validationVertices.set(vertexId, vertex);
+      }
+      validatePolygonOrThrow(
+        transient.feature,
+        features,
+        validationVertices,
+        currentTime,
+        layerList[0].id
+      );
+      return null;
+    } catch (error) {
+      return getValidationMessage(error);
+    }
   }
 
   // --- 自動バックアップ ---
@@ -354,11 +421,13 @@
   function onModeChange(mode: ToolMode): void {
     toolStore.send({ type: 'MODE_CHANGE', mode });
     selectedFeatureId = null;
+    validationMessage = '';
     syncToolState();
   }
 
   function onAddToolChange(toolType: AddToolType): void {
     toolStore.send({ type: 'SET_ADD_TOOL', toolType });
+    validationMessage = '';
     syncToolState();
   }
 
@@ -424,6 +493,13 @@
 
   function onMapDoubleClick(coord: Coordinate): void {
     if (toolMode === 'add' && isDrawing) {
+      const nextCoords = [...drawingCoords, coord];
+      const pendingValidation = validatePendingPolygon(nextCoords);
+      if (pendingValidation) {
+        validationMessage = pendingValidation;
+        return;
+      }
+      validationMessage = '';
       toolStore.send({ type: 'MAP_DOUBLE_CLICK', coord });
       syncToolState();
     }
@@ -441,6 +517,12 @@
 
   function onConfirm(): void {
     if (isDrawing) {
+      const pendingValidation = validatePendingPolygon(drawingCoords);
+      if (pendingValidation) {
+        validationMessage = pendingValidation;
+        return;
+      }
+      validationMessage = '';
       toolStore.send({ type: 'CONFIRM' });
       syncToolState();
     }
@@ -448,6 +530,7 @@
 
   function onCancel(): void {
     if (isDrawing) {
+      validationMessage = '';
       toolStore.send({ type: 'KEY_ESCAPE' });
       syncToolState();
     }
@@ -457,57 +540,104 @@
 
   function onAddHole(): void {
     if (!selectedFeatureId) return;
+    validationMessage = '';
     ringDrawingState = startRingDrawing('hole', selectedFeatureId);
   }
 
   function onAddExclave(): void {
     if (!selectedFeatureId) return;
+    validationMessage = '';
     ringDrawingState = startRingDrawing('exclave', selectedFeatureId);
   }
 
   function onConfirmRing(): void {
     if (!ringDrawingState || !canConfirmRing(ringDrawingState) || !currentTime) return;
 
-    const feature = features.find((f) => f.id === ringDrawingState!.featureId);
+    const feature = features.find((f) => f.id === ringDrawingState.featureId);
     if (!feature) return;
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor || anchor.shape.type !== 'Polygon') return;
 
-    // 座標から頂点を作成
-    const vertexMap = addFeature.getVertices() as Map<string, Vertex>;
-    const newVertexIds: string[] = [];
-    for (const coord of ringDrawingState.coords) {
-      const id = `v-ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      vertexMap.set(id, new Vertex(id, coord.normalize()));
-      newVertexIds.push(id);
+    const currentVertices = addFeature.getVertices();
+    const resolveCoords = (vertexIds: readonly string[]) =>
+      vertexIds
+        .map((vertexId) => currentVertices.get(vertexId))
+        .filter((vertex): vertex is Vertex => vertex !== undefined)
+        .map((vertex) => ({ x: vertex.x, y: vertex.y }));
+
+    const newRingCoords = ringDrawingState.coords.map((coord) => ({ x: coord.x, y: coord.y }));
+    const isHole = ringDrawingState.type === 'hole';
+    const parentRing = isHole
+      ? anchor.shape.rings.find((ring) => ring.ringType === 'territory' && ring.parentId === null)
+      : null;
+    const parentRingId = parentRing?.id ?? null;
+    const siblingRingsCoords = anchor.shape.rings
+      .filter((ring) =>
+        ring.parentId === parentRingId &&
+        ring.ringType === (isHole ? 'hole' : 'territory')
+      )
+      .map((ring) => resolveCoords(ring.vertexIds));
+    const placementErrors = validateRingPlacement(
+      newRingCoords,
+      parentRing ? resolveCoords(parentRing.vertexIds) : null,
+      siblingRingsCoords
+    );
+    if (placementErrors.length > 0) {
+      validationMessage = placementErrors[0].message;
+      return;
     }
 
-    const newRingId = `ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
-      let result;
-      if (ringDrawingState.type === 'hole') {
-        // 最初の領土リングを親にする
-        const parentRing = anchor.shape.rings.find((r) => r.ringType === 'territory' && r.parentId === null);
-        if (!parentRing) return;
-        result = addHoleRing(anchor.shape.rings, parentRing.id, newRingId, newVertexIds);
-      } else {
-        // 飛び地: トップレベル（parentId=null）
-        result = addExclaveRing(anchor.shape.rings, null, newRingId, newVertexIds);
+      const pendingVertexIds = ringDrawingState.coords.map((_, index) => `pending-ring-v-${index}`);
+      const validationVertices = buildValidationVertices(
+        ringDrawingState.coords.map((coord, index) => ({
+          vertexId: pendingVertexIds[index],
+          coordinate: coord,
+        }))
+      );
+      const pendingRingResult = isHole
+        ? addHoleRing(anchor.shape.rings, parentRingId!, 'pending-ring', pendingVertexIds)
+        : addExclaveRing(anchor.shape.rings, null, 'pending-ring', pendingVertexIds);
+      const pendingAnchor = anchor.withShape({ type: 'Polygon', rings: pendingRingResult.rings });
+      const pendingFeature = feature.withAnchors(
+        feature.anchors.map((candidate) => candidate.id === anchor.id ? pendingAnchor : candidate)
+      );
+      validatePolygonOrThrow(
+        pendingFeature,
+        features,
+        validationVertices,
+        currentTime,
+        anchor.placement.layerId
+      );
+
+      const vertexMap = addFeature.getVertices() as Map<string, Vertex>;
+      const newVertexIds: string[] = [];
+      for (const coord of ringDrawingState.coords) {
+        const id = `v-ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        vertexMap.set(id, new Vertex(id, coord.normalize()));
+        newVertexIds.push(id);
       }
+      const newRingId = `ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const result = isHole
+        ? addHoleRing(anchor.shape.rings, parentRingId!, newRingId, newVertexIds)
+        : addExclaveRing(anchor.shape.rings, null, newRingId, newVertexIds);
 
       const newAnchor = anchor.withShape({ type: 'Polygon', rings: result.rings });
       const newAnchors = feature.anchors.map((a) => a.id === anchor.id ? newAnchor : a);
       const updatedFeature = feature.withAnchors(newAnchors);
       (addFeature.getFeaturesMap() as Map<string, typeof feature>).set(feature.id, updatedFeature);
+      validationMessage = '';
       refreshFeatureData();
-    } catch {
-      // バリデーションエラー
+    } catch (error) {
+      validationMessage = getValidationMessage(error);
+      return;
     }
 
     ringDrawingState = null;
   }
 
   function onCancelRing(): void {
+    validationMessage = '';
     ringDrawingState = null;
   }
 
@@ -515,6 +645,7 @@
 
   function onStartKnife(): void {
     if (!selectedFeatureId) return;
+    validationMessage = '';
     knifeDrawingState = startKnifeDrawing(selectedFeatureId);
   }
 
@@ -547,6 +678,7 @@
   }
 
   function onCancelKnife(): void {
+    validationMessage = '';
     knifeDrawingState = null;
     showSplitModal = false;
   }
@@ -752,15 +884,20 @@
       // プレビュー中に直接移動した分を元に戻す（逆方向に移動）
       applyFeatureTranslation(featureDragState.featureId, -totalDx, -totalDy);
 
-      // Undo対応コマンドで正式に移動
-      undoRedo.execute(
-        new MoveFeatureCommand(addFeature, {
-          featureId: featureDragState.featureId,
-          dx: totalDx,
-          dy: totalDy,
-          currentTime,
-        })
-      );
+      try {
+        // Undo対応コマンドで正式に移動
+        undoRedo.execute(
+          new MoveFeatureCommand(addFeature, {
+            featureId: featureDragState.featureId,
+            dx: totalDx,
+            dy: totalDy,
+            currentTime,
+          })
+        );
+        validationMessage = '';
+      } catch (error) {
+        validationMessage = getValidationMessage(error);
+      }
       refreshFeatureData();
     }
 
@@ -838,6 +975,7 @@
 
   /** 頂点ハンドルのmousedown — 頂点選択＋ドラッグ開始 */
   function onVertexMouseDown(vertexId: string, e: MouseEvent): void {
+    validationMessage = '';
     if (e.shiftKey) {
       // Shift+クリック: 頂点選択トグル（ドラッグなし）
       const next = new Set(selectedVertexIds);
@@ -941,18 +1079,23 @@
     if (hasMoved(dragState)) {
       // ドラッグ中に直接移動していたので、まず元に戻す
       applyVertexDragPreview(dragState.vertexId, dragState.startCoord);
-      // Undo対応コマンドで正式に移動
-      undoRedo.execute(
-        new MoveVertexCommand(
-          vertexEdit,
-          addFeature,
-          dragState.vertexId,
-          dragState.previewCoord,
-          // 複数スナップ候補のうち最近接（[0]）のみを共有化対象とする
-          snapIndicators[0]?.targetVertexId ?? null,
-          currentTime
-        )
-      );
+      try {
+        // Undo対応コマンドで正式に移動
+        undoRedo.execute(
+          new MoveVertexCommand(
+            vertexEdit,
+            addFeature,
+            dragState.vertexId,
+            dragState.previewCoord,
+            // 複数スナップ候補のうち最近接（[0]）のみを共有化対象とする
+            snapIndicators[0]?.targetVertexId ?? null,
+            currentTime
+          )
+        );
+        validationMessage = '';
+      } catch (error) {
+        validationMessage = getValidationMessage(error);
+      }
       refreshFeatureData();
     }
     dragState = null;
@@ -1296,6 +1439,7 @@
           surveyPointB={surveyState.pointB}
           {surveyResult}
           boxSelectBox={boxSelectState && isBoxLargeEnough(boxSelectState) ? getSelectionBox(boxSelectState) : null}
+          {validationMessage}
         />
       </div>
       <div class="sidebar-area">

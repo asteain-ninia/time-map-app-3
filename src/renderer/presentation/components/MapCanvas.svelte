@@ -70,6 +70,7 @@
     surveyPointB = null as CoordinateType | null,
     surveyResult = null as SurveyResult | null,
     boxSelectBox = null as { minX: number; minY: number; maxX: number; maxY: number } | null,
+    validationMessage = '',
   }: {
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
@@ -133,6 +134,7 @@
     surveyPointB?: CoordinateType | null;
     surveyResult?: SurveyResult | null;
     boxSelectBox?: { minX: number; minY: number; maxX: number; maxY: number } | null;
+    validationMessage?: string;
   } = $props();
 
   /** 描画確定可能か（線:2点以上、面:3点以上） */
@@ -450,6 +452,12 @@
 
   </svg>
 
+  {#if validationMessage}
+    <div class="validation-banner" role="status">
+      {validationMessage}
+    </div>
+  {/if}
+
   <!-- 描画中の確定/キャンセルボタン（§2.3.2: 確定ボタンの押下で形状を確定） -->
   {#if isDrawing}
     <div class="drawing-toolbar">
@@ -558,6 +566,24 @@
     color: #ccc;
     font-size: 11px;
     border-radius: 3px;
+    pointer-events: none;
+  }
+
+  .validation-banner {
+    position: absolute;
+    top: 56px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: min(80vw, 520px);
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 120, 120, 0.45);
+    border-radius: 8px;
+    background: rgba(96, 22, 22, 0.92);
+    color: #ffdede;
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
     pointer-events: none;
   }
 

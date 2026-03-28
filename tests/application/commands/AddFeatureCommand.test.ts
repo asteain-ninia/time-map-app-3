@@ -108,6 +108,43 @@ describe('AddFeatureCommand', () => {
       expect(addFeature.getFeatures()).toHaveLength(0);
       expect(addFeature.getVertices().size).toBe(0);
     });
+
+    it('自己交差する面は追加を拒否する', () => {
+      const bowTie = [
+        new Coordinate(0, 0),
+        new Coordinate(10, 10),
+        new Coordinate(10, 0),
+        new Coordinate(0, 10),
+      ];
+      const cmd = new AddFeatureCommand(addFeature, {
+        type: 'polygon', coords: bowTie, layerId, time,
+      });
+
+      expect(() => undoRedo.execute(cmd)).toThrow('自己交差');
+      expect(addFeature.getFeatures()).toHaveLength(0);
+    });
+
+    it('同一レイヤーの既存ポリゴンと重なる面は追加を拒否する', () => {
+      addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10), new Coordinate(0, 10)],
+        layerId,
+        time
+      );
+      const cmd = new AddFeatureCommand(addFeature, {
+        type: 'polygon',
+        coords: [
+          new Coordinate(5, 0),
+          new Coordinate(15, 0),
+          new Coordinate(15, 10),
+          new Coordinate(5, 10),
+        ],
+        layerId,
+        time,
+      });
+
+      expect(() => undoRedo.execute(cmd)).toThrow('重なっています');
+      expect(addFeature.getFeatures()).toHaveLength(1);
+    });
   });
 
   describe('descriptionの生成', () => {

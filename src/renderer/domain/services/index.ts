@@ -69,6 +69,11 @@ export {
 export type { SpatialConflict } from './ConflictDetectionService';
 
 export {
+  validatePolygonFeature,
+} from './PolygonValidationService';
+export type { PolygonValidationResult } from './PolygonValidationService';
+
+export {
   polygonDifference,
   polygonIntersection,
   polygonUnion,

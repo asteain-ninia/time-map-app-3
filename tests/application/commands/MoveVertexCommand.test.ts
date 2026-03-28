@@ -206,4 +206,33 @@ describe('MoveVertexCommand', () => {
     const group = [...addFeature.getSharedVertexGroups().values()][0];
     expect(group.vertexIds).toEqual([lineVertexIds[0], targetVertexId]);
   });
+
+  it('自己交差する頂点移動は拒否する', () => {
+    const time = new TimePoint(1000);
+    const polygon = addFeature.addPolygon(
+      [
+        new Coordinate(0, 0),
+        new Coordinate(10, 0),
+        new Coordinate(10, 10),
+        new Coordinate(0, 10),
+      ],
+      'l1',
+      time
+    );
+    const anchor = polygon.getActiveAnchor(time)!;
+    const vertexIds =
+      anchor.shape.type === 'Polygon' ? [...anchor.shape.rings[0].vertexIds] : [];
+
+    const cmd = new MoveVertexCommand(
+      vertexEdit,
+      addFeature,
+      vertexIds[1],
+      new Coordinate(5, 15),
+      null,
+      time
+    );
+
+    expect(() => undoRedo.execute(cmd)).toThrow('自己交差');
+    expect(addFeature.getVertices().get(vertexIds[1])!.coordinate).toEqual(new Coordinate(10, 0));
+  });
 });

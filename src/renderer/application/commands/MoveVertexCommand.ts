@@ -19,6 +19,10 @@ import {
   mergeVertices,
   moveSharedVertices,
 } from '@domain/services/SharedVertexService';
+import {
+  collectImpactedFeatureIdsByVertexIds,
+  validatePolygonFeatureIdsOrThrow,
+} from '../polygonValidation';
 
 export class MoveVertexCommand implements UndoableCommand {
   readonly description = '頂点を移動';
@@ -58,8 +62,33 @@ export class MoveVertexCommand implements UndoableCommand {
         ? vertices.get(this.mergeTargetVertexId)
         : undefined;
     const finalCoordinate = mergeTargetVertex?.coordinate ?? this.newCoordinate;
-
     const draggedGroup = findGroupForVertex(this.vertexId, sharedGroups);
+
+    if (this.currentTime) {
+      const validationVertices = new Map(vertices);
+      const movedVertexIds = draggedGroup
+        ? [...draggedGroup.vertexIds]
+        : [this.vertexId];
+
+      for (const movedVertexId of movedVertexIds) {
+        const movedVertex = validationVertices.get(movedVertexId);
+        if (!movedVertex) continue;
+        validationVertices.set(movedVertexId, movedVertex.withCoordinate(finalCoordinate));
+      }
+
+      const impactedFeatureIds = collectImpactedFeatureIdsByVertexIds(
+        this.featureUseCase.getFeatures(),
+        movedVertexIds,
+        this.currentTime
+      );
+      validatePolygonFeatureIdsOrThrow(
+        impactedFeatureIds,
+        this.featureUseCase.getFeatures(),
+        validationVertices,
+        this.currentTime
+      );
+    }
+
     if (draggedGroup) {
       const moveResult = moveSharedVertices(
         draggedGroup.id,

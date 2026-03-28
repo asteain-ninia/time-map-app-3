@@ -90,6 +90,31 @@ describe('MoveFeatureCommand', () => {
       expect(v0.coordinate.x).toBe(1);
       expect(v0.coordinate.y).toBe(2);
     });
+
+    it('他のポリゴンと重なる移動は拒否する', () => {
+      const featureA = addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10), new Coordinate(0, 10)],
+        'l1',
+        time
+      );
+      addFeature.addPolygon(
+        [new Coordinate(20, 0), new Coordinate(30, 0), new Coordinate(30, 10), new Coordinate(20, 10)],
+        'l1',
+        time
+      );
+
+      const cmd = new MoveFeatureCommand(addFeature, {
+        featureId: featureA.id, dx: 15, dy: 0, currentTime: time,
+      });
+
+      expect(() => cmd.execute()).toThrow('重なっています');
+
+      const anchor = featureA.getActiveAnchor(time)!;
+      const ring = (anchor.shape as { type: 'Polygon'; rings: readonly { vertexIds: readonly string[] }[] }).rings[0];
+      const vertex = addFeature.getVertices().get(ring.vertexIds[0])!;
+      expect(vertex.coordinate.x).toBe(0);
+      expect(vertex.coordinate.y).toBe(0);
+    });
   });
 
   describe('存在しない地物', () => {

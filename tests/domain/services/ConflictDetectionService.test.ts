@@ -196,5 +196,22 @@ describe('ConflictDetectionService', () => {
 
       expect(conflicts).toEqual([]);
     });
+
+    it('一覧に未登録の仮想ポリゴンでも競合を検出できる', () => {
+      const existing = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const transient = makePolygonFeature('f-temp', 'layer-1', ['vB1', 'vB2', 'vB3', 'vB4']);
+
+      const conflicts = detectConflictsForFeature(
+        transient,
+        [existing],
+        vertices,
+        time100,
+        'layer-1'
+      );
+
+      expect(conflicts).toHaveLength(1);
+      expect(conflicts[0].featureIdA).toBe('f-temp');
+      expect(conflicts[0].featureIdB).toBe('f1');
+    });
   });
 });
