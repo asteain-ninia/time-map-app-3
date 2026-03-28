@@ -136,8 +136,7 @@ test('東西端をまたぐ線プレビューが短い経路で描画される',
 });
 
 // §2.3.2 線情報追加ツール — 確定で線地物が追加される
-// KNOWN BUG: 線地物がブラウザE2Eでは追加されない（Electronでは未検証）
-test.fixme('線ツールで確定すると線地物が追加される', async ({ page }) => {
+test('線ツールで確定すると線地物が追加される', async ({ page }) => {
   await page.keyboard.press('a');
   const lineTool = page.locator('.tool-button.sub-tool[title="線を追加"]');
   await lineTool.click();

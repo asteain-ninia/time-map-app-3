@@ -81,7 +81,7 @@
               onclick={() => onFeatureSelect?.(f.id)}
             >
               <span class="feature-type-badge">
-                {f.featureType === 'Point' ? '点' : f.featureType === 'LineString' ? '線' : '面'}
+                {f.featureType === 'Point' ? '点' : f.featureType === 'Line' ? '線' : '面'}
               </span>
               <span class="feature-name">
                 {currentTime ? (f.getActiveAnchor(currentTime)?.property.name || f.id) : f.id}

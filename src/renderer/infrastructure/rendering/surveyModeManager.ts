@@ -39,6 +39,16 @@ export interface SurveyResult {
   readonly greatCirclePoints: readonly { lon: number; lat: number }[];
 }
 
+/** 描画済みとして保持する測量線 */
+export interface SurveyMeasurement {
+  /** 始点 */
+  readonly pointA: Coordinate;
+  /** 終点 */
+  readonly pointB: Coordinate;
+  /** 計算済み結果 */
+  readonly result: SurveyResult;
+}
+
 /** 初期状態を作成する */
 export function createSurveyState(planet: PlanetParams = DEFAULT_PLANET): SurveyModeState {
   return { pointA: null, pointB: null, planet };
@@ -86,5 +96,19 @@ export function computeSurveyResult(state: SurveyModeState): SurveyResult | null
     displayB: formatCoordinate(lonB, latB),
     distance: calculateDistance(lonA, latA, lonB, latB, state.planet),
     greatCirclePoints: greatCirclePath(lonA, latA, lonB, latB, 50),
+  };
+}
+
+/** 完了済みの測量状態を描画用スナップショットへ変換する */
+export function toSurveyMeasurement(state: SurveyModeState): SurveyMeasurement | null {
+  if (!state.pointA || !state.pointB) return null;
+
+  const result = computeSurveyResult(state);
+  if (!result) return null;
+
+  return {
+    pointA: state.pointA,
+    pointB: state.pointB,
+    result,
   };
 }

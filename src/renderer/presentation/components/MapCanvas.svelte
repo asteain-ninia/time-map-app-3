@@ -14,7 +14,7 @@
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
   import type { SnapIndicator } from '@infrastructure/rendering/snapIndicatorUtils';
-  import type { SurveyResult } from '@infrastructure/rendering/surveyModeManager';
+  import type { SurveyMeasurement, SurveyResult } from '@infrastructure/rendering/surveyModeManager';
   import MeasurementOverlay from './MeasurementOverlay.svelte';
   import type { Coordinate as CoordinateType } from '@domain/value-objects/Coordinate';
 
@@ -65,6 +65,7 @@
     onAddMergeTarget,
     onStartMerge,
     onClearMerge,
+    surveyMeasurements = [] as readonly SurveyMeasurement[],
     surveyPointA = null as CoordinateType | null,
     surveyPointB = null as CoordinateType | null,
     surveyResult = null as SurveyResult | null,
@@ -127,6 +128,7 @@
     onAddMergeTarget?: () => void;
     onStartMerge?: () => void;
     onClearMerge?: () => void;
+    surveyMeasurements?: readonly SurveyMeasurement[];
     surveyPointA?: CoordinateType | null;
     surveyPointB?: CoordinateType | null;
     surveyResult?: SurveyResult | null;
@@ -134,7 +136,12 @@
   } = $props();
 
   /** 描画確定可能か（線:2点以上、面:3点以上） */
-  let canConfirm = $derived(isDrawing && drawingCoords.length >= 2);
+  let canConfirm = $derived(
+    isDrawing &&
+      (addToolType === 'polygon'
+        ? drawingCoords.length >= 3
+        : drawingCoords.length >= 2)
+  );
 
   /** 選択地物のアンカー（頂点ハンドル表示用） */
   let selectedAnchor = $derived(() => {
@@ -402,12 +409,23 @@
           />
         {/if}
 
-        <!-- 測量オーバーレイ -->
-        {#if toolMode === 'measure'}
+        <!-- 完了済み測量オーバーレイ -->
+        {#each surveyMeasurements as measurement}
+          <MeasurementOverlay
+            pointA={measurement.pointA}
+            pointB={measurement.pointB}
+            result={measurement.result}
+            zoom={zoomLevel}
+            isPrimaryWrap={offset === 0}
+          />
+        {/each}
+
+        <!-- 測量中オーバーレイ -->
+        {#if toolMode === 'measure' && surveyPointA && !surveyPointB}
           <MeasurementOverlay
             pointA={surveyPointA}
-            pointB={surveyPointB}
-            result={surveyResult}
+            pointB={null}
+            result={null}
             zoom={zoomLevel}
             isPrimaryWrap={offset === 0}
           />

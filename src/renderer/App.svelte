@@ -73,7 +73,9 @@
     addSurveyPoint,
     resetSurvey,
     computeSurveyResult,
+    toSurveyMeasurement,
     type SurveyModeState,
+    type SurveyMeasurement,
   } from '@infrastructure/rendering/surveyModeManager';
   import {
     startKnifeDrawing,
@@ -220,6 +222,7 @@
 
   // --- 測量モード ---
   let surveyState = $state<SurveyModeState>(createSurveyState());
+  let surveyMeasurements = $state<readonly SurveyMeasurement[]>([]);
   let surveyResult = $derived(computeSurveyResult(surveyState));
 
   // --- 競合解決 ---
@@ -306,6 +309,8 @@
     refreshFeatureData();
     refreshLayerData();
     selectedFeatureId = null;
+    surveyState = resetSurvey(surveyState);
+    surveyMeasurements = [];
     dirtyState = resetDirty();
     // メタデータ・設定を復元
     const loaded = saveLoad.getMetadata();
@@ -349,7 +354,6 @@
   function onModeChange(mode: ToolMode): void {
     toolStore.send({ type: 'MODE_CHANGE', mode });
     selectedFeatureId = null;
-    surveyState = resetSurvey(surveyState);
     syncToolState();
   }
 
@@ -375,7 +379,13 @@
       return;
     }
     if (toolMode === 'measure') {
-      surveyState = addSurveyPoint(surveyState, coord);
+      const nextSurveyState = addSurveyPoint(surveyState, coord);
+      const previousMeasurement = toSurveyMeasurement(surveyState);
+      const nextMeasurement = toSurveyMeasurement(nextSurveyState);
+      if (!previousMeasurement && nextMeasurement) {
+        surveyMeasurements = [...surveyMeasurements, nextMeasurement];
+      }
+      surveyState = nextSurveyState;
       return;
     }
     if (toolMode === 'add') {
@@ -1103,8 +1113,9 @@
       } else if (isDrawing) {
         toolStore.send({ type: 'KEY_ESCAPE' });
         syncToolState();
-      } else if (toolMode === 'measure' && surveyState.pointA) {
+      } else if (toolMode === 'measure' && (surveyState.pointA || surveyMeasurements.length > 0)) {
         surveyState = resetSurvey(surveyState);
+        surveyMeasurements = [];
       } else {
         selectedFeatureId = null;
         selectedVertexIds = new Set();
@@ -1174,6 +1185,8 @@
     refreshFeatureData();
     refreshLayerData();
     selectedFeatureId = null;
+    surveyState = resetSurvey(surveyState);
+    surveyMeasurements = [];
     dirtyState = resetDirty();
     projectSettings = { ...DEFAULT_SETTINGS };
     projectMetadata = { ...DEFAULT_METADATA };
@@ -1278,6 +1291,7 @@
           onAddMergeTarget={() => { if (selectedFeatureId) addMergeTarget(selectedFeatureId); }}
           {onStartMerge}
           onClearMerge={clearMergeTargets}
+          {surveyMeasurements}
           surveyPointA={surveyState.pointA}
           surveyPointB={surveyState.pointB}
           {surveyResult}

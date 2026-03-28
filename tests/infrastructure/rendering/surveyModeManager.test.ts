@@ -6,6 +6,7 @@ import {
   resetSurvey,
   hasTwoPoints,
   computeSurveyResult,
+  toSurveyMeasurement,
   type SurveyModeState,
 } from '@infrastructure/rendering/surveyModeManager';
 import { DEFAULT_PLANET } from '@domain/services/SurveyService';
@@ -135,6 +136,24 @@ describe('surveyModeManager', () => {
       const result = computeSurveyResult(state)!;
       expect(result.distance.greatCircleKm).toBeGreaterThan(9000);
       expect(result.distance.greatCircleKm).toBeLessThan(10000);
+    });
+  });
+
+  describe('toSurveyMeasurement', () => {
+    it('2点未満ではnull', () => {
+      expect(toSurveyMeasurement(createSurveyState())).toBeNull();
+      expect(toSurveyMeasurement(addSurveyPoint(createSurveyState(), coordA))).toBeNull();
+    });
+
+    it('2点揃うと描画用スナップショットを返す', () => {
+      let state = addSurveyPoint(createSurveyState(), coordA);
+      state = addSurveyPoint(state, coordB);
+
+      const measurement = toSurveyMeasurement(state);
+      expect(measurement).not.toBeNull();
+      expect(measurement!.pointA).toBe(coordA);
+      expect(measurement!.pointB).toBe(coordB);
+      expect(measurement!.result.distance.greatCircleKm).toBeGreaterThan(0);
     });
   });
 });

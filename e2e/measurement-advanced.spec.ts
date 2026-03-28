@@ -139,8 +139,7 @@ test('東西端をまたぐ測量線が短い経路で描画される', async ({
 });
 
 // §2.1 測量 — 測量モード解除後も測量線が残る
-// KNOWN BUG: 測量モード解除時に測量線がクリアされてしまう
-test.fixme('測量モード解除後も測量線が残る', async ({ page }) => {
+test('測量モード解除後も測量線が残る', async ({ page }) => {
   await measureTwoPoints(page);
 
   // 測量線が存在することを確認
@@ -157,8 +156,7 @@ test.fixme('測量モード解除後も測量線が残る', async ({ page }) => 
 });
 
 // §2.1 測量 — 複数の測量線を同時に表示可能
-// KNOWN BUG: 新しい測量で前の測量線が上書きされる
-test.fixme('複数の測量線を同時に表示できる', async ({ page }) => {
+test('複数の測量線を同時に表示できる', async ({ page }) => {
   await page.keyboard.press('m');
   const svg = page.locator('.map-svg');
   const box = await svg.boundingBox();

@@ -206,8 +206,7 @@ test('面追加中に2点以上でクロージング線が表示される', asyn
 // ============================================================
 
 // §2.3.2 追加中のCtrl+Z — 最後に追加した頂点を1つ戻せる
-// KNOWN BUG: 追加中のCtrl+Zがグローバルundoとして動作し頂点削除にならない
-test.fixme('面追加中にCtrl+Zで最後の頂点を削除できる', async ({ page }) => {
+test('面追加中にCtrl+Zで最後の頂点を削除できる', async ({ page }) => {
   await page.keyboard.press('a');
   const polygonTool = page.locator('.tool-button.sub-tool[title="面を追加"]');
   await polygonTool.click();
