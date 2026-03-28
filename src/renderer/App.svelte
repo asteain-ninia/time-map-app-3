@@ -22,6 +22,7 @@
   import { Coordinate } from '@domain/value-objects/Coordinate';
   import type { Feature } from '@domain/entities/Feature';
   import type { Layer } from '@domain/entities/Layer';
+  import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
   import { hitTest } from '@infrastructure/rendering/hitTestUtils';
   import {
@@ -32,11 +33,14 @@
     type DragState,
   } from '@infrastructure/rendering/vertexDragManager';
   import {
-    buildSnapIndicator,
+    buildSnapIndicators,
     type SnapIndicator,
   } from '@infrastructure/rendering/snapIndicatorUtils';
   import {
+    findGroupForVertex,
     findSnapCandidates,
+    getLinkedVertexIds,
+    moveSharedVertices,
     screenToWorldSnapDistance,
   } from '@domain/services/SharedVertexService';
   import {
@@ -133,8 +137,10 @@
   let selectedFeatureId = $state<string | null>(null);
   let selectedVertexIds = $state<ReadonlySet<string>>(new Set());
   let dragState = $state<DragState | null>(null);
-  let sharedGroups = $state(addFeature.getSharedVertexGroups());
-  let snapIndicator = $state<SnapIndicator | null>(null);
+  let sharedGroups = $state<ReadonlyMap<string, SharedVertexGroup>>(
+    new Map(addFeature.getSharedVertexGroups())
+  );
+  let snapIndicators = $state<readonly SnapIndicator[]>([]);
   let ringDrawingState = $state<RingDrawingState | null>(null);
   let featureDragState = $state<FeatureDragState | null>(null);
   let knifeDrawingState = $state<KnifeDrawingState | null>(null);
@@ -238,8 +244,8 @@
   /** 地物データを更新する */
   function refreshFeatureData(): void {
     features = addFeature.getFeatures();
-    vertices = addFeature.getVertices();
-    sharedGroups = addFeature.getSharedVertexGroups();
+    vertices = new Map(addFeature.getVertices());
+    sharedGroups = new Map(addFeature.getSharedVertexGroups());
   }
 
   /** レイヤーデータを更新する */
@@ -866,37 +872,85 @@
     }
   }
 
+  /** 頂点ドラッグのプレビュー移動（共有頂点はグループ全体を連動移動） */
+  function applyVertexDragPreview(vertexId: string, newCoord: Coordinate): void {
+    const mutableVertices = addFeature.getVertices() as Map<string, Vertex>;
+    const mutableSharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+    const sharedGroup = findGroupForVertex(vertexId, mutableSharedGroups);
+
+    if (!sharedGroup) {
+      vertexEdit.moveVertex(vertexId, newCoord);
+      return;
+    }
+
+    const moveResult = moveSharedVertices(
+      sharedGroup.id,
+      newCoord,
+      mutableSharedGroups,
+      mutableVertices
+    );
+
+    for (const [movedVertexId, updatedVertex] of moveResult.updatedVertices) {
+      mutableVertices.set(movedVertexId, updatedVertex);
+    }
+    mutableSharedGroups.set(moveResult.updatedGroup.id, moveResult.updatedGroup);
+  }
+
   /** ドラッグ完了 */
   function commitDrag(): void {
     if (!dragState) return;
     if (hasMoved(dragState)) {
       // ドラッグ中に直接移動していたので、まず元に戻す
-      vertexEdit.moveVertex(dragState.vertexId, dragState.startCoord);
+      applyVertexDragPreview(dragState.vertexId, dragState.startCoord);
       // Undo対応コマンドで正式に移動
       undoRedo.execute(
-        new MoveVertexCommand(vertexEdit, addFeature, dragState.vertexId, dragState.previewCoord)
+        new MoveVertexCommand(
+          vertexEdit,
+          addFeature,
+          dragState.vertexId,
+          dragState.previewCoord,
+          // 複数スナップ候補のうち最近接（[0]）のみを共有化対象とする
+          snapIndicators[0]?.targetVertexId ?? null
+        )
       );
       refreshFeatureData();
     }
     dragState = null;
-    snapIndicator = null;
+    snapIndicators = [];
   }
 
   /** カーソル座標更新コールバック（MapCanvasから呼ばれる） */
-  function onCursorGeoUpdate(geo: { lon: number; lat: number }, screenX: number, screenY: number): void {
+  function onCursorGeoUpdate(
+    geo: { lon: number; lat: number },
+    screenX: number,
+    screenY: number,
+    zoom: number,
+    viewWidthPx: number
+  ): void {
     // 頂点ドラッグ
     if (dragState) {
       const newCoord = new Coordinate(geo.lon, geo.lat);
       dragState = updateDragPreview(dragState, newCoord);
-      vertexEdit.moveVertex(dragState.vertexId, newCoord);
+      applyVertexDragPreview(dragState.vertexId, newCoord);
 
-      const snapDist = screenToWorldSnapDistance(50, window.innerWidth, 1);
+      const currentVertices = addFeature.getVertices();
+      const currentSharedGroups = addFeature.getSharedVertexGroups();
+      const linkedVertexIds = getLinkedVertexIds(dragState.vertexId, currentSharedGroups);
+      const excludedVertexIds =
+        linkedVertexIds.length > 0
+          ? new Set(linkedVertexIds)
+          : new Set([dragState.vertexId]);
+      const snapDist = screenToWorldSnapDistance(50, viewWidthPx, zoom);
       const candidates = findSnapCandidates(
-        geo.lon, geo.lat, vertices,
-        new Set([dragState.vertexId]),
+        geo.lon, geo.lat, currentVertices,
+        excludedVertexIds,
         snapDist
       );
-      snapIndicator = buildSnapIndicator(candidates, vertices, sharedGroups);
+      snapIndicators = buildSnapIndicators(
+        candidates,
+        currentVertices,
+        currentSharedGroups
+      );
 
       refreshFeatureData();
       return;
@@ -1148,7 +1202,7 @@
           {selectedFeatureId}
           {selectedVertexIds}
           {sharedGroups}
-          {snapIndicator}
+          {snapIndicators}
           {onMapClick}
           {onMapDoubleClick}
           {onPanStart}

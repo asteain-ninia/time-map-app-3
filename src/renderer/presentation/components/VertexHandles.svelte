@@ -20,7 +20,7 @@
     zoom,
     selectedVertexIds = new Set<string>(),
     sharedGroups = new Map<string, SharedVertexGroup>(),
-    snapIndicator = null,
+    snapIndicators = [],
     onVertexMouseDown,
     onEdgeHandleMouseDown,
   }: {
@@ -29,7 +29,7 @@
     zoom: number;
     selectedVertexIds?: ReadonlySet<string>;
     sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
-    snapIndicator?: SnapIndicator | null;
+    snapIndicators?: readonly SnapIndicator[];
     onVertexMouseDown?: (vertexId: string, e: MouseEvent) => void;
     onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
   } = $props();
@@ -93,7 +93,7 @@
 {/each}
 
 <!-- スナップインジケーター（ドラッグ中の近接頂点表示） -->
-{#if snapIndicator}
+{#each snapIndicators as snapIndicator (snapIndicator.targetVertexId)}
   {@const snapLon =
     snapReferenceLon() === undefined
       ? snapIndicator.x
@@ -109,4 +109,4 @@
     stroke-dasharray="{3 / zoom} {2 / zoom}"
     opacity="0.8"
   />
-{/if}
+{/each}

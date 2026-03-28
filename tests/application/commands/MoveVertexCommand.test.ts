@@ -5,6 +5,7 @@ import { VertexEditUseCase } from '@application/VertexEditUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
+import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 
 describe('MoveVertexCommand', () => {
   let addFeature: AddFeatureUseCase;
@@ -77,5 +78,57 @@ describe('MoveVertexCommand', () => {
 
     undoRedo.redo(); // cmd1をredo → (30, 40)
     expect(addFeature.getVertices().get(vertexId)!.x).toBe(30);
+  });
+
+  it('共有頂点グループに属する頂点を移動すると関連頂点も連動する', () => {
+    const other = addFeature.addPoint(new Coordinate(10, 20), 'l1', new TimePoint(1000));
+    const otherVertexId =
+      other.anchors[0].shape.type === 'Point' ? other.anchors[0].shape.vertexId : '';
+    const sharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+    sharedGroups.set(
+      'sg-1',
+      new SharedVertexGroup('sg-1', [vertexId, otherVertexId], new Coordinate(10, 20))
+    );
+
+    const cmd = new MoveVertexCommand(vertexEdit, addFeature, vertexId, new Coordinate(30, 40));
+    undoRedo.execute(cmd);
+
+    expect(addFeature.getVertices().get(vertexId)!.coordinate).toEqual(new Coordinate(30, 40));
+    expect(addFeature.getVertices().get(otherVertexId)!.coordinate).toEqual(new Coordinate(30, 40));
+    expect(sharedGroups.get('sg-1')!.representativeCoordinate).toEqual(new Coordinate(30, 40));
+
+    undoRedo.undo();
+
+    expect(addFeature.getVertices().get(vertexId)!.coordinate).toEqual(new Coordinate(10, 20));
+    expect(addFeature.getVertices().get(otherVertexId)!.coordinate).toEqual(new Coordinate(10, 20));
+    expect(sharedGroups.get('sg-1')!.representativeCoordinate).toEqual(new Coordinate(10, 20));
+  });
+
+  it('mergeTargetVertexIdを指定するとドロップ時に共有頂点化する', () => {
+    const target = addFeature.addPoint(new Coordinate(50, 60), 'l1', new TimePoint(1000));
+    const targetVertexId =
+      target.anchors[0].shape.type === 'Point' ? target.anchors[0].shape.vertexId : '';
+
+    const cmd = new MoveVertexCommand(
+      vertexEdit,
+      addFeature,
+      vertexId,
+      new Coordinate(49, 59),
+      targetVertexId
+    );
+    undoRedo.execute(cmd);
+
+    const sharedGroups = addFeature.getSharedVertexGroups();
+    expect(sharedGroups.size).toBe(1);
+    const group = [...sharedGroups.values()][0];
+    expect(group.vertexIds).toEqual([vertexId, targetVertexId]);
+    expect(addFeature.getVertices().get(vertexId)!.coordinate).toEqual(new Coordinate(50, 60));
+    expect(addFeature.getVertices().get(targetVertexId)!.coordinate).toEqual(new Coordinate(50, 60));
+
+    undoRedo.undo();
+
+    expect(addFeature.getSharedVertexGroups().size).toBe(0);
+    expect(addFeature.getVertices().get(vertexId)!.coordinate).toEqual(new Coordinate(10, 20));
+    expect(addFeature.getVertices().get(targetVertexId)!.coordinate).toEqual(new Coordinate(50, 60));
   });
 });

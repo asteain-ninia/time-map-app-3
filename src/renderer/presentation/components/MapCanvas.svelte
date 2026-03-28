@@ -33,7 +33,7 @@
     selectedFeatureId = null as string | null,
     selectedVertexIds = new Set<string>() as ReadonlySet<string>,
     sharedGroups = new Map<string, SharedVertexGroup>() as ReadonlyMap<string, SharedVertexGroup>,
-    snapIndicator = null as SnapIndicator | null,
+    snapIndicators = [] as readonly SnapIndicator[],
     onMapClick,
     onMapDoubleClick,
     onPanStart,
@@ -84,7 +84,7 @@
     selectedFeatureId?: string | null;
     selectedVertexIds?: ReadonlySet<string>;
     sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
-    snapIndicator?: SnapIndicator | null;
+    snapIndicators?: readonly SnapIndicator[];
     onMapClick?: (coord: Coordinate, featureId?: string | null) => void;
     onMapDoubleClick?: (coord: Coordinate) => void;
     onPanStart?: () => void;
@@ -93,7 +93,13 @@
     onCancel?: () => void;
     onVertexMouseDown?: (vertexId: string, e: MouseEvent) => void;
     onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
-    onCursorGeoUpdate?: (geo: { lon: number; lat: number }, screenX: number, screenY: number) => void;
+    onCursorGeoUpdate?: (
+      geo: { lon: number; lat: number },
+      screenX: number,
+      screenY: number,
+      zoom: number,
+      viewWidthPx: number
+    ) => void;
     onDragEnd?: () => void;
     isRingDrawing?: boolean;
     ringDrawingCanConfirm?: boolean;
@@ -250,7 +256,7 @@
     cursorGeo = viewport.screenToGeo(x, y);
     if (cursorGeo) {
       eventBus.emit('cursor:moved', { lon: cursorGeo.lon, lat: cursorGeo.lat });
-      onCursorGeoUpdate?.(cursorGeo, e.clientX, e.clientY);
+      onCursorGeoUpdate?.(cursorGeo, e.clientX, e.clientY, zoomLevel, rect.width);
     }
 
     if (isPanning) {
@@ -360,7 +366,7 @@
             zoom={zoomLevel}
             {selectedVertexIds}
             {sharedGroups}
-            {snapIndicator}
+            {snapIndicators}
             {onVertexMouseDown}
             {onEdgeHandleMouseDown}
           />

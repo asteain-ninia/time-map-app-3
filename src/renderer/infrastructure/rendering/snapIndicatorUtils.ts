@@ -21,34 +21,39 @@ export interface SnapIndicator {
 
 /**
  * スナップ候補からインジケーター情報を生成する
- * 最も近い候補1つだけを表示対象とする
+ * 候補順のまま、表示可能な全候補を返す。
+ */
+export function buildSnapIndicators(
+  candidates: readonly SnapCandidate[],
+  vertices: ReadonlyMap<string, Vertex>,
+  sharedGroups: ReadonlyMap<string, SharedVertexGroup>
+): SnapIndicator[] {
+  const indicators: SnapIndicator[] = [];
+
+  for (const candidate of candidates) {
+    const vertex = vertices.get(candidate.vertexId);
+    if (!vertex) continue;
+
+    indicators.push({
+      targetVertexId: candidate.vertexId,
+      x: vertex.x,
+      y: vertex.y,
+      isShared: isVertexShared(candidate.vertexId, sharedGroups),
+    });
+  }
+
+  return indicators;
+}
+
+/**
+ * 後方互換用: 最優先候補のみを取得する
  */
 export function buildSnapIndicator(
   candidates: readonly SnapCandidate[],
   vertices: ReadonlyMap<string, Vertex>,
   sharedGroups: ReadonlyMap<string, SharedVertexGroup>
 ): SnapIndicator | null {
-  if (candidates.length === 0) return null;
-
-  const best = candidates[0];
-  const vertex = vertices.get(best.vertexId);
-  if (!vertex) return null;
-
-  // 共有グループに属しているか判定
-  let isShared = false;
-  for (const group of sharedGroups.values()) {
-    if (group.vertexIds.includes(best.vertexId)) {
-      isShared = true;
-      break;
-    }
-  }
-
-  return {
-    targetVertexId: best.vertexId,
-    x: vertex.x,
-    y: vertex.y,
-    isShared,
-  };
+  return buildSnapIndicators(candidates, vertices, sharedGroups)[0] ?? null;
 }
 
 /**

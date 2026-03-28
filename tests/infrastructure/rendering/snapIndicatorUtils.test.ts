@@ -4,6 +4,7 @@ import { Vertex } from '@domain/entities/Vertex';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import type { SnapCandidate } from '@domain/services/SharedVertexService';
 import {
+  buildSnapIndicators,
   buildSnapIndicator,
   isVertexShared,
   getSharedPeerIds,
@@ -62,6 +63,31 @@ describe('snapIndicatorUtils', () => {
         { vertexId: 'v-unknown', distance: 1, coordinate: new Coordinate(0, 0) },
       ];
       expect(buildSnapIndicator(candidates, vertices, emptyGroups)).toBeNull();
+    });
+  });
+
+  describe('buildSnapIndicators', () => {
+    it('候補ごとに複数のインジケーターを生成する', () => {
+      const candidates: SnapCandidate[] = [
+        { vertexId: 'v1', distance: 1, coordinate: v1.coordinate },
+        { vertexId: 'v2', distance: 2, coordinate: v2.coordinate },
+      ];
+
+      expect(buildSnapIndicators(candidates, vertices, sharedGroups)).toEqual([
+        { targetVertexId: 'v1', x: 10, y: 20, isShared: true },
+        { targetVertexId: 'v2', x: 15, y: 25, isShared: true },
+      ]);
+    });
+
+    it('存在しない頂点候補はスキップする', () => {
+      const candidates: SnapCandidate[] = [
+        { vertexId: 'v1', distance: 1, coordinate: v1.coordinate },
+        { vertexId: 'v-missing', distance: 2, coordinate: new Coordinate(0, 0) },
+      ];
+
+      expect(buildSnapIndicators(candidates, vertices, sharedGroups)).toEqual([
+        { targetVertexId: 'v1', x: 10, y: 20, isShared: true },
+      ]);
     });
   });
 
