@@ -328,7 +328,7 @@
     return 5 / (toolStore.getSnapshot().isPanning ? 1 : 1);
   }
 
-  function onMapClick(coord: Coordinate): void {
+  function onMapClick(coord: Coordinate, clickedFeatureId: string | null = null): void {
     // ナイフ描画中はクリックで頂点追加
     if (knifeDrawingState) {
       knifeDrawingState = addKnifeVertex(knifeDrawingState, coord);
@@ -357,6 +357,12 @@
         }
       }
     } else if (toolMode === 'view' || toolMode === 'edit') {
+      if (clickedFeatureId) {
+        selectedFeatureId = clickedFeatureId;
+        selectedVertexIds = new Set();
+        return;
+      }
+
       // ヒットテストで地物選択
       const result = hitTest(
         coord,
@@ -653,10 +659,22 @@
   }
 
   /** 地図上のmousedown — 地物ドラッグ開始 or 矩形選択開始 */
-  function onMapMouseDown(coord: Coordinate, screenX: number, screenY: number): void {
+  function onMapMouseDown(
+    coord: Coordinate,
+    screenX: number,
+    screenY: number,
+    clickedFeatureId: string | null = null
+  ): void {
     if (toolMode !== 'edit' && toolMode !== 'view') return;
 
     if (selectedFeatureId && currentTime) {
+      if (clickedFeatureId === selectedFeatureId) {
+        featureDragState = startFeatureDrag(selectedFeatureId, screenX, screenY);
+        featureDragStartGeo = { lon: coord.x, lat: coord.y };
+        featureDragLastGeo = { lon: coord.x, lat: coord.y };
+        return;
+      }
+
       // ヒットテストで選択中の地物上かどうか判定
       const result = hitTest(coord, features, vertices, layers, currentTime, getHitThreshold());
       if (result && result.featureId === selectedFeatureId) {

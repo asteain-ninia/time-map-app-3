@@ -13,7 +13,10 @@ import type { Layer } from '@domain/entities/Layer';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { FeatureAnchor, FeatureShape } from '@domain/value-objects/FeatureAnchor';
 import type { Coordinate } from '@domain/value-objects/Coordinate';
-import { unwrapLongitudeSequence } from './featureRenderingUtils';
+import {
+  shiftLongitudeSequenceNearReference,
+  unwrapLongitudeSequence,
+} from './featureRenderingUtils';
 
 /** ヒットテスト結果 */
 export interface HitTestResult {
@@ -93,9 +96,14 @@ function resolveRingCoords(
 
 /** リング座標列を東西端またぎ込みで連続化する */
 function unwrapRingCoords(
-  coords: readonly Array<{ x: number; y: number }>
+  coords: readonly Array<{ x: number; y: number }>,
+  referenceLon?: number
 ): Array<{ x: number; y: number }> {
-  const longitudes = unwrapLongitudeSequence(coords.map((coord) => coord.x));
+  const unwrappedLongitudes = unwrapLongitudeSequence(coords.map((coord) => coord.x));
+  const longitudes =
+    referenceLon === undefined
+      ? unwrappedLongitudes
+      : shiftLongitudeSequenceNearReference(unwrappedLongitudes, referenceLon);
   return coords.map((coord, index) => ({ x: longitudes[index], y: coord.y }));
 }
 
@@ -127,10 +135,10 @@ function hitTestLine(
   vertices: ReadonlyMap<string, Vertex>,
   threshold: number
 ): boolean {
-  const coords = unwrapRingCoords(resolveRingCoords(shape.vertexIds, vertices));
-  if (coords.length < 2) return false;
-
   for (const candidateLon of getWrappedClickLongitudes(clickLon)) {
+    const coords = unwrapRingCoords(resolveRingCoords(shape.vertexIds, vertices), candidateLon);
+    if (coords.length < 2) continue;
+
     for (let i = 0; i < coords.length - 1; i++) {
       const dist = pointToSegmentDistance(
         candidateLon, clickLat,
@@ -155,7 +163,7 @@ function hitTestPolygon(
     // evenodd: 全リングの内外判定をトグルする
     let inside = false;
     for (const ring of shape.rings) {
-      const coords = unwrapRingCoords(resolveRingCoords(ring.vertexIds, vertices));
+      const coords = unwrapRingCoords(resolveRingCoords(ring.vertexIds, vertices), candidateLon);
       if (coords.length < 3) continue;
       if (isPointInRing(candidateLon, clickLat, coords)) {
         inside = !inside;

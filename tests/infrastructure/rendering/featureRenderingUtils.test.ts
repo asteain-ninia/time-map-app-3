@@ -182,6 +182,30 @@ describe('buildPolygonPath', () => {
     };
     expect(buildPolygonPath(shape, vertices)).toBe('');
   });
+
+  it('東西端またぎの穴リングを外周と同じラップに揃える', () => {
+    const vertices = makeVertices(
+      ['v1', 170, -10],
+      ['v2', -170, -10],
+      ['v3', -170, 10],
+      ['v4', 170, 10],
+      ['h1', -175, -5],
+      ['h2', 175, -5],
+      ['h3', 175, 5],
+      ['h4', -175, 5]
+    );
+    const shape = {
+      type: 'Polygon' as const,
+      rings: [
+        new Ring('outer', ['v1', 'v2', 'v3', 'v4'], 'territory', null),
+        new Ring('hole', ['h1', 'h2', 'h3', 'h4'], 'hole', 'outer'),
+      ],
+    };
+
+    expect(buildPolygonPath(shape, vertices)).toBe(
+      'M350 100 L370 100 L370 80 L350 80 Z M365 95 L355 95 L355 85 L365 85 Z'
+    );
+  });
 });
 
 describe('buildLinePoints', () => {

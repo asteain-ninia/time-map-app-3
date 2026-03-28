@@ -134,13 +134,14 @@ export class ViewportManager {
 
   /**
    * 横方向無限スクロール用：viewBoxに表示すべきオフセット配列を返す。
-   * 現在のviewBoxと交差する360度幅の世界タイルを全て返す。
+   * 現在のviewBoxと交差するタイルに加え、境界またぎ図形が切れないよう
+   * 左右1タイル分の描画余白も返す。
    */
-  getWrapOffsets(): number[] {
+  getWrapOffsets(renderPaddingTiles: number = 1): number[] {
     const vb = this.getViewBoxValues();
     const epsilon = 1e-9;
-    const startTile = Math.floor(vb.x / 360);
-    const endTile = Math.floor((vb.x + vb.width - epsilon) / 360);
+    const startTile = Math.floor(vb.x / 360) - renderPaddingTiles;
+    const endTile = Math.floor((vb.x + vb.width - epsilon) / 360) + renderPaddingTiles;
     const offsets: number[] = [];
 
     for (let tile = startTile; tile <= endTile; tile++) {

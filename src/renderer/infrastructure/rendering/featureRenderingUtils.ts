@@ -33,10 +33,24 @@ export function unwrapLongitudeSequence(longitudes: readonly number[]): number[]
   return unwrapped;
 }
 
+/**
+ * 連続化済み経度列を参照値に近い周回へまとめて平行移動する。
+ * 主に穴リングや複数パスを同じラップに揃える用途。
+ */
+export function shiftLongitudeSequenceNearReference(
+  longitudes: readonly number[],
+  referenceLon: number
+): number[] {
+  if (longitudes.length === 0) return [];
+  const shift = wrapLongitudeNearReference(longitudes[0], referenceLon) - longitudes[0];
+  return longitudes.map((lon) => lon + shift);
+}
+
 /** 頂点IDリストからSVGパス文字列を生成（閉じたリング用） */
 export function buildRingPath(
   vertexIds: readonly string[],
-  vertices: ReadonlyMap<string, Vertex>
+  vertices: ReadonlyMap<string, Vertex>,
+  referenceLon?: number
 ): string {
   const coords: Array<{ lon: number; lat: number }> = [];
   for (const id of vertexIds) {
@@ -48,8 +62,12 @@ export function buildRingPath(
   if (coords.length < 3) return '';
 
   const unwrappedLongitudes = unwrapLongitudeSequence(coords.map((coord) => coord.lon));
+  const alignedLongitudes =
+    referenceLon === undefined
+      ? unwrappedLongitudes
+      : shiftLongitudeSequenceNearReference(unwrappedLongitudes, referenceLon);
   const points = coords.map((coord, index) => ({
-    x: geoToSvgX(unwrappedLongitudes[index]),
+    x: geoToSvgX(alignedLongitudes[index]),
     y: geoToSvgY(coord.lat),
   }));
 
@@ -65,10 +83,25 @@ export function buildPolygonPath(
   shape: FeatureShape & { type: 'Polygon' },
   vertices: ReadonlyMap<string, Vertex>
 ): string {
-  return shape.rings
-    .map((ring) => buildRingPath(ring.vertexIds, vertices))
-    .filter((d) => d !== '')
-    .join(' ');
+  const paths: string[] = [];
+  let referenceLon: number | undefined;
+
+  for (const ring of shape.rings) {
+    const path = buildRingPath(ring.vertexIds, vertices, referenceLon);
+    if (!path) continue;
+
+    if (referenceLon === undefined) {
+      const firstVertexId = ring.vertexIds.find((vertexId) => vertices.has(vertexId));
+      const firstVertex = firstVertexId ? vertices.get(firstVertexId) : undefined;
+      if (firstVertex) {
+        referenceLon = firstVertex.x;
+      }
+    }
+
+    paths.push(path);
+  }
+
+  return paths.join(' ');
 }
 
 /** ラインストリングのSVGポリライン用ポイント文字列を生成 */

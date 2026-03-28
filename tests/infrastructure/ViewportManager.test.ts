@@ -186,8 +186,8 @@ describe('ViewportManager', () => {
   });
 
   describe('getWrapOffsets（横方向無限スクロール）', () => {
-    it('初期状態（ズーム1）ではオフセット[0]のみ', () => {
-      expect(vm.getWrapOffsets()).toEqual([0]);
+    it('初期状態でも隣接タイルを描画余白として含む', () => {
+      expect(vm.getWrapOffsets()).toEqual([-360, 0, 360]);
     });
 
     it('左にパンするとオフセット-360が追加される', () => {
@@ -199,6 +199,7 @@ describe('ViewportManager', () => {
       const offsets = vm.getWrapOffsets();
       expect(offsets).toContain(0);
       expect(offsets).toContain(-360);
+      expect(offsets).toContain(-720);
     });
 
     it('右にパンするとオフセット360が追加される', () => {
@@ -210,6 +211,7 @@ describe('ViewportManager', () => {
       const offsets = vm.getWrapOffsets();
       expect(offsets).toContain(0);
       expect(offsets).toContain(360);
+      expect(offsets).toContain(720);
     });
 
     it('1周以上パンすると必要なタイル範囲まで再計算される', () => {

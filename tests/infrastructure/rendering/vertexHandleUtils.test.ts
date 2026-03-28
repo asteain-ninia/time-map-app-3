@@ -5,7 +5,21 @@ import {
   getShapeVertexGroups,
   getUniqueVertexIds,
   getShapeEdges,
+  getShapeEdgePositions,
+  getShapeVertexPositions,
 } from '@infrastructure/rendering/vertexHandleUtils';
+import { Vertex } from '@domain/entities/Vertex';
+import { Coordinate } from '@domain/value-objects/Coordinate';
+
+function makeVertices(
+  ...defs: Array<[string, number, number]>
+): ReadonlyMap<string, Vertex> {
+  const map = new Map<string, Vertex>();
+  for (const [id, lon, lat] of defs) {
+    map.set(id, new Vertex(id, new Coordinate(lon, lat)));
+  }
+  return map;
+}
 
 describe('vertexHandleUtils', () => {
   // --- getShapeVertexGroups ---
@@ -139,6 +153,72 @@ describe('vertexHandleUtils', () => {
         { v1: 'v3', v2: 'v4' },
         { v1: 'v4', v2: 'v1' },
       ]);
+    });
+  });
+
+  describe('getShapeVertexPositions', () => {
+    it('東西端またぎの頂点を連続した座標へ展開する', () => {
+      const shape: FeatureShape = {
+        type: 'LineString',
+        vertexIds: ['v1', 'v2', 'v3'],
+      };
+      const vertices = makeVertices(
+        ['v1', 170, 0],
+        ['v2', -170, 0],
+        ['v3', -160, 5]
+      );
+
+      expect(getShapeVertexPositions(shape, vertices)).toEqual([
+        { vertexId: 'v1', x: 170, y: 0 },
+        { vertexId: 'v2', x: 190, y: 0 },
+        { vertexId: 'v3', x: 200, y: 5 },
+      ]);
+    });
+  });
+
+  describe('getShapeEdgePositions', () => {
+    it('閉じリングの終端エッジをファントム経路にしない', () => {
+      const shape: FeatureShape = {
+        type: 'Polygon',
+        rings: [new Ring('r1', ['v1', 'v2', 'v3'], 'territory', null)],
+      };
+      const vertices = makeVertices(
+        ['v1', 170, 0],
+        ['v2', -170, 0],
+        ['v3', -160, 10]
+      );
+
+      expect(getShapeEdgePositions(shape, vertices)).toEqual([
+        { v1: 'v1', v2: 'v2', x1: 170, y1: 0, x2: 190, y2: 0 },
+        { v1: 'v2', v2: 'v3', x1: 190, y1: 0, x2: 200, y2: 10 },
+        { v1: 'v3', v2: 'v1', x1: 200, y1: 10, x2: 170, y2: 0 },
+      ]);
+    });
+
+    it('穴リングも外周と同じラップへ揃える', () => {
+      const shape: FeatureShape = {
+        type: 'Polygon',
+        rings: [
+          new Ring('outer', ['v1', 'v2', 'v3', 'v4'], 'territory', null),
+          new Ring('hole', ['h1', 'h2', 'h3', 'h4'], 'hole', 'outer'),
+        ],
+      };
+      const vertices = makeVertices(
+        ['v1', 170, -10],
+        ['v2', -170, -10],
+        ['v3', -170, 10],
+        ['v4', 170, 10],
+        ['h1', -175, -5],
+        ['h2', 175, -5],
+        ['h3', 175, 5],
+        ['h4', -175, 5]
+      );
+
+      const positions = getShapeVertexPositions(shape, vertices);
+      expect(positions).toContainEqual({ vertexId: 'h1', x: 185, y: -5 });
+      expect(positions).toContainEqual({ vertexId: 'h2', x: 175, y: -5 });
+      expect(positions).toContainEqual({ vertexId: 'h3', x: 175, y: 5 });
+      expect(positions).toContainEqual({ vertexId: 'h4', x: 185, y: 5 });
     });
   });
 });

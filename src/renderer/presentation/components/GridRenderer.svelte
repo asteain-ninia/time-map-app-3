@@ -8,9 +8,16 @@
     interval?: number;
     color?: string;
     opacity?: number;
+    isPrimaryWrap?: boolean;
   }
 
-  let { zoom, interval = 10, color = '#888888', opacity = 0.3 }: Props = $props();
+  let {
+    zoom,
+    interval = 10,
+    color = '#888888',
+    opacity = 0.3,
+    isPrimaryWrap = true,
+  }: Props = $props();
 
   /** ズームレベルに応じた線の太さ（画面上で一定に見える） */
   let strokeWidth = $derived(1 / zoom);
@@ -43,7 +50,11 @@
   const antiMeridianX2 = 360;
 </script>
 
-<g class="grid-layer">
+<g
+  class:grid-layer={isPrimaryWrap}
+  class:grid-layer-copy={!isPrimaryWrap}
+  pointer-events="none"
+>
   <!-- 通常のグリッド線 -->
   {#each meridians as x}
     <line

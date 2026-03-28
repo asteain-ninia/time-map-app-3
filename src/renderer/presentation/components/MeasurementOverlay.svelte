@@ -12,11 +12,13 @@
     pointB = null as Coordinate | null,
     result = null as SurveyResult | null,
     zoom = 1,
+    isPrimaryWrap = true,
   }: {
     pointA?: Coordinate | null;
     pointB?: Coordinate | null;
     result?: SurveyResult | null;
     zoom?: number;
+    isPrimaryWrap?: boolean;
   } = $props();
 
   /** ポイントマーカーの半径 */
@@ -69,7 +71,9 @@
 <!-- 始点マーカー -->
 {#if pointA}
   <circle
-    class="measurement-marker measurement-marker-start"
+    class="measurement-marker"
+    class:measurement-marker-start={isPrimaryWrap}
+    class:measurement-marker-start-copy={!isPrimaryWrap}
     cx={geoToSvgX(pointA.x)}
     cy={geoToSvgY(pointA.y)}
     r={markerRadius}
@@ -83,7 +87,9 @@
 <!-- 終点マーカー -->
 {#if pointB}
   <circle
-    class="measurement-marker measurement-marker-end"
+    class="measurement-marker"
+    class:measurement-marker-end={isPrimaryWrap}
+    class:measurement-marker-end-copy={!isPrimaryWrap}
     cx={geoToSvgX(pointB.x)}
     cy={geoToSvgY(pointB.y)}
     r={markerRadius}

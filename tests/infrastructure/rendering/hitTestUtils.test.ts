@@ -274,6 +274,109 @@ describe('hitTest', () => {
       expect(result).not.toBeNull();
       expect(result!.featureId).toBe('pg-wrap');
     });
+
+    it('東西端またぎの穴リング内部はヒットしない', () => {
+      const vertices = makeVertices(
+        ['v1', 170, -10],
+        ['v2', -170, -10],
+        ['v3', -170, 10],
+        ['v4', 170, 10],
+        ['h1', -175, -5],
+        ['h2', 175, -5],
+        ['h3', 175, 5],
+        ['h4', -175, 5]
+      );
+      const shape = {
+        type: 'Polygon' as const,
+        rings: [
+          new Ring('outer', ['v1', 'v2', 'v3', 'v4'], 'territory', null),
+          new Ring('hole', ['h1', 'h2', 'h3', 'h4'], 'hole', 'outer'),
+        ],
+      };
+      const anchor = new FeatureAnchor(
+        'a-hole-wrap',
+        { start: new TimePoint(0) },
+        { name: 'hole-wrap', description: '' },
+        shape,
+        { layerId: 'l1', parentId: null, childIds: [] }
+      );
+      const feature = new Feature('pg-hole-wrap', 'Polygon', [anchor]);
+
+      const result = hitTest(
+        new Coordinate(179, 0),
+        [feature],
+        vertices,
+        [layer],
+        time,
+        1.0
+      );
+
+      expect(result).toBeNull();
+    });
+
+    it('東西端またぎの穴リング外側はヒットする', () => {
+      const vertices = makeVertices(
+        ['v1', 170, -10],
+        ['v2', -170, -10],
+        ['v3', -170, 10],
+        ['v4', 170, 10],
+        ['h1', -175, -5],
+        ['h2', 175, -5],
+        ['h3', 175, 5],
+        ['h4', -175, 5]
+      );
+      const shape = {
+        type: 'Polygon' as const,
+        rings: [
+          new Ring('outer', ['v1', 'v2', 'v3', 'v4'], 'territory', null),
+          new Ring('hole', ['h1', 'h2', 'h3', 'h4'], 'hole', 'outer'),
+        ],
+      };
+      const anchor = new FeatureAnchor(
+        'a-hole-wrap',
+        { start: new TimePoint(0) },
+        { name: 'hole-wrap', description: '' },
+        shape,
+        { layerId: 'l1', parentId: null, childIds: [] }
+      );
+      const feature = new Feature('pg-hole-wrap', 'Polygon', [anchor]);
+
+      const result = hitTest(
+        new Coordinate(171, 0),
+        [feature],
+        vertices,
+        [layer],
+        time,
+        1.0
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.featureId).toBe('pg-hole-wrap');
+    });
+
+    it('絶対経度のクリックでも長距離ポリゴン複製にヒットする', () => {
+      const vertices = makeVertices(
+        ['v1', 170.49578030705425, -26.678650091134855],
+        ['v2', 1.9042029886065848, -23.622609414667522],
+        ['v3', -134.59894722693434, -25.40529980927346],
+        ['v4', 164.28023924371882, -39.412152909748755],
+        ['v5', 22.243345203606623, -57.982864214693194],
+        ['v6', -179.88612405089316, -50.730933795518894]
+      );
+      const feature = makePolygonFeature('pg-f4', ['v1', 'v2', 'v3', 'v4', 'v5', 'v6'], 'l1');
+
+      const result = hitTest(
+        new Coordinate(365, -30),
+        [feature],
+        vertices,
+        [layer],
+        time,
+        1.0
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.featureId).toBe('pg-f4');
+    });
   });
 
   describe('レイヤーとフィルタリング', () => {

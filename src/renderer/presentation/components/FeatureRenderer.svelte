@@ -103,6 +103,7 @@
           <!-- 選択ハイライト -->
           {#if isSelected}
             <circle
+              pointer-events="none"
               cx={geoToSvgX(vertex.x)}
               cy={geoToSvgY(vertex.y)}
               r={7 / zoom}
@@ -112,6 +113,7 @@
             />
           {/if}
           <circle
+            data-feature-id={feature.id}
             cx={geoToSvgX(vertex.x)}
             cy={geoToSvgY(vertex.y)}
             r={4 / zoom}
@@ -126,6 +128,7 @@
           <!-- 選択ハイライト -->
           {#if isSelected}
             <polyline
+              pointer-events="none"
               {points}
               fill="none"
               stroke={SELECTION_STROKE}
@@ -136,6 +139,7 @@
             />
           {/if}
           <polyline
+            data-feature-id={feature.id}
             {points}
             fill="none"
             stroke={anchor.property.style?.fillColor ?? DEFAULT_LINE_COLOR}
@@ -148,6 +152,7 @@
         {@const d = buildPolygonPath(anchor.shape, vertices)}
         {#if d}
           <path
+            data-feature-id={feature.id}
             {d}
             fill={anchor.property.style?.fillColor ?? DEFAULT_POLYGON_FILL}
             stroke={isSelected ? SELECTION_STROKE : (anchor.property.style?.fillColor ?? DEFAULT_POLYGON_STROKE)}
@@ -157,6 +162,7 @@
           <!-- 選択ハイライト（シアン塗り） -->
           {#if isSelected}
             <path
+              pointer-events="none"
               {d}
               fill={anchor.property.style?.selectedFillColor ?? SELECTION_FILL}
               stroke="none"

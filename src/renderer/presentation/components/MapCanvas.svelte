@@ -85,7 +85,7 @@
     selectedVertexIds?: ReadonlySet<string>;
     sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
     snapIndicator?: SnapIndicator | null;
-    onMapClick?: (coord: Coordinate) => void;
+    onMapClick?: (coord: Coordinate, featureId?: string | null) => void;
     onMapDoubleClick?: (coord: Coordinate) => void;
     onPanStart?: () => void;
     onPanEnd?: () => void;
@@ -104,7 +104,12 @@
     onConfirmRing?: () => void;
     onCancelRing?: () => void;
     onDeleteVertex?: () => void;
-    onMapMouseDown?: (coord: Coordinate, screenX: number, screenY: number) => void;
+    onMapMouseDown?: (
+      coord: Coordinate,
+      screenX: number,
+      screenY: number,
+      featureId?: string | null
+    ) => void;
     isFeatureDragging?: boolean;
     isKnifeDrawing?: boolean;
     knifeDrawingCoords?: readonly Coordinate[];
@@ -205,6 +210,22 @@
     eventBus.emit('viewport:zoomChanged', { zoom: zoomLevel });
   }
 
+  function getFeatureIdFromTarget(target: EventTarget | null): string | null {
+    if (!(target instanceof Element)) return null;
+    return target.closest('[data-feature-id]')?.getAttribute('data-feature-id') ?? null;
+  }
+
+  function getClickCoordinate(e: MouseEvent): Coordinate | null {
+    const rect = containerEl?.getBoundingClientRect();
+    if (!rect) return null;
+
+    const geo = viewport.screenToGeo(
+      e.clientX - rect.left,
+      e.clientY - rect.top
+    );
+    return new Coordinate(geo.lon, geo.lat);
+  }
+
   function onMouseDown(e: MouseEvent): void {
     if (canPan(e.button)) {
       isPanning = true;
@@ -213,10 +234,9 @@
       onPanStart?.();
       e.preventDefault();
     } else if (e.button === 0 && onMapMouseDown) {
-      const rect = containerEl?.getBoundingClientRect();
-      if (rect) {
-        const geo = viewport.screenToGeo(e.clientX - rect.left, e.clientY - rect.top);
-        onMapMouseDown(new Coordinate(geo.lon, geo.lat), e.clientX, e.clientY);
+      const coord = getClickCoordinate(e);
+      if (coord) {
+        onMapMouseDown(coord, e.clientX, e.clientY, getFeatureIdFromTarget(e.target));
       }
     }
   }
@@ -263,24 +283,16 @@
   function onClick(e: MouseEvent): void {
     // パン中やドラッグ後はクリックとして扱わない
     if (e.button !== 0 || isFeatureDragging) return;
-    const rect = containerEl?.getBoundingClientRect();
-    if (!rect) return;
-    const geo = viewport.screenToGeo(
-      e.clientX - rect.left,
-      e.clientY - rect.top
-    );
-    onMapClick?.(new Coordinate(geo.lon, geo.lat));
+    const coord = getClickCoordinate(e);
+    if (!coord) return;
+    onMapClick?.(coord, getFeatureIdFromTarget(e.target));
   }
 
   function onDblClick(e: MouseEvent): void {
     if (e.button !== 0) return;
-    const rect = containerEl?.getBoundingClientRect();
-    if (!rect) return;
-    const geo = viewport.screenToGeo(
-      e.clientX - rect.left,
-      e.clientY - rect.top
-    );
-    onMapDoubleClick?.(new Coordinate(geo.lon, geo.lat));
+    const coord = getClickCoordinate(e);
+    if (!coord) return;
+    onMapDoubleClick?.(coord);
   }
 </script>
 
@@ -308,7 +320,7 @@
     {#each wrapOffsets as offset}
       <g transform="translate({offset}, 0)">
         <!-- 海の背景 -->
-        <rect x="0" y="0" width="360" height="180" fill="#1a1a2e" />
+        <rect x="0" y="0" width="360" height="180" fill="#1a1a2e" pointer-events="none" />
 
         <!-- ベースマップ（§2.1: pointer-events無効、テキスト選択不可） -->
         <g
@@ -337,6 +349,7 @@
           interval={gridInterval}
           color={gridColor}
           opacity={gridOpacity}
+          isPrimaryWrap={offset === 0}
         />
 
         <!-- 頂点ハンドル・エッジハンドル（選択地物の編集用） -->
@@ -390,6 +403,7 @@
             pointB={surveyPointB}
             result={surveyResult}
             zoom={zoomLevel}
+            isPrimaryWrap={offset === 0}
           />
         {/if}
       </g>
