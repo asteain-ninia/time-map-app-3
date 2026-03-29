@@ -5,11 +5,13 @@
     isKnifeDrawing = false,
     canConfirm = false,
     canConfirmKnife = false,
+    isFeatureMoveMode = false,
     onAddHole,
     onAddExclave,
     onConfirmRing,
     onCancelRing,
     onDeleteVertex,
+    onToggleFeatureMove,
     onStartKnife,
     onConfirmKnife,
     onCancelKnife,
@@ -23,11 +25,13 @@
     isKnifeDrawing?: boolean;
     canConfirm?: boolean;
     canConfirmKnife?: boolean;
+    isFeatureMoveMode?: boolean;
     onAddHole?: () => void;
     onAddExclave?: () => void;
     onConfirmRing?: () => void;
     onCancelRing?: () => void;
     onDeleteVertex?: () => void;
+    onToggleFeatureMove?: () => void;
     onStartKnife?: () => void;
     onConfirmKnife?: () => void;
     onCancelKnife?: () => void;
@@ -68,6 +72,14 @@
       キャンセル
     </button>
   {:else}
+    <button
+      class:active={isFeatureMoveMode}
+      class="edit-btn"
+      onclick={() => onToggleFeatureMove?.()}
+      title="地物移動ツール"
+    >
+      地物移動
+    </button>
     <button
       class="edit-btn"
       onclick={() => onDeleteVertex?.()}
@@ -154,6 +166,12 @@
 
   .edit-btn:hover {
     background: #4c4c4c;
+  }
+
+  .edit-btn.active {
+    background: #094771;
+    color: #fff;
+    border-color: #007acc;
   }
 
   .edit-btn.confirm {

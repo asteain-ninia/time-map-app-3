@@ -44,10 +44,13 @@
     onEdgeHandleMouseDown,
     onCursorGeoUpdate,
     onDragEnd,
+    showVertexHandles = true,
     isRingDrawing = false,
     ringDrawingCanConfirm = false,
     ringDrawingCoords = [] as readonly Coordinate[],
     selectedFeatureType = null as string | null,
+    isFeatureMoveMode = false,
+    onToggleFeatureMove,
     onAddHole,
     onAddExclave,
     onConfirmRing,
@@ -103,10 +106,13 @@
       viewWidthPx: number
     ) => void;
     onDragEnd?: () => void;
+    showVertexHandles?: boolean;
     isRingDrawing?: boolean;
     ringDrawingCanConfirm?: boolean;
     ringDrawingCoords?: readonly Coordinate[];
     selectedFeatureType?: string | null;
+    isFeatureMoveMode?: boolean;
+    onToggleFeatureMove?: () => void;
     onAddHole?: () => void;
     onAddExclave?: () => void;
     onConfirmRing?: () => void;
@@ -210,6 +216,7 @@
     toolMode === 'view' ? 'grab' :
     toolMode === 'add' ? 'crosshair' :
     toolMode === 'measure' ? 'crosshair' :
+    toolMode === 'edit' && isFeatureMoveMode ? 'move' :
     'default'
   );
 
@@ -368,7 +375,7 @@
         />
 
         <!-- 頂点ハンドル・エッジハンドル（選択地物の編集用） -->
-        {#if selectedAnchor() && !isDrawing}
+        {#if selectedAnchor() && !isDrawing && showVertexHandles}
           <VertexHandles
             anchor={selectedAnchor()!}
             {vertices}
@@ -483,8 +490,10 @@
       featureType={selectedAnchor()?.shape.type ?? null}
       {isRingDrawing}
       {isKnifeDrawing}
+      {isFeatureMoveMode}
       canConfirm={ringDrawingCanConfirm}
       canConfirmKnife={knifeCanConfirm}
+      {onToggleFeatureMove}
       {onAddHole}
       {onAddExclave}
       {onConfirmRing}

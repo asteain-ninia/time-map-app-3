@@ -57,6 +57,11 @@
     hasFeatureDragMoved,
     type FeatureDragState,
   } from '@infrastructure/rendering/featureDragManager';
+  import {
+    resolveVertexMouseDownState,
+    shouldStartFeatureDrag,
+    type EditInteractionMode,
+  } from '@infrastructure/rendering/editInteractionUtils';
   import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
   import {
     startBoxSelect,
@@ -147,6 +152,7 @@
   let currentTime = $state(navigateTime.getCurrentTime());
   let selectedFeatureId = $state<string | null>(null);
   let selectedVertexIds = $state<ReadonlySet<string>>(new Set());
+  let editInteractionMode = $state<EditInteractionMode>('vertex');
   let dragState = $state<DragState | null>(null);
   let sharedGroups = $state<ReadonlyMap<string, SharedVertexGroup>>(
     new Map(addFeature.getSharedVertexGroups())
@@ -179,6 +185,7 @@
   // --- ダーティ状態管理 ---
   let dirtyState = $state<DirtyState>(createDirtyState());
   let validationMessage = $state('');
+  let suppressNextMapClick = $state(false);
 
   /** 変更を記録する（各編集操作後に呼ぶ） */
   function markAsDirty(): void {
@@ -421,6 +428,10 @@
   function onModeChange(mode: ToolMode): void {
     toolStore.send({ type: 'MODE_CHANGE', mode });
     selectedFeatureId = null;
+    selectedVertexIds = new Set();
+    if (mode !== 'edit') {
+      editInteractionMode = 'vertex';
+    }
     validationMessage = '';
     syncToolState();
   }
@@ -431,12 +442,34 @@
     syncToolState();
   }
 
+  function setEditInteractionMode(mode: EditInteractionMode): void {
+    editInteractionMode = mode;
+    validationMessage = '';
+    if (mode === 'featureMove') {
+      selectedVertexIds = new Set();
+      dragState = null;
+      boxSelectState = null;
+      snapIndicators = [];
+    }
+  }
+
+  function onToggleFeatureMove(): void {
+    setEditInteractionMode(
+      editInteractionMode === 'featureMove' ? 'vertex' : 'featureMove'
+    );
+  }
+
   /** ヒットテスト閾値（度単位、ズームに反比例） */
   function getHitThreshold(): number {
     return 5 / (toolStore.getSnapshot().isPanning ? 1 : 1);
   }
 
   function onMapClick(coord: Coordinate, clickedFeatureId: string | null = null): void {
+    if (suppressNextMapClick) {
+      suppressNextMapClick = false;
+      return;
+    }
+
     // ナイフ描画中はクリックで頂点追加
     if (knifeDrawingState) {
       knifeDrawingState = addKnifeVertex(knifeDrawingState, coord);
@@ -540,13 +573,13 @@
 
   function onAddHole(): void {
     if (!selectedFeatureId) return;
-    validationMessage = '';
+    setEditInteractionMode('vertex');
     ringDrawingState = startRingDrawing('hole', selectedFeatureId);
   }
 
   function onAddExclave(): void {
     if (!selectedFeatureId) return;
-    validationMessage = '';
+    setEditInteractionMode('vertex');
     ringDrawingState = startRingDrawing('exclave', selectedFeatureId);
   }
 
@@ -645,7 +678,7 @@
 
   function onStartKnife(): void {
     if (!selectedFeatureId) return;
-    validationMessage = '';
+    setEditInteractionMode('vertex');
     knifeDrawingState = startKnifeDrawing(selectedFeatureId);
   }
 
@@ -842,38 +875,57 @@
     screenY: number,
     clickedFeatureId: string | null = null
   ): void {
-    if (toolMode !== 'edit' && toolMode !== 'view') return;
+    if (toolMode !== 'edit') return;
 
-    if (selectedFeatureId && currentTime) {
-      if (clickedFeatureId === selectedFeatureId) {
-        featureDragState = startFeatureDrag(selectedFeatureId, screenX, screenY);
-        featureDragStartGeo = { lon: coord.x, lat: coord.y };
-        featureDragLastGeo = { lon: coord.x, lat: coord.y };
-        return;
-      }
-
-      // ヒットテストで選択中の地物上かどうか判定
-      const result = hitTest(coord, features, vertices, layers, currentTime, getHitThreshold());
-      if (result && result.featureId === selectedFeatureId) {
-        featureDragState = startFeatureDrag(selectedFeatureId, screenX, screenY);
-        featureDragStartGeo = { lon: coord.x, lat: coord.y };
-        featureDragLastGeo = { lon: coord.x, lat: coord.y };
-        return;
-      }
+    let hitFeatureId = clickedFeatureId;
+    if (!hitFeatureId && selectedFeatureId && currentTime) {
+      hitFeatureId = hitTest(
+        coord,
+        features,
+        vertices,
+        layers,
+        currentTime,
+        getHitThreshold()
+      )?.featureId ?? null;
     }
 
-    // 編集モードで地物未ヒット → 矩形選択開始（選択中地物がある場合のみ）
-    if (toolMode === 'edit' && selectedFeatureId) {
+    if (shouldStartFeatureDrag({
+      toolMode,
+      editInteractionMode,
+      selectedFeatureId,
+      clickedFeatureId,
+      hitFeatureId,
+      hasCurrentTime: currentTime !== undefined,
+      isRingDrawing: ringDrawingState !== null,
+      isKnifeDrawing: knifeDrawingState !== null,
+    })) {
+      featureDragState = startFeatureDrag(selectedFeatureId!, screenX, screenY);
+      featureDragStartGeo = { lon: coord.x, lat: coord.y };
+      featureDragLastGeo = { lon: coord.x, lat: coord.y };
+      return;
+    }
+
+    if (
+      editInteractionMode === 'vertex' &&
+      selectedFeatureId &&
+      !ringDrawingState &&
+      !knifeDrawingState
+    ) {
       boxSelectState = startBoxSelect(coord, false);
     }
   }
 
   /** 地物ドラッグの確定 */
   function commitFeatureDrag(): void {
-    if (!featureDragState || !currentTime || !featureDragStartGeo || !featureDragLastGeo) {
+    if (!featureDragState) {
+      return;
+    }
+
+    if (!currentTime || !featureDragStartGeo || !featureDragLastGeo) {
       featureDragState = null;
       featureDragStartGeo = null;
       featureDragLastGeo = null;
+      suppressNextMapClick = true;
       return;
     }
 
@@ -901,6 +953,7 @@
       refreshFeatureData();
     }
 
+    suppressNextMapClick = true;
     featureDragState = null;
     featureDragStartGeo = null;
     featureDragLastGeo = null;
@@ -971,25 +1024,22 @@
     const found = findVerticesInBox(box, vertexIds, vertices);
     selectedVertexIds = mergeSelection(selectedVertexIds, found, boxSelectState.isAdditive);
     boxSelectState = null;
+    suppressNextMapClick = true;
   }
 
   /** 頂点ハンドルのmousedown — 頂点選択＋ドラッグ開始 */
   function onVertexMouseDown(vertexId: string, e: MouseEvent): void {
     validationMessage = '';
-    if (e.shiftKey) {
-      // Shift+クリック: 頂点選択トグル（ドラッグなし）
-      const next = new Set(selectedVertexIds);
-      if (next.has(vertexId)) {
-        next.delete(vertexId);
-      } else {
-        next.add(vertexId);
-      }
-      selectedVertexIds = next;
+    const { nextSelection, shouldStartDrag } = resolveVertexMouseDownState(
+      selectedVertexIds,
+      vertexId,
+      e.shiftKey
+    );
+    selectedVertexIds = nextSelection;
+    if (!shouldStartDrag || editInteractionMode !== 'vertex') {
       return;
     }
 
-    // ドラッグ開始
-    selectedVertexIds = new Set([vertexId]);
     const vertex = vertices.get(vertexId);
     if (vertex) {
       dragState = startDrag(vertexId, vertex.coordinate);
@@ -1098,6 +1148,7 @@
       }
       refreshFeatureData();
     }
+    suppressNextMapClick = true;
     dragState = null;
     snapIndicators = [];
   }
@@ -1413,10 +1464,13 @@
           {onEdgeHandleMouseDown}
           {onCursorGeoUpdate}
           onDragEnd={() => { commitDrag(); commitFeatureDrag(); commitBoxSelect(); }}
+          showVertexHandles={editInteractionMode !== 'featureMove'}
           isRingDrawing={ringDrawingState !== null}
           ringDrawingCanConfirm={ringDrawingState ? canConfirmRing(ringDrawingState) : false}
           ringDrawingCoords={ringDrawingState?.coords ?? []}
           selectedFeatureType={selectedFeatureId && currentTime ? features.find(f => f.id === selectedFeatureId)?.getActiveAnchor(currentTime)?.shape.type ?? null : null}
+          isFeatureMoveMode={editInteractionMode === 'featureMove'}
+          {onToggleFeatureMove}
           {onAddHole}
           {onAddExclave}
           {onConfirmRing}
