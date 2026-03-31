@@ -46,6 +46,24 @@ export interface RingValidationError {
   readonly message: string;
 }
 
+export type RingDrawingResolvedType = 'hole' | 'exclave';
+
+export type RingDrawingConstraint =
+  | { readonly kind: 'territory'; readonly ringId: string }
+  | { readonly kind: 'hole'; readonly ringId: string }
+  | { readonly kind: 'outside' };
+
+export interface RingDrawingPlacement {
+  readonly type: RingDrawingResolvedType;
+  readonly parentRingId: string | null;
+  readonly constraint: RingDrawingConstraint;
+}
+
+export interface RingDrawingPlacementResult {
+  readonly placement: RingDrawingPlacement | null;
+  readonly message: string | null;
+}
+
 /**
  * 穴リングをポリゴンに追加する
  *
@@ -250,6 +268,219 @@ export function validateRingPlacement(
   return errors;
 }
 
+export function resolveRingDrawingPlacement(
+  rings: readonly Ring[],
+  vertices: ReadonlyMap<string, Vertex>,
+  point: { x: number; y: number }
+): RingDrawingPlacementResult {
+  const ringCoords = buildRingCoordsMap(rings, vertices);
+  const containingRings = rings.filter((ring) =>
+    isPointInPolygon(point.x, point.y, ringCoords.get(ring.id)!)
+  );
+
+  if (isPointOnAnyRingBoundary(point, ringCoords)) {
+    return {
+      placement: null,
+      message: 'リング境界上からは穴/飛び地を開始できません',
+    };
+  }
+
+  if (containingRings.length === 0) {
+    return {
+      placement: {
+        type: 'exclave',
+        parentRingId: null,
+        constraint: { kind: 'outside' },
+      },
+      message: null,
+    };
+  }
+
+  const ringsById = new Map(rings.map((ring) => [ring.id, ring]));
+  const deepestRing = containingRings
+    .slice()
+    .sort((left, right) => getRingDepth(right, ringsById) - getRingDepth(left, ringsById))[0];
+
+  if (deepestRing.ringType === 'territory') {
+    return {
+      placement: {
+        type: 'hole',
+        parentRingId: deepestRing.id,
+        constraint: { kind: 'territory', ringId: deepestRing.id },
+      },
+      message: null,
+    };
+  }
+
+  return {
+    placement: {
+      type: 'exclave',
+      parentRingId: deepestRing.id,
+      constraint: { kind: 'hole', ringId: deepestRing.id },
+    },
+    message: null,
+  };
+}
+
+export function isRingDrawingPointAllowed(
+  point: { x: number; y: number },
+  placement: RingDrawingPlacement,
+  rings: readonly Ring[],
+  vertices: ReadonlyMap<string, Vertex>
+): boolean {
+  const ringCoords = buildRingCoordsMap(rings, vertices);
+  if (isPointOnAnyRingBoundary(point, ringCoords)) {
+    return false;
+  }
+
+  switch (placement.constraint.kind) {
+    case 'territory': {
+      const parentCoords = ringCoords.get(placement.constraint.ringId);
+      if (!parentCoords || !isPointInPolygon(point.x, point.y, parentCoords)) {
+        return false;
+      }
+
+      const childHoles = rings.filter(
+        (ring) => ring.parentId === placement.constraint.ringId && ring.ringType === 'hole'
+      );
+      return childHoles.every((ring) => !isPointInPolygon(point.x, point.y, ringCoords.get(ring.id)!));
+    }
+    case 'hole': {
+      const parentCoords = ringCoords.get(placement.constraint.ringId);
+      if (!parentCoords || !isPointInPolygon(point.x, point.y, parentCoords)) {
+        return false;
+      }
+
+      const childTerritories = rings.filter(
+        (ring) => ring.parentId === placement.constraint.ringId && ring.ringType === 'territory'
+      );
+      return childTerritories.every((ring) => !isPointInPolygon(point.x, point.y, ringCoords.get(ring.id)!));
+    }
+    case 'outside':
+      return rings
+        .filter((ring) => ring.ringType === 'territory' && ring.parentId === null)
+        .every((ring) => !isPointInPolygon(point.x, point.y, ringCoords.get(ring.id)!));
+  }
+}
+
+export function validateNewRingPlacement(
+  rings: readonly Ring[],
+  vertices: ReadonlyMap<string, Vertex>,
+  placement: RingDrawingPlacement,
+  newRingCoords: RingCoords
+): RingValidationError[] {
+  const ringCoords = buildRingCoordsMap(rings, vertices);
+  const siblingRingsCoords = rings
+    .filter((ring) =>
+      ring.parentId === placement.parentRingId &&
+      ring.ringType === (placement.type === 'hole' ? 'hole' : 'territory')
+    )
+    .map((ring) => ringCoords.get(ring.id)!)
+    .filter((coords): coords is RingCoords => coords !== undefined);
+
+  const parentRingCoords =
+    placement.parentRingId !== null
+      ? ringCoords.get(placement.parentRingId) ?? null
+      : null;
+
+  return validateRingPlacement(newRingCoords, parentRingCoords, siblingRingsCoords);
+}
+
+export function validatePolygonRingHierarchy(
+  rings: readonly Ring[],
+  vertices: ReadonlyMap<string, Vertex>
+): RingValidationError[] {
+  const ringCoords = buildRingCoordsMap(rings, vertices);
+  const ringsById = new Map(rings.map((ring) => [ring.id, ring]));
+  const errors: RingValidationError[] = [];
+
+  for (const ring of rings) {
+    const currentCoords = ringCoords.get(ring.id)!;
+
+    if (ring.ringType === 'hole') {
+      if (ring.parentId === null) {
+        errors.push({
+          type: 'not_contained',
+          message: '穴リングには親の領土リングが必要です',
+        });
+        continue;
+      }
+
+      const parentRing = ringsById.get(ring.parentId);
+      if (!parentRing || parentRing.ringType !== 'territory') {
+        errors.push({
+          type: 'not_contained',
+          message: '穴リングの親は領土リングでなければなりません',
+        });
+        continue;
+      }
+
+      const siblingCoords = rings
+        .filter((candidate) =>
+          candidate.id !== ring.id &&
+          candidate.parentId === ring.parentId &&
+          candidate.ringType === 'hole'
+        )
+        .map((candidate) => ringCoords.get(candidate.id)!)
+        .filter((coords): coords is RingCoords => coords !== undefined);
+
+      errors.push(
+        ...validateRingPlacement(
+          currentCoords,
+          ringCoords.get(parentRing.id)!,
+          siblingCoords
+        ).filter((error) => error.type !== 'self_intersecting')
+      );
+      continue;
+    }
+
+    if (ring.parentId === null) {
+      const siblingCoords = rings
+        .filter((candidate) =>
+          candidate.id !== ring.id &&
+          candidate.parentId === null &&
+          candidate.ringType === 'territory'
+        )
+        .map((candidate) => ringCoords.get(candidate.id)!)
+        .filter((coords): coords is RingCoords => coords !== undefined);
+
+      errors.push(
+        ...validateRingPlacement(currentCoords, null, siblingCoords)
+          .filter((error) => error.type !== 'self_intersecting')
+      );
+      continue;
+    }
+
+    const parentRing = ringsById.get(ring.parentId);
+    if (!parentRing || parentRing.ringType !== 'hole') {
+      errors.push({
+        type: 'not_contained',
+        message: '飛び地リングの親は穴リングでなければなりません',
+      });
+      continue;
+    }
+
+    const siblingCoords = rings
+      .filter((candidate) =>
+        candidate.id !== ring.id &&
+        candidate.parentId === ring.parentId &&
+        candidate.ringType === 'territory'
+      )
+      .map((candidate) => ringCoords.get(candidate.id)!)
+      .filter((coords): coords is RingCoords => coords !== undefined);
+
+    errors.push(
+      ...validateRingPlacement(
+        currentCoords,
+        ringCoords.get(parentRing.id)!,
+        siblingCoords
+      ).filter((error) => error.type !== 'self_intersecting')
+    );
+  }
+
+  return errors;
+}
+
 /**
  * リングの頂点座標を解決する
  *
@@ -325,4 +556,80 @@ export class RingEditError extends Error {
     super(message);
     this.name = 'RingEditError';
   }
+}
+
+function buildRingCoordsMap(
+  rings: readonly Ring[],
+  vertices: ReadonlyMap<string, Vertex>
+): ReadonlyMap<string, RingCoords> {
+  const result = new Map<string, RingCoords>();
+  for (const ring of rings) {
+    result.set(ring.id, resolveRingCoords(ring, vertices));
+  }
+  return result;
+}
+
+function getRingDepth(
+  ring: Ring,
+  ringsById: ReadonlyMap<string, Ring>
+): number {
+  let depth = 0;
+  let currentParentId = ring.parentId;
+  const visited = new Set<string>();
+
+  while (currentParentId !== null && !visited.has(currentParentId)) {
+    visited.add(currentParentId);
+    const parent = ringsById.get(currentParentId);
+    if (!parent) break;
+    depth += 1;
+    currentParentId = parent.parentId;
+  }
+
+  return depth;
+}
+
+function isPointOnAnyRingBoundary(
+  point: { x: number; y: number },
+  ringCoords: ReadonlyMap<string, RingCoords>
+): boolean {
+  for (const coords of ringCoords.values()) {
+    for (let index = 0; index < coords.length; index += 1) {
+      const start = coords[index];
+      const end = coords[(index + 1) % coords.length];
+      if (isPointOnSegment(point, start, end)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function isPointOnSegment(
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number }
+): boolean {
+  const epsilon = 1e-9;
+  const cross =
+    (point.y - start.y) * (end.x - start.x) -
+    (point.x - start.x) * (end.y - start.y);
+  if (Math.abs(cross) > epsilon) {
+    return false;
+  }
+
+  const dot =
+    (point.x - start.x) * (end.x - start.x) +
+    (point.y - start.y) * (end.y - start.y);
+  if (dot < -epsilon) {
+    return false;
+  }
+
+  const lengthSquared =
+    (end.x - start.x) * (end.x - start.x) +
+    (end.y - start.y) * (end.y - start.y);
+  if (dot - lengthSquared > epsilon) {
+    return false;
+  }
+
+  return true;
 }

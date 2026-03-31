@@ -6,8 +6,7 @@
     canConfirm = false,
     canConfirmKnife = false,
     isFeatureMoveMode = false,
-    onAddHole,
-    onAddExclave,
+    onAddRing,
     onConfirmRing,
     onCancelRing,
     onDeleteVertex,
@@ -26,8 +25,7 @@
     canConfirm?: boolean;
     canConfirmKnife?: boolean;
     isFeatureMoveMode?: boolean;
-    onAddHole?: () => void;
-    onAddExclave?: () => void;
+    onAddRing?: () => void;
     onConfirmRing?: () => void;
     onCancelRing?: () => void;
     onDeleteVertex?: () => void;
@@ -90,17 +88,10 @@
     {#if featureType === 'Polygon'}
       <button
         class="edit-btn"
-        onclick={() => onAddHole?.()}
-        title="穴リングを追加"
+        onclick={() => onAddRing?.()}
+        title="穴/飛び地リングを追加"
       >
-        穴追加
-      </button>
-      <button
-        class="edit-btn"
-        onclick={() => onAddExclave?.()}
-        title="飛び地リングを追加"
-      >
-        飛び地追加
+        穴/飛び地追加
       </button>
       <button
         class="edit-btn knife"

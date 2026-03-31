@@ -52,8 +52,7 @@
     ringDrawingCoords = [] as readonly Coordinate[],
     isFeatureMoveMode = false,
     onToggleFeatureMove,
-    onAddHole,
-    onAddExclave,
+    onAddRing,
     onConfirmRing,
     onCancelRing,
     onDeleteVertex,
@@ -115,8 +114,7 @@
     ringDrawingCoords?: readonly Coordinate[];
     isFeatureMoveMode?: boolean;
     onToggleFeatureMove?: () => void;
-    onAddHole?: () => void;
-    onAddExclave?: () => void;
+    onAddRing?: () => void;
     onConfirmRing?: () => void;
     onCancelRing?: () => void;
     onDeleteVertex?: () => void;
@@ -555,8 +553,7 @@
       canConfirm={ringDrawingCanConfirm}
       canConfirmKnife={knifeCanConfirm}
       {onToggleFeatureMove}
-      {onAddHole}
-      {onAddExclave}
+      {onAddRing}
       {onConfirmRing}
       {onCancelRing}
       {onDeleteVertex}

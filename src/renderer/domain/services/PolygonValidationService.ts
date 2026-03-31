@@ -9,12 +9,17 @@ import type { Vertex } from '@domain/entities/Vertex';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import { isSelfIntersecting, type RingCoords } from './GeometryService';
 import {
+  validatePolygonRingHierarchy,
+  type RingValidationError,
+} from './RingEditService';
+import {
   detectConflictsForFeature,
   type SpatialConflict,
 } from './ConflictDetectionService';
 
 export interface PolygonValidationResult {
   readonly selfIntersectingRingIds: readonly string[];
+  readonly ringValidationErrors: readonly RingValidationError[];
   readonly conflicts: readonly SpatialConflict[];
   readonly isValid: boolean;
 }
@@ -30,6 +35,7 @@ export function validatePolygonFeature(
   if (!activeAnchor || activeAnchor.shape.type !== 'Polygon') {
     return {
       selfIntersectingRingIds: [],
+      ringValidationErrors: [],
       conflicts: [],
       isValid: true,
     };
@@ -38,6 +44,11 @@ export function validatePolygonFeature(
   const selfIntersectingRingIds = activeAnchor.shape.rings
     .filter((ring) => isSelfIntersecting(resolveRingCoords(ring.vertexIds, vertices)))
     .map((ring) => ring.id);
+
+  const ringValidationErrors = validatePolygonRingHierarchy(
+    activeAnchor.shape.rings,
+    vertices
+  );
 
   const conflicts = detectConflictsForFeature(
     targetFeature,
@@ -49,8 +60,12 @@ export function validatePolygonFeature(
 
   return {
     selfIntersectingRingIds,
+    ringValidationErrors,
     conflicts,
-    isValid: selfIntersectingRingIds.length === 0 && conflicts.length === 0,
+    isValid:
+      selfIntersectingRingIds.length === 0 &&
+      ringValidationErrors.length === 0 &&
+      conflicts.length === 0,
   };
 }
 

@@ -82,6 +82,10 @@ export function validatePolygonOrThrow(
     throw new PolygonValidationError('ポリゴンが自己交差しています');
   }
 
+  if (result.ringValidationErrors.length > 0) {
+    throw new PolygonValidationError(result.ringValidationErrors[0].message);
+  }
+
   if (result.conflicts.length > 0) {
     const firstConflict = result.conflicts[0];
     const otherFeatureId =

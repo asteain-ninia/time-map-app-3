@@ -3,6 +3,10 @@ import {
   addHoleRing,
   addExclaveRing,
   deleteRing,
+  isRingDrawingPointAllowed,
+  resolveRingDrawingPlacement,
+  validateNewRingPlacement,
+  validatePolygonRingHierarchy,
   validateRingPlacement,
   resolveRingCoords,
   getDirectChildren,
@@ -26,6 +30,28 @@ function makeVertex(id: string, x: number, y: number): Vertex {
 
 function verticesMap(...vs: Vertex[]): ReadonlyMap<string, Vertex> {
   return new Map(vs.map(v => [v.id, v]));
+}
+
+function createNestedRingFixture() {
+  const outer = new Ring('outer', ['o1', 'o2', 'o3', 'o4'], 'territory', null);
+  const hole = new Ring('hole', ['h1', 'h2', 'h3', 'h4'], 'hole', 'outer');
+  const island = new Ring('island', ['i1', 'i2', 'i3', 'i4'], 'territory', 'hole');
+  const rings = [outer, hole, island];
+  const vertices = verticesMap(
+    makeVertex('o1', 0, 0),
+    makeVertex('o2', 20, 0),
+    makeVertex('o3', 20, 20),
+    makeVertex('o4', 0, 20),
+    makeVertex('h1', 4, 4),
+    makeVertex('h2', 16, 4),
+    makeVertex('h3', 16, 16),
+    makeVertex('h4', 4, 16),
+    makeVertex('i1', 6, 6),
+    makeVertex('i2', 10, 6),
+    makeVertex('i3', 10, 10),
+    makeVertex('i4', 6, 10),
+  );
+  return { rings, vertices };
 }
 
 // ---- テスト ----
@@ -277,6 +303,143 @@ describe('RingEditService', () => {
     it('親リングなしの場合、包含チェックはスキップ', () => {
       const errors = validateRingPlacement(innerSquare, null, []);
       expect(errors).toEqual([]);
+    });
+  });
+
+  describe('resolveRingDrawingPlacement', () => {
+    it('領土内部から始めると穴モードになり、その領土リングが親になる', () => {
+      const { rings, vertices } = createNestedRingFixture();
+
+      const result = resolveRingDrawingPlacement(rings, vertices, { x: 2, y: 2 });
+
+      expect(result.message).toBeNull();
+      expect(result.placement).toEqual({
+        type: 'hole',
+        parentRingId: 'outer',
+        constraint: { kind: 'territory', ringId: 'outer' },
+      });
+    });
+
+    it('穴内部から始めると飛び地モードになり、その穴リングが親になる', () => {
+      const { rings, vertices } = createNestedRingFixture();
+
+      const result = resolveRingDrawingPlacement(rings, vertices, { x: 5, y: 5 });
+
+      expect(result.message).toBeNull();
+      expect(result.placement).toEqual({
+        type: 'exclave',
+        parentRingId: 'hole',
+        constraint: { kind: 'hole', ringId: 'hole' },
+      });
+    });
+
+    it('穴の中の飛び地内部から始めると、その飛び地を親にした穴モードになる', () => {
+      const { rings, vertices } = createNestedRingFixture();
+
+      const result = resolveRingDrawingPlacement(rings, vertices, { x: 7, y: 7 });
+
+      expect(result.message).toBeNull();
+      expect(result.placement).toEqual({
+        type: 'hole',
+        parentRingId: 'island',
+        constraint: { kind: 'territory', ringId: 'island' },
+      });
+    });
+
+    it('ポリゴン外部から始めるとトップレベル飛び地モードになる', () => {
+      const { rings, vertices } = createNestedRingFixture();
+
+      const result = resolveRingDrawingPlacement(rings, vertices, { x: 30, y: 30 });
+
+      expect(result.message).toBeNull();
+      expect(result.placement).toEqual({
+        type: 'exclave',
+        parentRingId: null,
+        constraint: { kind: 'outside' },
+      });
+    });
+
+    it('リング境界上からは開始できない', () => {
+      const { rings, vertices } = createNestedRingFixture();
+
+      const result = resolveRingDrawingPlacement(rings, vertices, { x: 0, y: 10 });
+
+      expect(result.placement).toBeNull();
+      expect(result.message).toContain('リング境界上');
+    });
+  });
+
+  describe('isRingDrawingPointAllowed', () => {
+    it('穴モードでは開始した領土リングの内部かつ既存の穴の外側だけを許可する', () => {
+      const { rings, vertices } = createNestedRingFixture();
+      const placement = resolveRingDrawingPlacement(rings, vertices, { x: 2, y: 2 }).placement!;
+
+      expect(isRingDrawingPointAllowed({ x: 3, y: 3 }, placement, rings, vertices)).toBe(true);
+      expect(isRingDrawingPointAllowed({ x: 5, y: 5 }, placement, rings, vertices)).toBe(false);
+    });
+
+    it('穴内飛び地モードでは開始した穴リングの内部だけを許可する', () => {
+      const { rings, vertices } = createNestedRingFixture();
+      const placement = resolveRingDrawingPlacement(rings, vertices, { x: 5, y: 5 }).placement!;
+
+      expect(isRingDrawingPointAllowed({ x: 12, y: 12 }, placement, rings, vertices)).toBe(true);
+      expect(isRingDrawingPointAllowed({ x: 7, y: 7 }, placement, rings, vertices)).toBe(false);
+      expect(isRingDrawingPointAllowed({ x: 2, y: 2 }, placement, rings, vertices)).toBe(false);
+    });
+
+    it('トップレベル飛び地モードでは選択ポリゴンの外側だけを許可する', () => {
+      const { rings, vertices } = createNestedRingFixture();
+      const placement = resolveRingDrawingPlacement(rings, vertices, { x: 30, y: 30 }).placement!;
+
+      expect(isRingDrawingPointAllowed({ x: 35, y: 35 }, placement, rings, vertices)).toBe(true);
+      expect(isRingDrawingPointAllowed({ x: 5, y: 5 }, placement, rings, vertices)).toBe(false);
+    });
+  });
+
+  describe('validateNewRingPlacement', () => {
+    it('穴内飛び地を追加する座標列を受け入れる', () => {
+      const { rings, vertices } = createNestedRingFixture();
+      const placement = resolveRingDrawingPlacement(rings, vertices, { x: 5, y: 5 }).placement!;
+      const coords: RingCoords = [
+        { x: 11, y: 11 },
+        { x: 15, y: 11 },
+        { x: 15, y: 15 },
+        { x: 11, y: 15 },
+      ];
+
+      const errors = validateNewRingPlacement(rings, vertices, placement, coords);
+
+      expect(errors).toEqual([]);
+    });
+  });
+
+  describe('validatePolygonRingHierarchy', () => {
+    it('有効なネスト構造ならエラーなし', () => {
+      const { rings, vertices } = createNestedRingFixture();
+
+      expect(validatePolygonRingHierarchy(rings, vertices)).toEqual([]);
+    });
+
+    it('穴リングが親領土からはみ出すとエラーになる', () => {
+      const { rings, vertices } = createNestedRingFixture();
+      const invalidVertices = new Map(vertices);
+      invalidVertices.set('h3', makeVertex('h3', 24, 16));
+
+      const errors = validatePolygonRingHierarchy(rings, invalidVertices);
+
+      expect(errors.some((error) => error.type === 'not_contained' || error.type === 'boundary_crossing')).toBe(true);
+    });
+
+    it('飛び地リングの親が穴でない場合はエラーになる', () => {
+      const { vertices } = createNestedRingFixture();
+      const rings = [
+        new Ring('outer', ['o1', 'o2', 'o3', 'o4'], 'territory', null),
+        new Ring('island', ['i1', 'i2', 'i3', 'i4'], 'territory', 'outer'),
+      ];
+
+      const errors = validatePolygonRingHierarchy(rings, vertices);
+
+      expect(errors.some((error) => error.message.includes('飛び地リングの親'))).toBe(true);
     });
   });
 

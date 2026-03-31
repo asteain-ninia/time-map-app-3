@@ -25,8 +25,7 @@ export interface ContextMenuActions {
   readonly onDelete: () => void;
   readonly onDeleteVertex: () => void;
   readonly onUnmergeVertex: () => void;
-  readonly onAddHole: () => void;
-  readonly onAddExclave: () => void;
+  readonly onAddRing: () => void;
   readonly onStartKnife: () => void;
   readonly onAddMergeTarget: () => void;
 }
@@ -68,12 +67,8 @@ export function buildContextMenuItems(
     if (ctx.featureType === 'Polygon') {
       items.push({ separator: true });
       items.push({
-        label: '穴追加',
-        action: actions.onAddHole,
-      });
-      items.push({
-        label: '飛び地追加',
-        action: actions.onAddExclave,
+        label: '穴/飛び地追加',
+        action: actions.onAddRing,
       });
       items.push({
         label: '分割',

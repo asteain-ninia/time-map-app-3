@@ -10,8 +10,7 @@ function createActions(): ContextMenuActions {
     onDelete: vi.fn(),
     onDeleteVertex: vi.fn(),
     onUnmergeVertex: vi.fn(),
-    onAddHole: vi.fn(),
-    onAddExclave: vi.fn(),
+    onAddRing: vi.fn(),
     onStartKnife: vi.fn(),
     onAddMergeTarget: vi.fn(),
   };
@@ -51,8 +50,7 @@ describe('contextMenuBuilder', () => {
       };
       const items = buildContextMenuItems(ctx, createActions());
       const labels = items.filter(i => !('separator' in i && i.separator)).map(i => (i as any).label);
-      expect(labels).toContain('穴追加');
-      expect(labels).toContain('飛び地追加');
+      expect(labels).toContain('穴/飛び地追加');
       expect(labels).toContain('分割');
       expect(labels).toContain('結合対象に追加');
     });
@@ -66,7 +64,7 @@ describe('contextMenuBuilder', () => {
       };
       const items = buildContextMenuItems(ctx, createActions());
       const labels = items.filter(i => !('separator' in i && i.separator)).map(i => (i as any).label);
-      expect(labels).not.toContain('穴追加');
+      expect(labels).not.toContain('穴/飛び地追加');
       expect(labels).not.toContain('分割');
     });
 

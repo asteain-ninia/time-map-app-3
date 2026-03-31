@@ -93,7 +93,13 @@
   import { MergeFeatureCommand } from '@application/commands/MergeFeatureCommand';
   import type { SpatialConflict } from '@domain/services/ConflictDetectionService';
   import type { ConflictResolution } from '@application/AnchorEditDraft';
-  import { addHoleRing, addExclaveRing, validateRingPlacement } from '@domain/services/RingEditService';
+  import {
+    addHoleRing,
+    addExclaveRing,
+    isRingDrawingPointAllowed,
+    resolveRingDrawingPlacement,
+    validateNewRingPlacement,
+  } from '@domain/services/RingEditService';
   import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
   import { DEFAULT_SETTINGS, DEFAULT_METADATA, type WorldSettings, type WorldMetadata } from '@domain/entities/World';
   import { Vertex } from '@domain/entities/Vertex';
@@ -240,6 +246,76 @@
       );
     }
     return validationVertices;
+  }
+
+  function getRingDrawingTarget() {
+    if (!ringDrawingState || !currentTime) return null;
+
+    const feature = features.find((candidate) => candidate.id === ringDrawingState.featureId);
+    if (!feature) return null;
+
+    const anchor = feature.getActiveAnchor(currentTime);
+    if (!anchor || anchor.shape.type !== 'Polygon') return null;
+
+    return { feature, anchor };
+  }
+
+  function getRingDrawingConstraintMessage(): string {
+    const target = getRingDrawingTarget();
+    if (!target) return 'ポリゴン地物が選択されていません';
+    if (!ringDrawingState || ringDrawingState.coords.length === 0) {
+      return '穴/飛び地を開始できません';
+    }
+
+    const resolution = resolveRingDrawingPlacement(
+      target.anchor.shape.rings,
+      addFeature.getVertices(),
+      { x: ringDrawingState.coords[0].x, y: ringDrawingState.coords[0].y }
+    );
+    if (!resolution.placement) {
+      return resolution.message ?? '穴/飛び地を開始できません';
+    }
+
+    switch (resolution.placement.constraint.kind) {
+      case 'territory':
+        return '穴追加中の頂点は開始した領土リングの内部に配置してください';
+      case 'hole':
+        return '飛び地追加中の頂点は開始した穴リングの内部に配置してください';
+      case 'outside':
+        return '飛び地追加中の頂点は選択中ポリゴンの外部に配置してください';
+    }
+  }
+
+  function validateRingDrawingVertex(coord: Coordinate): string | null {
+    const target = getRingDrawingTarget();
+    if (!target) return 'ポリゴン地物が選択されていません';
+
+    if (!ringDrawingState || ringDrawingState.coords.length === 0) {
+      const resolution = resolveRingDrawingPlacement(
+        target.anchor.shape.rings,
+        addFeature.getVertices(),
+        { x: coord.x, y: coord.y }
+      );
+      return resolution.message;
+    }
+
+    const resolution = resolveRingDrawingPlacement(
+      target.anchor.shape.rings,
+      addFeature.getVertices(),
+      { x: ringDrawingState.coords[0].x, y: ringDrawingState.coords[0].y }
+    );
+    if (!resolution.placement) {
+      return resolution.message ?? '穴/飛び地を開始できません';
+    }
+
+    return isRingDrawingPointAllowed(
+      { x: coord.x, y: coord.y },
+      resolution.placement,
+      target.anchor.shape.rings,
+      addFeature.getVertices()
+    )
+      ? null
+      : getRingDrawingConstraintMessage();
   }
 
   function validatePendingPolygon(coords: readonly Coordinate[]): string | null {
@@ -699,6 +775,12 @@
     }
     // リング描画中はクリックで頂点追加
     if (ringDrawingState) {
+      const ringValidationMessage = validateRingDrawingVertex(coord);
+      if (ringValidationMessage) {
+        validationMessage = ringValidationMessage;
+        return;
+      }
+      validationMessage = '';
       ringDrawingState = addRingVertex(ringDrawingState, coord);
       return;
     }
@@ -793,49 +875,38 @@
 
   // --- リング描画（穴/飛び地追加） ---
 
-  function onAddHole(): void {
+  function onAddRing(): void {
     if (!selectionFeatureId) return;
     setEditInteractionMode('vertex');
-    ringDrawingState = startRingDrawing('hole', selectionFeatureId);
-  }
-
-  function onAddExclave(): void {
-    if (!selectionFeatureId) return;
-    setEditInteractionMode('vertex');
-    ringDrawingState = startRingDrawing('exclave', selectionFeatureId);
+    validationMessage = '';
+    ringDrawingState = startRingDrawing('auto', selectionFeatureId);
   }
 
   function onConfirmRing(): void {
     if (!ringDrawingState || !canConfirmRing(ringDrawingState) || !currentTime) return;
 
-    const feature = features.find((f) => f.id === ringDrawingState.featureId);
-    if (!feature) return;
-    const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor || anchor.shape.type !== 'Polygon') return;
+    const target = getRingDrawingTarget();
+    if (!target) return;
+    const { feature, anchor } = target;
 
     const currentVertices = addFeature.getVertices();
-    const resolveCoords = (vertexIds: readonly string[]) =>
-      vertexIds
-        .map((vertexId) => currentVertices.get(vertexId))
-        .filter((vertex): vertex is Vertex => vertex !== undefined)
-        .map((vertex) => ({ x: vertex.x, y: vertex.y }));
-
     const newRingCoords = ringDrawingState.coords.map((coord) => ({ x: coord.x, y: coord.y }));
-    const isHole = ringDrawingState.type === 'hole';
-    const parentRing = isHole
-      ? anchor.shape.rings.find((ring) => ring.ringType === 'territory' && ring.parentId === null)
-      : null;
-    const parentRingId = parentRing?.id ?? null;
-    const siblingRingsCoords = anchor.shape.rings
-      .filter((ring) =>
-        ring.parentId === parentRingId &&
-        ring.ringType === (isHole ? 'hole' : 'territory')
-      )
-      .map((ring) => resolveCoords(ring.vertexIds));
-    const placementErrors = validateRingPlacement(
-      newRingCoords,
-      parentRing ? resolveCoords(parentRing.vertexIds) : null,
-      siblingRingsCoords
+    const placementResolution = resolveRingDrawingPlacement(
+      anchor.shape.rings,
+      currentVertices,
+      { x: ringDrawingState.coords[0].x, y: ringDrawingState.coords[0].y }
+    );
+    if (!placementResolution.placement) {
+      validationMessage = placementResolution.message ?? '穴/飛び地を開始できません';
+      return;
+    }
+
+    const placement = placementResolution.placement;
+    const placementErrors = validateNewRingPlacement(
+      anchor.shape.rings,
+      currentVertices,
+      placement,
+      newRingCoords
     );
     if (placementErrors.length > 0) {
       validationMessage = placementErrors[0].message;
@@ -850,9 +921,9 @@
           coordinate: coord,
         }))
       );
-      const pendingRingResult = isHole
-        ? addHoleRing(anchor.shape.rings, parentRingId!, 'pending-ring', pendingVertexIds)
-        : addExclaveRing(anchor.shape.rings, null, 'pending-ring', pendingVertexIds);
+      const pendingRingResult = placement.type === 'hole'
+        ? addHoleRing(anchor.shape.rings, placement.parentRingId!, 'pending-ring', pendingVertexIds)
+        : addExclaveRing(anchor.shape.rings, placement.parentRingId, 'pending-ring', pendingVertexIds);
       const pendingAnchor = anchor.withShape({ type: 'Polygon', rings: pendingRingResult.rings });
       const pendingFeature = feature.withAnchors(
         feature.anchors.map((candidate) => candidate.id === anchor.id ? pendingAnchor : candidate)
@@ -873,9 +944,9 @@
         newVertexIds.push(id);
       }
       const newRingId = `ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const result = isHole
-        ? addHoleRing(anchor.shape.rings, parentRingId!, newRingId, newVertexIds)
-        : addExclaveRing(anchor.shape.rings, null, newRingId, newVertexIds);
+      const result = placement.type === 'hole'
+        ? addHoleRing(anchor.shape.rings, placement.parentRingId!, newRingId, newVertexIds)
+        : addExclaveRing(anchor.shape.rings, placement.parentRingId, newRingId, newVertexIds);
 
       const newAnchor = anchor.withShape({ type: 'Polygon', rings: result.rings });
       const newAnchors = feature.anchors.map((a) => a.id === anchor.id ? newAnchor : a);
@@ -883,6 +954,7 @@
       (addFeature.getFeaturesMap() as Map<string, typeof feature>).set(feature.id, updatedFeature);
       validationMessage = '';
       refreshFeatureData();
+      markAsDirty();
     } catch (error) {
       validationMessage = getValidationMessage(error);
       return;
@@ -1503,8 +1575,7 @@
       onUnmergeVertex: () => {
         // 共有解除は後続の詳細化で拡充
       },
-      onAddHole,
-      onAddExclave,
+      onAddRing,
       onStartKnife,
       onAddMergeTarget: () => {
         if (selectedFeatureId) addMergeTarget(selectedFeatureId);
@@ -1705,8 +1776,7 @@
           ringDrawingCoords={ringDrawingState?.coords ?? []}
           isFeatureMoveMode={editInteractionMode === 'featureMove'}
           {onToggleFeatureMove}
-          {onAddHole}
-          {onAddExclave}
+          {onAddRing}
           {onConfirmRing}
           {onCancelRing}
           {onDeleteVertex}

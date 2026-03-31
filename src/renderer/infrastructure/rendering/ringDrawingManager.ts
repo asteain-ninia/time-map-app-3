@@ -8,7 +8,7 @@
 import { Coordinate } from '@domain/value-objects/Coordinate';
 
 /** リング描画タイプ */
-export type RingDrawingType = 'hole' | 'exclave';
+export type RingDrawingType = 'auto' | 'hole' | 'exclave';
 
 /** リング描画状態 */
 export interface RingDrawingState {

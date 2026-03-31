@@ -27,6 +27,30 @@ async function addPolygonFeature(page: import('@playwright/test').Page) {
   await page.keyboard.press('e');
 }
 
+async function addSquarePolygonFeature(page: import('@playwright/test').Page) {
+  await page.keyboard.press('a');
+  await page.locator('.tool-button.sub-tool[title="面を追加"]').click();
+
+  const map = page.locator('.map-svg');
+  const box = await map.boundingBox();
+  if (!box) throw new Error('map not found');
+
+  const cx = box.width / 2;
+  const cy = box.height / 2;
+
+  await map.click({ position: { x: cx - 90, y: cy - 90 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx + 90, y: cy - 90 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx + 90, y: cy + 90 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx - 90, y: cy + 90 } });
+  await page.waitForTimeout(100);
+  await page.locator('.drawing-btn.confirm').click();
+  await page.waitForTimeout(300);
+  await page.keyboard.press('e');
+}
+
 async function addPointFeatureAt(
   page: import('@playwright/test').Page,
   offsetX: number,
@@ -54,6 +78,26 @@ async function selectCenterPolygon(page: import('@playwright/test').Page) {
   await map.click({ position: { x: box.width / 2, y: box.height / 2 - 20 } });
   await page.waitForTimeout(300);
   return { map, box };
+}
+
+async function drawRingWithOffsets(
+  page: import('@playwright/test').Page,
+  offsets: readonly { x: number; y: number }[]
+) {
+  const map = page.locator('.map-svg');
+  const box = await map.boundingBox();
+  if (!box) throw new Error('map not found');
+
+  const cx = box.width / 2;
+  const cy = box.height / 2;
+
+  await page.locator('button[title="穴/飛び地リングを追加"]').click();
+  for (const offset of offsets) {
+    await map.click({ position: { x: cx + offset.x, y: cy + offset.y } });
+    await page.waitForTimeout(100);
+  }
+  await page.locator('.edit-btn.confirm').click();
+  await page.waitForTimeout(300);
 }
 
 async function getPrimaryFeatureBounds(page: import('@playwright/test').Page) {
@@ -242,7 +286,7 @@ test('穴追加中は地物移動ツールが発動しない', async ({ page }) 
   const { box } = await selectCenterPolygon(page);
 
   await page.locator('button[title="地物移動ツール"]').click();
-  await page.locator('button[title="穴リングを追加"]').click();
+  await page.locator('button[title="穴/飛び地リングを追加"]').click();
   await expect(page.locator('.edit-btn.confirm')).toBeVisible();
 
   const before = await getPrimaryFeatureBounds(page);
@@ -258,6 +302,30 @@ test('穴追加中は地物移動ツールが発動しない', async ({ page }) 
   const after = await getPrimaryFeatureBounds(page);
   expect(Math.abs(after.x - before.x)).toBeLessThan(2);
   expect(Math.abs(after.y - before.y)).toBeLessThan(2);
+});
+
+test('穴/飛び地追加ツールで穴の中に飛び地を追加できる', async ({ page }) => {
+  await addSquarePolygonFeature(page);
+  const { map, box } = await selectCenterPolygon(page);
+
+  await drawRingWithOffsets(page, [
+    { x: -30, y: -20 },
+    { x: 30, y: -20 },
+    { x: 0, y: 30 },
+  ]);
+  await expect(page.locator('.validation-banner')).toHaveCount(0);
+
+  await drawRingWithOffsets(page, [
+    { x: -8, y: -8 },
+    { x: 8, y: -8 },
+    { x: 0, y: 2 },
+  ]);
+  await expect(page.locator('.validation-banner')).toHaveCount(0);
+
+  await map.click({ position: { x: box.width / 2, y: box.height / 2 - 45 } });
+  await page.waitForTimeout(300);
+
+  expect(await page.locator('.vertex-handle').count()).toBeGreaterThanOrEqual(10);
 });
 
 test('頂点選択コンテキストが単一地物ならプロパティを表示し続ける', async ({ page }) => {

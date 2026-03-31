@@ -6,6 +6,8 @@ import { UndoRedoManager } from '@application/UndoRedoManager';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
+import { Vertex } from '@domain/entities/Vertex';
+import { Ring } from '@domain/value-objects/Ring';
 
 describe('MoveVertexCommand', () => {
   let addFeature: AddFeatureUseCase;
@@ -234,5 +236,56 @@ describe('MoveVertexCommand', () => {
 
     expect(() => undoRedo.execute(cmd)).toThrow('自己交差');
     expect(addFeature.getVertices().get(vertexIds[1])!.coordinate).toEqual(new Coordinate(10, 0));
+  });
+
+  it('穴リングが親領土から外れる頂点移動は拒否する', () => {
+    const time = new TimePoint(1000);
+    const polygon = addFeature.addPolygon(
+      [
+        new Coordinate(0, 0),
+        new Coordinate(20, 0),
+        new Coordinate(20, 20),
+        new Coordinate(0, 20),
+      ],
+      'l1',
+      time
+    );
+
+    const activeAnchor = polygon.getActiveAnchor(time)!;
+    if (activeAnchor.shape.type !== 'Polygon') {
+      throw new Error('polygon anchor expected');
+    }
+
+    const holeVertices = addFeature.getVertices() as Map<string, Vertex>;
+    holeVertices.set('h1', new Vertex('h1', new Coordinate(4, 4)));
+    holeVertices.set('h2', new Vertex('h2', new Coordinate(16, 4)));
+    holeVertices.set('h3', new Vertex('h3', new Coordinate(16, 16)));
+    holeVertices.set('h4', new Vertex('h4', new Coordinate(4, 16)));
+
+    const holeRing = new Ring(
+      'hole-1',
+      ['h1', 'h2', 'h3', 'h4'],
+      'hole',
+      activeAnchor.shape.rings[0].id
+    );
+    const updatedFeature = polygon.withAnchors([
+      activeAnchor.withShape({
+        type: 'Polygon',
+        rings: [...activeAnchor.shape.rings, holeRing],
+      }),
+    ]);
+    (addFeature.getFeaturesMap() as Map<string, typeof polygon>).set(polygon.id, updatedFeature);
+
+    const cmd = new MoveVertexCommand(
+      vertexEdit,
+      addFeature,
+      'h3',
+      new Coordinate(24, 16),
+      null,
+      time
+    );
+
+    expect(() => undoRedo.execute(cmd)).toThrow('親リングの内部に完全に収まっていません');
+    expect(addFeature.getVertices().get('h3')!.coordinate).toEqual(new Coordinate(16, 16));
   });
 });

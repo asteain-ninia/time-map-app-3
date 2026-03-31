@@ -9,14 +9,14 @@ import {
 
 describe('ringDrawingManager', () => {
   describe('startRingDrawing', () => {
-    it('穴リング描画を開始する', () => {
-      const state = startRingDrawing('hole', 'f1');
-      expect(state.type).toBe('hole');
+    it('自動判定モードでリング描画を開始する', () => {
+      const state = startRingDrawing('auto', 'f1');
+      expect(state.type).toBe('auto');
       expect(state.featureId).toBe('f1');
       expect(state.coords).toEqual([]);
     });
 
-    it('飛び地リング描画を開始する', () => {
+    it('明示的な飛び地モードも保持できる', () => {
       const state = startRingDrawing('exclave', 'f1');
       expect(state.type).toBe('exclave');
     });
@@ -24,7 +24,7 @@ describe('ringDrawingManager', () => {
 
   describe('addRingVertex', () => {
     it('座標を追加する', () => {
-      const state = startRingDrawing('hole', 'f1');
+      const state = startRingDrawing('auto', 'f1');
       const c1 = new Coordinate(10, 20);
       const updated = addRingVertex(state, c1);
       expect(updated.coords).toHaveLength(1);
@@ -32,7 +32,7 @@ describe('ringDrawingManager', () => {
     });
 
     it('複数座標を順次追加する', () => {
-      let state = startRingDrawing('hole', 'f1');
+      let state = startRingDrawing('auto', 'f1');
       state = addRingVertex(state, new Coordinate(10, 20));
       state = addRingVertex(state, new Coordinate(15, 25));
       state = addRingVertex(state, new Coordinate(20, 30));
@@ -40,7 +40,7 @@ describe('ringDrawingManager', () => {
     });
 
     it('元の状態は変更されない（イミュータブル）', () => {
-      const state = startRingDrawing('hole', 'f1');
+      const state = startRingDrawing('auto', 'f1');
       const updated = addRingVertex(state, new Coordinate(10, 20));
       expect(state.coords).toHaveLength(0);
       expect(updated.coords).toHaveLength(1);
@@ -49,7 +49,7 @@ describe('ringDrawingManager', () => {
 
   describe('undoRingVertex', () => {
     it('最後の頂点を削除する', () => {
-      let state = startRingDrawing('hole', 'f1');
+      let state = startRingDrawing('auto', 'f1');
       state = addRingVertex(state, new Coordinate(10, 20));
       state = addRingVertex(state, new Coordinate(15, 25));
       state = undoRingVertex(state);
@@ -57,7 +57,7 @@ describe('ringDrawingManager', () => {
     });
 
     it('空の場合は変更なし', () => {
-      const state = startRingDrawing('hole', 'f1');
+      const state = startRingDrawing('auto', 'f1');
       const updated = undoRingVertex(state);
       expect(updated.coords).toHaveLength(0);
     });
@@ -65,7 +65,7 @@ describe('ringDrawingManager', () => {
 
   describe('canConfirmRing', () => {
     it('3点未満では確定不可', () => {
-      let state = startRingDrawing('hole', 'f1');
+      let state = startRingDrawing('auto', 'f1');
       expect(canConfirmRing(state)).toBe(false);
       state = addRingVertex(state, new Coordinate(10, 20));
       expect(canConfirmRing(state)).toBe(false);
@@ -74,7 +74,7 @@ describe('ringDrawingManager', () => {
     });
 
     it('3点以上で確定可能', () => {
-      let state = startRingDrawing('hole', 'f1');
+      let state = startRingDrawing('auto', 'f1');
       state = addRingVertex(state, new Coordinate(10, 20));
       state = addRingVertex(state, new Coordinate(15, 25));
       state = addRingVertex(state, new Coordinate(20, 30));
