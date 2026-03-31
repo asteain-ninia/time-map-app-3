@@ -9,12 +9,18 @@
 
   let {
     selectedFeature = null as Feature | null,
+    propertySelectionState = { kind: 'empty' as const },
     currentTime = undefined as TimePoint | undefined,
     features = [] as readonly Feature[],
     onPropertyChange,
     onFeatureSelect,
   }: {
     selectedFeature?: Feature | null;
+    propertySelectionState?: {
+      kind: 'empty' | 'multiple' | 'unknown';
+      featureSummaries?: readonly { id: string; name: string }[];
+      remainingCount?: number;
+    };
     currentTime?: TimePoint;
     features?: readonly Feature[];
     onPropertyChange?: (featureId: string, anchorId: string, property: AnchorProperty) => void;
@@ -65,6 +71,7 @@
     {:else if activeTab === 'properties'}
       <PropertyPanel
         feature={selectedFeature}
+        selectionState={propertySelectionState}
         {currentTime}
         {onPropertyChange}
       />

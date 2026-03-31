@@ -14,10 +14,11 @@
   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
   import StatusBar from '@presentation/components/StatusBar.svelte';
   import { createToolStore } from '@presentation/state/toolStore';
-  import { addFeature, deleteFeature, manageLayers, navigateTime, saveLoad, undoRedo, vertexEdit } from '@presentation/state/appState';
+  import { addFeature, anchorEdit, deleteFeature, manageLayers, navigateTime, saveLoad, undoRedo, vertexEdit } from '@presentation/state/appState';
   import { AddFeatureCommand } from '@application/commands/AddFeatureCommand';
   import { DeleteFeatureCommand } from '@application/commands/DeleteFeatureCommand';
   import { MoveVertexCommand } from '@application/commands/MoveVertexCommand';
+  import { MoveVerticesCommand } from '@application/commands/MoveVerticesCommand';
   import { eventBus } from '@application/EventBus';
   import { Coordinate } from '@domain/value-objects/Coordinate';
   import type { Feature } from '@domain/entities/Feature';
@@ -102,6 +103,7 @@
     createTransientPolygonFeature,
     validatePolygonOrThrow,
   } from '@application/polygonValidation';
+  import { wrapLongitudeNearReference } from '@infrastructure/rendering/featureRenderingUtils';
   import {
     createDirtyState,
     markDirty,
@@ -115,6 +117,11 @@
     rotateBackupFiles,
     shouldBackup,
   } from '@infrastructure/rendering/autoBackupManager';
+  import {
+    buildVisibleVertexOwnerMap,
+    collectFeatureIdsForSelectedVertices,
+    resolveVertexSelectionContext,
+  } from '@infrastructure/rendering/vertexSelectionContext';
 
   // --- ツール状態 ---
 
@@ -169,6 +176,23 @@
   let settingsDialogOpen = $state(false);
   let projectSettings = $state<WorldSettings>({ ...DEFAULT_SETTINGS });
   let projectMetadata = $state<WorldMetadata>({ ...DEFAULT_METADATA });
+  let visibleVertexOwnerMap = $derived(
+    buildVisibleVertexOwnerMap(features, layers, currentTime)
+  );
+  let vertexSelectionContext = $derived(
+    resolveVertexSelectionContext(selectedVertexIds, visibleVertexOwnerMap)
+  );
+  let vertexSelectionContextFeatureId = $derived(
+    vertexSelectionContext.kind === 'single'
+      ? vertexSelectionContext.featureIds[0]
+      : null
+  );
+  let selectionFeatureId = $derived(
+    selectedFeatureId ?? vertexSelectionContextFeatureId
+  );
+  let selectedVertexOwnerFeatureIds = $derived(
+    [...collectFeatureIdsForSelectedVertices(selectedVertexIds, visibleVertexOwnerMap)]
+  );
 
   function openSettings(): void {
     settingsDialogOpen = true;
@@ -309,6 +333,14 @@
   let featureDragStartGeo = $state<{ lon: number; lat: number } | null>(null);
   /** 地物ドラッグ中の前回geo座標（差分計算用） */
   let featureDragLastGeo = $state<{ lon: number; lat: number } | null>(null);
+  /** 複数選択由来の頂点ドラッグか */
+  let dragMovesMultipleVertices = $state(false);
+  /** 頂点ドラッグ中にプレビュー移動する実頂点ID群 */
+  let dragMovedVertexIds = $state<readonly string[]>([]);
+  /** 頂点ドラッグ開始時の元座標 */
+  let dragBaseCoordinates = $state<ReadonlyMap<string, Coordinate>>(new Map());
+  /** 頂点ドラッグ開始時の共有頂点代表座標 */
+  let dragBaseSharedGroupCoordinates = $state<ReadonlyMap<string, Coordinate>>(new Map());
 
   /** ツールストアの状態をリアクティブ変数に同期する */
   function syncToolState(): void {
@@ -354,6 +386,190 @@
     return vertexIds;
   }
 
+  function resetVertexDragContext(): void {
+    dragMovesMultipleVertices = false;
+    dragMovedVertexIds = [];
+    dragBaseCoordinates = new Map();
+    dragBaseSharedGroupCoordinates = new Map();
+  }
+
+  function collectDraggedSelectionIds(
+    primaryVertexId: string,
+    selection: ReadonlySet<string>
+  ): readonly string[] {
+    if (!selection.has(primaryVertexId) || selection.size <= 1) {
+      return [primaryVertexId];
+    }
+    return [...selection];
+  }
+
+  function expandDraggedVertexIds(
+    vertexIds: readonly string[],
+    groups: ReadonlyMap<string, SharedVertexGroup>
+  ): string[] {
+    const expandedVertexIds = new Set<string>();
+    for (const vertexId of vertexIds) {
+      const linkedVertexIds = getLinkedVertexIds(vertexId, groups);
+      if (linkedVertexIds.length === 0) {
+        expandedVertexIds.add(vertexId);
+        continue;
+      }
+      for (const linkedVertexId of linkedVertexIds) {
+        expandedVertexIds.add(linkedVertexId);
+      }
+    }
+    return [...expandedVertexIds];
+  }
+
+  function createVertexCoordinateSnapshot(vertexIds: readonly string[]): Map<string, Coordinate> {
+    const snapshot = new Map<string, Coordinate>();
+    const currentVertices = addFeature.getVertices();
+    for (const vertexId of vertexIds) {
+      const vertex = currentVertices.get(vertexId);
+      if (vertex) {
+        snapshot.set(vertexId, vertex.coordinate);
+      }
+    }
+    return snapshot;
+  }
+
+  function createSharedGroupCoordinateSnapshot(vertexIds: readonly string[]): Map<string, Coordinate> {
+    const snapshot = new Map<string, Coordinate>();
+    const currentSharedGroups = addFeature.getSharedVertexGroups();
+    for (const vertexId of vertexIds) {
+      const group = findGroupForVertex(vertexId, currentSharedGroups);
+      if (group && !snapshot.has(group.id)) {
+        snapshot.set(group.id, group.representativeCoordinate);
+      }
+    }
+    return snapshot;
+  }
+
+  function beginVertexDrag(
+    vertexId: string,
+    startCoord: Coordinate,
+    selection: ReadonlySet<string>,
+    isInserted: boolean = false
+  ): void {
+    const currentSharedGroups = addFeature.getSharedVertexGroups();
+    const baseDraggedVertexIds = isInserted
+      ? [vertexId]
+      : collectDraggedSelectionIds(vertexId, selection);
+    const expandedDraggedVertexIds = expandDraggedVertexIds(
+      baseDraggedVertexIds,
+      currentSharedGroups
+    );
+
+    dragMovesMultipleVertices = baseDraggedVertexIds.length > 1;
+    dragMovedVertexIds = expandedDraggedVertexIds;
+    dragBaseCoordinates = createVertexCoordinateSnapshot(expandedDraggedVertexIds);
+    dragBaseSharedGroupCoordinates = createSharedGroupCoordinateSnapshot(expandedDraggedVertexIds);
+    dragState = isInserted
+      ? startInsertDrag(vertexId, startCoord)
+      : startDrag(vertexId, startCoord);
+  }
+
+  function getVertexDragDelta(targetCoord: Coordinate): { dx: number; dy: number } {
+    if (!dragState) return { dx: 0, dy: 0 };
+
+    const wrappedLon = wrapLongitudeNearReference(
+      targetCoord.x,
+      dragState.startCoord.x
+    );
+    return {
+      dx: wrappedLon - dragState.startCoord.x,
+      dy: targetCoord.y - dragState.startCoord.y,
+    };
+  }
+
+  function restoreVertexDragPreview(): void {
+    const mutableVertices = addFeature.getVertices() as Map<string, Vertex>;
+    for (const [vertexId, baseCoordinate] of dragBaseCoordinates) {
+      const vertex = mutableVertices.get(vertexId);
+      if (!vertex) continue;
+      mutableVertices.set(vertexId, vertex.withCoordinate(baseCoordinate));
+    }
+
+    const mutableSharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+    for (const [groupId, baseCoordinate] of dragBaseSharedGroupCoordinates) {
+      const group = mutableSharedGroups.get(groupId);
+      if (!group) continue;
+      mutableSharedGroups.set(groupId, group.withRepresentativeCoordinate(baseCoordinate));
+    }
+  }
+
+  function applyMultiVertexDragPreview(targetCoord: Coordinate): void {
+    const { dx, dy } = getVertexDragDelta(targetCoord);
+    const mutableVertices = addFeature.getVertices() as Map<string, Vertex>;
+    for (const [vertexId, baseCoordinate] of dragBaseCoordinates) {
+      const vertex = mutableVertices.get(vertexId);
+      if (!vertex) continue;
+      mutableVertices.set(
+        vertexId,
+        vertex.withCoordinate(
+          new Coordinate(baseCoordinate.x + dx, baseCoordinate.y + dy).normalize()
+        )
+      );
+    }
+
+    const mutableSharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+    for (const [groupId, baseCoordinate] of dragBaseSharedGroupCoordinates) {
+      const group = mutableSharedGroups.get(groupId);
+      if (!group) continue;
+      mutableSharedGroups.set(
+        groupId,
+        group.withRepresentativeCoordinate(
+          new Coordinate(baseCoordinate.x + dx, baseCoordinate.y + dy).normalize()
+        )
+      );
+    }
+  }
+
+  function getFeatureById(featureId: string | null): Feature | null {
+    if (!featureId) return null;
+    return features.find((candidate) => candidate.id === featureId) ?? null;
+  }
+
+  function getSelectionFeature(): Feature | null {
+    return getFeatureById(selectionFeatureId);
+  }
+
+  function getSelectionFeatureName(featureId: string): string {
+    const feature = getFeatureById(featureId);
+    return feature?.getActiveAnchor(currentTime)?.property.name ?? featureId;
+  }
+
+  function getPropertyPanelSelectionState(): {
+    kind: 'empty' | 'multiple' | 'unknown';
+    featureSummaries?: readonly { id: string; name: string }[];
+    remainingCount?: number;
+  } {
+    if (selectedFeatureId || vertexSelectionContext.kind === 'single') {
+      return { kind: 'empty' };
+    }
+
+    if (vertexSelectionContext.kind === 'multiple') {
+      const featureSummaries = vertexSelectionContext.featureIds
+        .slice(0, 5)
+        .map((featureId) => ({
+          id: featureId,
+          name: getSelectionFeatureName(featureId),
+        }));
+
+      return {
+        kind: 'multiple',
+        featureSummaries,
+        remainingCount: Math.max(vertexSelectionContext.featureIds.length - featureSummaries.length, 0),
+      };
+    }
+
+    if (vertexSelectionContext.kind === 'unknown') {
+      return { kind: 'unknown' };
+    }
+
+    return { kind: 'empty' };
+  }
+
   /** レイヤーデータを更新する */
   function refreshLayerData(): void {
     layers = manageLayers.getLayers();
@@ -383,6 +599,7 @@
     refreshFeatureData();
     refreshLayerData();
     selectedFeatureId = null;
+    selectedVertexIds = new Set();
     surveyState = resetSurvey(surveyState);
     surveyMeasurements = [];
     dirtyState = resetDirty();
@@ -429,6 +646,10 @@
     toolStore.send({ type: 'MODE_CHANGE', mode });
     selectedFeatureId = null;
     selectedVertexIds = new Set();
+    dragState = null;
+    boxSelectState = null;
+    snapIndicators = [];
+    resetVertexDragContext();
     if (mode !== 'edit') {
       editInteractionMode = 'vertex';
     }
@@ -450,6 +671,7 @@
       dragState = null;
       boxSelectState = null;
       snapIndicators = [];
+      resetVertexDragContext();
     }
   }
 
@@ -572,15 +794,15 @@
   // --- リング描画（穴/飛び地追加） ---
 
   function onAddHole(): void {
-    if (!selectedFeatureId) return;
+    if (!selectionFeatureId) return;
     setEditInteractionMode('vertex');
-    ringDrawingState = startRingDrawing('hole', selectedFeatureId);
+    ringDrawingState = startRingDrawing('hole', selectionFeatureId);
   }
 
   function onAddExclave(): void {
-    if (!selectedFeatureId) return;
+    if (!selectionFeatureId) return;
     setEditInteractionMode('vertex');
-    ringDrawingState = startRingDrawing('exclave', selectedFeatureId);
+    ringDrawingState = startRingDrawing('exclave', selectionFeatureId);
   }
 
   function onConfirmRing(): void {
@@ -677,9 +899,9 @@
   // --- ナイフツール（分割） ---
 
   function onStartKnife(): void {
-    if (!selectedFeatureId) return;
+    if (!selectionFeatureId) return;
     setEditInteractionMode('vertex');
-    knifeDrawingState = startKnifeDrawing(selectedFeatureId);
+    knifeDrawingState = startKnifeDrawing(selectionFeatureId);
   }
 
   /** ナイフ描画の確定ボタン → 分割モーダルを表示 */
@@ -718,8 +940,8 @@
 
   /** ナイフツールの確定可否を計算 */
   function getKnifeCanConfirm(): boolean {
-    if (!knifeDrawingState || !selectedFeatureId || !currentTime) return false;
-    const feature = features.find(f => f.id === selectedFeatureId);
+    if (!knifeDrawingState || !selectionFeatureId || !currentTime) return false;
+    const feature = features.find(f => f.id === selectionFeatureId);
     if (!feature) return false;
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor || anchor.shape.type !== 'Polygon') return false;
@@ -841,8 +1063,8 @@
 
   function onDeleteVertex(): void {
     // 頂点削除は後続で詳細化（コンテキストメニューと共通）
-    if (selectedVertexIds.size === 0 || !selectedFeatureId || !currentTime) return;
-    const feature = features.find((f) => f.id === selectedFeatureId);
+    if (selectedVertexIds.size === 0 || !selectionFeatureId || !currentTime) return;
+    const feature = features.find((f) => f.id === selectionFeatureId);
     if (!feature) return;
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor) return;
@@ -850,11 +1072,11 @@
     for (const vertexId of selectedVertexIds) {
       try {
         if (anchor.shape.type === 'LineString') {
-          vertexEdit.deleteVertexFromLine(selectedFeatureId, currentTime, vertexId);
+          vertexEdit.deleteVertexFromLine(selectionFeatureId, currentTime, vertexId);
         } else if (anchor.shape.type === 'Polygon') {
           for (const ring of anchor.shape.rings) {
             if (ring.vertexIds.includes(vertexId)) {
-              vertexEdit.deleteVertexFromPolygon(selectedFeatureId, currentTime, ring.id, vertexId);
+              vertexEdit.deleteVertexFromPolygon(selectionFeatureId, currentTime, ring.id, vertexId);
               break;
             }
           }
@@ -873,7 +1095,8 @@
     coord: Coordinate,
     screenX: number,
     screenY: number,
-    clickedFeatureId: string | null = null
+    clickedFeatureId: string | null = null,
+    isAdditive: boolean = false
   ): void {
     if (toolMode !== 'edit') return;
 
@@ -906,12 +1129,12 @@
     }
 
     if (
+      toolMode === 'edit' &&
       editInteractionMode === 'vertex' &&
-      selectedFeatureId &&
       !ringDrawingState &&
       !knifeDrawingState
     ) {
-      boxSelectState = startBoxSelect(coord, false);
+      boxSelectState = startBoxSelect(coord, isAdditive);
     }
   }
 
@@ -995,7 +1218,7 @@
 
   /** 矩形選択の確定 */
   function commitBoxSelect(): void {
-    if (!boxSelectState || !selectedFeatureId || !currentTime) {
+    if (!boxSelectState) {
       boxSelectState = null;
       return;
     }
@@ -1005,23 +1228,9 @@
       return;
     }
 
-    // 選択中地物の頂点IDリストを取得
-    const feature = features.find(f => f.id === selectedFeatureId);
-    if (!feature) { boxSelectState = null; return; }
-    const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor) { boxSelectState = null; return; }
-
-    const vertexIds: string[] = [];
-    switch (anchor.shape.type) {
-      case 'Point': vertexIds.push(anchor.shape.vertexId); break;
-      case 'LineString': vertexIds.push(...anchor.shape.vertexIds); break;
-      case 'Polygon':
-        for (const ring of anchor.shape.rings) vertexIds.push(...ring.vertexIds);
-        break;
-    }
-
     const box = getSelectionBox(boxSelectState);
-    const found = findVerticesInBox(box, vertexIds, vertices);
+    const found = findVerticesInBox(box, [...visibleVertexOwnerMap.keys()], vertices);
+    selectedFeatureId = null;
     selectedVertexIds = mergeSelection(selectedVertexIds, found, boxSelectState.isAdditive);
     boxSelectState = null;
     suppressNextMapClick = true;
@@ -1030,6 +1239,7 @@
   /** 頂点ハンドルのmousedown — 頂点選択＋ドラッグ開始 */
   function onVertexMouseDown(vertexId: string, e: MouseEvent): void {
     validationMessage = '';
+    selectedFeatureId = null;
     const { nextSelection, shouldStartDrag } = resolveVertexMouseDownState(
       selectedVertexIds,
       vertexId,
@@ -1042,14 +1252,14 @@
 
     const vertex = vertices.get(vertexId);
     if (vertex) {
-      dragState = startDrag(vertexId, vertex.coordinate);
+      beginVertexDrag(vertexId, vertex.coordinate, nextSelection);
     }
   }
 
   /** エッジハンドルのmousedown — 頂点挿入＋ドラッグ開始 */
   function onEdgeHandleMouseDown(v1: string, v2: string, e: MouseEvent): void {
-    if (!selectedFeatureId || !currentTime) return;
-    const feature = features.find((f) => f.id === selectedFeatureId);
+    if (!selectionFeatureId || !currentTime) return;
+    const feature = features.find((f) => f.id === selectionFeatureId);
     if (!feature) return;
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor) return;
@@ -1070,7 +1280,7 @@
         const edgeIndex = anchor.shape.vertexIds.indexOf(v1);
         if (edgeIndex >= 0) {
           newVertexId = vertexEdit.insertVertexOnLine(
-            selectedFeatureId, currentTime, edgeIndex, midCoord
+            selectionFeatureId, currentTime, edgeIndex, midCoord
           );
         }
       } else if (anchor.shape.type === 'Polygon') {
@@ -1080,7 +1290,7 @@
             const next = (i + 1) % ids.length;
             if (ids[i] === v1 && ids[next] === v2) {
               newVertexId = vertexEdit.insertVertexOnPolygon(
-                selectedFeatureId, currentTime, ring.id, i, midCoord
+                selectionFeatureId, currentTime, ring.id, i, midCoord
               );
               break;
             }
@@ -1095,7 +1305,7 @@
     if (newVertexId) {
       refreshFeatureData();
       selectedVertexIds = new Set([newVertexId]);
-      dragState = startInsertDrag(newVertexId, midCoord);
+      beginVertexDrag(newVertexId, midCoord, selectedVertexIds, true);
     }
   }
 
@@ -1128,20 +1338,34 @@
     if (!dragState) return;
     if (hasMoved(dragState)) {
       // ドラッグ中に直接移動していたので、まず元に戻す
-      applyVertexDragPreview(dragState.vertexId, dragState.startCoord);
+      restoreVertexDragPreview();
       try {
         // Undo対応コマンドで正式に移動
-        undoRedo.execute(
-          new MoveVertexCommand(
-            vertexEdit,
-            addFeature,
-            dragState.vertexId,
-            dragState.previewCoord,
-            // 複数スナップ候補のうち最近接（[0]）のみを共有化対象とする
-            snapIndicators[0]?.targetVertexId ?? null,
-            currentTime
-          )
-        );
+        if (dragMovesMultipleVertices) {
+          const { dx, dy } = getVertexDragDelta(dragState.previewCoord);
+          undoRedo.execute(
+            new MoveVerticesCommand(
+              vertexEdit,
+              addFeature,
+              dragMovedVertexIds,
+              dx,
+              dy,
+              currentTime ?? undefined
+            )
+          );
+        } else {
+          undoRedo.execute(
+            new MoveVertexCommand(
+              vertexEdit,
+              addFeature,
+              dragState.vertexId,
+              dragState.previewCoord,
+              // 複数スナップ候補のうち最近接（[0]）のみを共有化対象とする
+              snapIndicators[0]?.targetVertexId ?? null,
+              currentTime
+            )
+          );
+        }
         validationMessage = '';
       } catch (error) {
         validationMessage = getValidationMessage(error);
@@ -1151,6 +1375,7 @@
     suppressNextMapClick = true;
     dragState = null;
     snapIndicators = [];
+    resetVertexDragContext();
   }
 
   /** カーソル座標更新コールバック（MapCanvasから呼ばれる） */
@@ -1165,6 +1390,13 @@
     if (dragState) {
       const newCoord = new Coordinate(geo.lon, geo.lat);
       dragState = updateDragPreview(dragState, newCoord);
+      if (dragMovesMultipleVertices) {
+        applyMultiVertexDragPreview(newCoord);
+        snapIndicators = [];
+        refreshFeatureData();
+        return;
+      }
+
       applyVertexDragPreview(dragState.vertexId, newCoord);
 
       const currentVertices = addFeature.getVertices();
@@ -1175,8 +1407,8 @@
           ? linkedVertexIds
           : [dragState.vertexId]
       );
-      if (selectedFeatureId) {
-        for (const vertexId of collectFeatureVertexIds(selectedFeatureId)) {
+      for (const ownerFeatureId of visibleVertexOwnerMap.get(dragState.vertexId) ?? []) {
+        for (const vertexId of collectFeatureVertexIds(ownerFeatureId)) {
           excludedVertexIds.add(vertexId);
         }
       }
@@ -1379,6 +1611,7 @@
     refreshFeatureData();
     refreshLayerData();
     selectedFeatureId = null;
+    selectedVertexIds = new Set();
     surveyState = resetSurvey(surveyState);
     surveyMeasurements = [];
     dirtyState = resetDirty();
@@ -1451,6 +1684,8 @@
           {isDrawing}
           {drawingCoords}
           {selectedFeatureId}
+          selectionFeatureId={selectionFeatureId}
+          vertexSelectionContextFeatureId={vertexSelectionContextFeatureId}
           {selectedVertexIds}
           {sharedGroups}
           {snapIndicators}
@@ -1468,7 +1703,6 @@
           isRingDrawing={ringDrawingState !== null}
           ringDrawingCanConfirm={ringDrawingState ? canConfirmRing(ringDrawingState) : false}
           ringDrawingCoords={ringDrawingState?.coords ?? []}
-          selectedFeatureType={selectedFeatureId && currentTime ? features.find(f => f.id === selectedFeatureId)?.getActiveAnchor(currentTime)?.shape.type ?? null : null}
           isFeatureMoveMode={editInteractionMode === 'featureMove'}
           {onToggleFeatureMove}
           {onAddHole}
@@ -1485,7 +1719,7 @@
           {onConfirmKnife}
           {onCancelKnife}
           mergeTargetCount={mergeTargetIds.length}
-          onAddMergeTarget={() => { if (selectedFeatureId) addMergeTarget(selectedFeatureId); }}
+          onAddMergeTarget={() => { if (selectionFeatureId) addMergeTarget(selectionFeatureId); }}
           {onStartMerge}
           onClearMerge={clearMergeTargets}
           {surveyMeasurements}
@@ -1498,11 +1732,15 @@
       </div>
       <div class="sidebar-area">
         <Sidebar
-          selectedFeature={selectedFeatureId ? features.find(f => f.id === selectedFeatureId) ?? null : null}
+          selectedFeature={getSelectionFeature()}
+          propertySelectionState={getPropertyPanelSelectionState()}
           {currentTime}
           {features}
           {onPropertyChange}
-          onFeatureSelect={(id) => { selectedFeatureId = id; }}
+          onFeatureSelect={(id) => {
+            selectedFeatureId = id;
+            selectedVertexIds = new Set();
+          }}
         />
       </div>
     </div>

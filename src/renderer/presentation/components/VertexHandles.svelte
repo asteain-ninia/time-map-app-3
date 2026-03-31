@@ -21,6 +21,7 @@
     selectedVertexIds = new Set<string>(),
     sharedGroups = new Map<string, SharedVertexGroup>(),
     snapIndicators = [],
+    showEdgeHandles = true,
     onVertexMouseDown,
     onEdgeHandleMouseDown,
   }: {
@@ -30,6 +31,7 @@
     selectedVertexIds?: ReadonlySet<string>;
     sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
     snapIndicators?: readonly SnapIndicator[];
+    showEdgeHandles?: boolean;
     onVertexMouseDown?: (vertexId: string, e: MouseEvent) => void;
     onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
   } = $props();
@@ -50,26 +52,28 @@
 </script>
 
 <!-- エッジハンドル（中点マーカー） -->
-{#each edgePositions() as edge (edge.v1 + '-' + edge.v2)}
-  {@const mx = (geoToSvgX(edge.x1) + geoToSvgX(edge.x2)) / 2}
-  {@const my = (geoToSvgY(edge.y1) + geoToSvgY(edge.y2)) / 2}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <rect
-    class="edge-handle"
-    x={mx - EDGE_HANDLE_RADIUS / zoom}
-    y={my - EDGE_HANDLE_RADIUS / zoom}
-    width={EDGE_HANDLE_RADIUS * 2 / zoom}
-    height={EDGE_HANDLE_RADIUS * 2 / zoom}
-    fill="rgba(255, 255, 255, 0.6)"
-    stroke="#00ccff"
-    stroke-width={1 / zoom}
-    style="cursor: copy;"
-    onmousedown={(e) => {
-      e.stopPropagation();
-      onEdgeHandleMouseDown?.(edge.v1, edge.v2, e);
-    }}
-  />
-{/each}
+{#if showEdgeHandles}
+  {#each edgePositions() as edge (edge.v1 + '-' + edge.v2)}
+    {@const mx = (geoToSvgX(edge.x1) + geoToSvgX(edge.x2)) / 2}
+    {@const my = (geoToSvgY(edge.y1) + geoToSvgY(edge.y2)) / 2}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <rect
+      class="edge-handle"
+      x={mx - EDGE_HANDLE_RADIUS / zoom}
+      y={my - EDGE_HANDLE_RADIUS / zoom}
+      width={EDGE_HANDLE_RADIUS * 2 / zoom}
+      height={EDGE_HANDLE_RADIUS * 2 / zoom}
+      fill="rgba(255, 255, 255, 0.6)"
+      stroke="#00ccff"
+      stroke-width={1 / zoom}
+      style="cursor: copy;"
+      onmousedown={(e) => {
+        e.stopPropagation();
+        onEdgeHandleMouseDown?.(edge.v1, edge.v2, e);
+      }}
+    />
+  {/each}
+{/if}
 
 <!-- 頂点ハンドル -->
 {#each vertexPositions() as vertex (vertex.vertexId)}

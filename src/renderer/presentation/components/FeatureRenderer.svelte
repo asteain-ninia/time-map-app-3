@@ -23,6 +23,7 @@
     currentTime,
     zoom,
     selectedFeatureId = null,
+    contextFeatureId = null,
   }: {
     features: readonly Feature[];
     vertices: ReadonlyMap<string, Vertex>;
@@ -30,6 +31,7 @@
     currentTime: TimePoint;
     zoom: number;
     selectedFeatureId?: string | null;
+    contextFeatureId?: string | null;
   } = $props();
 
   /** 選択色（要件定義書§2.3.3.1: シアン系ハイライト） */
@@ -97,6 +99,7 @@
   <g opacity={layer.opacity}>
     {#each getLayerFeatures(layer.id) as { feature, anchor } (feature.id)}
       {@const isSelected = feature.id === selectedFeatureId}
+      {@const isContext = feature.id === contextFeatureId && !isSelected}
       {#if anchor.shape.type === 'Point'}
         {@const vertex = vertices.get(anchor.shape.vertexId)}
         {#if vertex}
@@ -110,6 +113,19 @@
               fill="none"
               stroke={SELECTION_STROKE}
               stroke-width={2 / zoom}
+            />
+          {/if}
+          {#if isContext}
+            <circle
+              pointer-events="none"
+              cx={geoToSvgX(vertex.x)}
+              cy={geoToSvgY(vertex.y)}
+              r={6 / zoom}
+              fill="none"
+              stroke={SELECTION_STROKE}
+              stroke-width={1.25 / zoom}
+              stroke-dasharray="{3 / zoom} {2 / zoom}"
+              opacity="0.8"
             />
           {/if}
           <circle
@@ -138,6 +154,19 @@
               opacity="0.5"
             />
           {/if}
+          {#if isContext}
+            <polyline
+              pointer-events="none"
+              {points}
+              fill="none"
+              stroke={SELECTION_STROKE}
+              stroke-width={1.5 / zoom}
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-dasharray="{4 / zoom} {3 / zoom}"
+              opacity="0.8"
+            />
+          {/if}
           <polyline
             data-feature-id={feature.id}
             {points}
@@ -151,6 +180,18 @@
       {:else if anchor.shape.type === 'Polygon'}
         {@const d = buildPolygonPath(anchor.shape, vertices)}
         {#if d}
+          {#if isContext}
+            <path
+              pointer-events="none"
+              {d}
+              fill="none"
+              stroke={SELECTION_STROKE}
+              stroke-width={1.25 / zoom}
+              stroke-dasharray="{4 / zoom} {3 / zoom}"
+              fill-rule="evenodd"
+              opacity="0.8"
+            />
+          {/if}
           <path
             data-feature-id={feature.id}
             {d}

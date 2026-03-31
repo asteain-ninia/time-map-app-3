@@ -5,10 +5,16 @@
 
   let {
     feature = null as Feature | null,
+    selectionState = { kind: 'empty' as const },
     currentTime = undefined as TimePoint | undefined,
     onPropertyChange,
   }: {
     feature?: Feature | null;
+    selectionState?: {
+      kind: 'empty' | 'multiple' | 'unknown';
+      featureSummaries?: readonly { id: string; name: string }[];
+      remainingCount?: number;
+    };
     currentTime?: TimePoint;
     onPropertyChange?: (featureId: string, anchorId: string, property: AnchorProperty) => void;
   } = $props();
@@ -63,7 +69,27 @@
 </script>
 
 {#if !feature || !anchor}
-  <div class="empty-message">地物が選択されていません</div>
+  {#if selectionState.kind === 'multiple'}
+    <div class="empty-message selection-message">
+      <p>複数の地物が選択されています。プロパティ編集は1件ずつ行ってください。</p>
+      {#if selectionState.featureSummaries && selectionState.featureSummaries.length > 0}
+        <ul class="selection-owner-list">
+          {#each selectionState.featureSummaries as featureSummary}
+            <li>{featureSummary.name} ({featureSummary.id})</li>
+          {/each}
+        </ul>
+      {/if}
+      {#if (selectionState.remainingCount ?? 0) > 0}
+        <p>ほか {selectionState.remainingCount} 件</p>
+      {/if}
+    </div>
+  {:else if selectionState.kind === 'unknown'}
+    <div class="empty-message selection-message">
+      選択された頂点の所有者を特定できません。可視レイヤーの地物を直接選択してください。
+    </div>
+  {:else}
+    <div class="empty-message">地物または頂点が選択されていません</div>
+  {/if}
 {:else}
   <div class="property-panel">
     <div class="section-header">基本情報</div>
@@ -206,6 +232,15 @@
     font-size: 12px;
     text-align: center;
     padding: 24px 8px;
+  }
+
+  .selection-message {
+    text-align: left;
+    line-height: 1.6;
+  }
+
+  .selection-owner-list {
+    margin: 8px 0 0 18px;
   }
 
   .property-panel {

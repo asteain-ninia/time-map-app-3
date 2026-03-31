@@ -31,6 +31,8 @@
     isDrawing = false,
     drawingCoords = [] as readonly Coordinate[],
     selectedFeatureId = null as string | null,
+    selectionFeatureId = null as string | null,
+    vertexSelectionContextFeatureId = null as string | null,
     selectedVertexIds = new Set<string>() as ReadonlySet<string>,
     sharedGroups = new Map<string, SharedVertexGroup>() as ReadonlyMap<string, SharedVertexGroup>,
     snapIndicators = [] as readonly SnapIndicator[],
@@ -48,7 +50,6 @@
     isRingDrawing = false,
     ringDrawingCanConfirm = false,
     ringDrawingCoords = [] as readonly Coordinate[],
-    selectedFeatureType = null as string | null,
     isFeatureMoveMode = false,
     onToggleFeatureMove,
     onAddHole,
@@ -87,6 +88,8 @@
     isDrawing?: boolean;
     drawingCoords?: readonly Coordinate[];
     selectedFeatureId?: string | null;
+    selectionFeatureId?: string | null;
+    vertexSelectionContextFeatureId?: string | null;
     selectedVertexIds?: ReadonlySet<string>;
     sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
     snapIndicators?: readonly SnapIndicator[];
@@ -110,7 +113,6 @@
     isRingDrawing?: boolean;
     ringDrawingCanConfirm?: boolean;
     ringDrawingCoords?: readonly Coordinate[];
-    selectedFeatureType?: string | null;
     isFeatureMoveMode?: boolean;
     onToggleFeatureMove?: () => void;
     onAddHole?: () => void;
@@ -122,7 +124,8 @@
       coord: Coordinate,
       screenX: number,
       screenY: number,
-      featureId?: string | null
+      featureId?: string | null,
+      isAdditive?: boolean
     ) => void;
     isFeatureDragging?: boolean;
     isKnifeDrawing?: boolean;
@@ -151,12 +154,60 @@
         : drawingCoords.length >= 2)
   );
 
-  /** 選択地物のアンカー（頂点ハンドル表示用） */
-  let selectedAnchor = $derived(() => {
-    if (!selectedFeatureId || !currentTime) return null;
-    const feature = features.find((f) => f.id === selectedFeatureId);
+  let visibleLayerIds = $derived(
+    new Set(layers.filter((layer) => layer.visible).map((layer) => layer.id))
+  );
+
+  /** 選択コンテキスト地物のアンカー */
+  let selectionAnchor = $derived(() => {
+    if (!selectionFeatureId || !currentTime) return null;
+    const feature = features.find((f) => f.id === selectionFeatureId);
     if (!feature) return null;
     return feature.getActiveAnchor(currentTime);
+  });
+
+  /** 頂点ハンドル描画対象 */
+  let vertexHandleEntries = $derived(() => {
+    if (!currentTime) {
+      return [] as Array<{
+        featureId: string;
+        anchor: FeatureAnchor;
+        showEdgeHandles: boolean;
+      }>;
+    }
+
+    if (selectedFeatureId && selectionAnchor()) {
+      return [{
+        featureId: selectedFeatureId,
+        anchor: selectionAnchor()!,
+        showEdgeHandles: true,
+      }];
+    }
+
+    if (selectedVertexIds.size === 0) {
+      return [];
+    }
+
+    const entries: Array<{
+      featureId: string;
+      anchor: FeatureAnchor;
+      showEdgeHandles: boolean;
+    }> = [];
+
+    for (const feature of features) {
+      const anchor = feature.getActiveAnchor(currentTime);
+      if (!anchor || !visibleLayerIds.has(anchor.placement.layerId)) {
+        continue;
+      }
+
+      entries.push({
+        featureId: feature.id,
+        anchor,
+        showEdgeHandles: feature.id === vertexSelectionContextFeatureId,
+      });
+    }
+
+    return entries;
   });
 
   const viewport = new ViewportManager();
@@ -258,7 +309,13 @@
     } else if (e.button === 0 && onMapMouseDown) {
       const coord = getClickCoordinate(e);
       if (coord) {
-        onMapMouseDown(coord, e.clientX, e.clientY, getFeatureIdFromTarget(e.target));
+        onMapMouseDown(
+          coord,
+          e.clientX,
+          e.clientY,
+          getFeatureIdFromTarget(e.target),
+          e.shiftKey
+        );
       }
     }
   }
@@ -362,6 +419,7 @@
             {currentTime}
             zoom={zoomLevel}
             {selectedFeatureId}
+            contextFeatureId={vertexSelectionContextFeatureId}
           />
         {/if}
 
@@ -374,18 +432,21 @@
           isPrimaryWrap={offset === 0}
         />
 
-        <!-- 頂点ハンドル・エッジハンドル（選択地物の編集用） -->
-        {#if selectedAnchor() && !isDrawing && showVertexHandles}
-          <VertexHandles
-            anchor={selectedAnchor()!}
-            {vertices}
-            zoom={zoomLevel}
-            {selectedVertexIds}
-            {sharedGroups}
-            {snapIndicators}
-            {onVertexMouseDown}
-            {onEdgeHandleMouseDown}
-          />
+        <!-- 頂点ハンドル・エッジハンドル -->
+        {#if !isDrawing && showVertexHandles}
+          {#each vertexHandleEntries() as entry (entry.featureId)}
+            <VertexHandles
+              anchor={entry.anchor}
+              {vertices}
+              zoom={zoomLevel}
+              {selectedVertexIds}
+              {sharedGroups}
+              {snapIndicators}
+              showEdgeHandles={entry.showEdgeHandles}
+              {onVertexMouseDown}
+              {onEdgeHandleMouseDown}
+            />
+          {/each}
         {/if}
 
         <!-- 描画プレビュー -->
@@ -485,9 +546,9 @@
   {/if}
 
   <!-- 編集ツールバー（選択地物がある場合、描画中でない場合） -->
-  {#if selectedAnchor() && !isDrawing && (toolMode === 'edit' || toolMode === 'view')}
+  {#if selectionAnchor() && !isDrawing && (toolMode === 'edit' || toolMode === 'view')}
     <EditToolbar
-      featureType={selectedAnchor()?.shape.type ?? null}
+      featureType={selectionAnchor()?.shape.type ?? null}
       {isRingDrawing}
       {isKnifeDrawing}
       {isFeatureMoveMode}
