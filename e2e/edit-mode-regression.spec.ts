@@ -168,6 +168,38 @@ async function getVisibleBoxes(
   return boxes.sort((a, b) => a.x - b.x);
 }
 
+async function findVisibleHandleNear(
+  page: import('@playwright/test').Page,
+  offsetX: number,
+  offsetY: number,
+  tolerance = 14
+) {
+  const map = page.locator('.map-svg');
+  const mapBox = await map.boundingBox();
+  if (!mapBox) throw new Error('map not found');
+
+  const targetX = mapBox.x + mapBox.width / 2 + offsetX;
+  const targetY = mapBox.y + mapBox.height / 2 + offsetY;
+  const handles = page.locator('.vertex-handle');
+  const count = await handles.count();
+
+  for (let index = 0; index < count; index += 1) {
+    const handleBox = await handles.nth(index).boundingBox();
+    if (!handleBox) continue;
+
+    const centerX = handleBox.x + handleBox.width / 2;
+    const centerY = handleBox.y + handleBox.height / 2;
+    if (
+      Math.abs(centerX - targetX) <= tolerance &&
+      Math.abs(centerY - targetY) <= tolerance
+    ) {
+      return handleBox;
+    }
+  }
+
+  throw new Error(`vertex handle not found near (${offsetX}, ${offsetY})`);
+}
+
 test('複数選択した頂点をドラッグ開始しても選択が維持される', async ({ page }) => {
   await addPolygonFeature(page);
   const { box } = await selectCenterPolygon(page);
@@ -326,6 +358,48 @@ test('穴/飛び地追加ツールで穴の中に飛び地を追加できる', a
   await page.waitForTimeout(300);
 
   expect(await page.locator('.vertex-handle').count()).toBeGreaterThanOrEqual(10);
+});
+
+test('穴リングとその中の飛び地リングの頂点を共有頂点化できる', async ({ page }) => {
+  await addSquarePolygonFeature(page);
+  const { map, box } = await selectCenterPolygon(page);
+
+  await drawRingWithOffsets(page, [
+    { x: -30, y: -20 },
+    { x: 30, y: -20 },
+    { x: 0, y: 30 },
+  ]);
+  await drawRingWithOffsets(page, [
+    { x: -8, y: -8 },
+    { x: 8, y: -8 },
+    { x: 0, y: 2 },
+  ]);
+
+  await map.click({ position: { x: box.width / 2, y: box.height / 2 - 45 } });
+  await page.waitForTimeout(300);
+
+  const holeHandle = await findVisibleHandleNear(page, -30, -20);
+  const islandHandle = await findVisibleHandleNear(page, -8, -8);
+  const holeX = holeHandle.x + holeHandle.width / 2;
+  const holeY = holeHandle.y + holeHandle.height / 2;
+  const islandX = islandHandle.x + islandHandle.width / 2;
+  const islandY = islandHandle.y + islandHandle.height / 2;
+
+  await page.mouse.move(holeX, holeY);
+  await page.mouse.down();
+  await page.mouse.move(islandX, islandY, { steps: 10 });
+  await page.waitForTimeout(200);
+
+  expect(await page.locator('.snap-indicator').count()).toBeGreaterThan(0);
+
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+
+  await map.click({ position: { x: box.width / 2, y: box.height / 2 - 45 } });
+  await page.waitForTimeout(300);
+
+  expect(await page.locator('.vertex-handle[fill="#ffaa00"]').count()).toBeGreaterThanOrEqual(2);
+  await expect(page.locator('.validation-banner')).toHaveCount(0);
 });
 
 test('面追加で既存ポリゴンの穴の中に別地物を追加できる', async ({ page }) => {

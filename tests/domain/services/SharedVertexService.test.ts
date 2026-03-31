@@ -4,13 +4,18 @@ import {
   findSnapCandidates,
   findGroupForVertex,
   getLinkedVertexIds,
+  isSharedVertexMergeAllowed,
   mergeVertices,
   unmergeVertex,
   moveSharedVertices,
   UnmergeSuppression,
 } from '@domain/services/SharedVertexService';
+import { Feature } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
 import { Coordinate } from '@domain/value-objects/Coordinate';
+import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import { TimePoint } from '@domain/value-objects/TimePoint';
+import { Ring } from '@domain/value-objects/Ring';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 
 // ---- ヘルパー ----
@@ -29,6 +34,54 @@ function verticesMap(...vs: Vertex[]): ReadonlyMap<string, Vertex> {
 
 function groupsMap(...gs: SharedVertexGroup[]): ReadonlyMap<string, SharedVertexGroup> {
   return new Map(gs.map(g => [g.id, g]));
+}
+
+function makePointFeature(id: string, vertexId: string): Feature {
+  return new Feature(
+    id,
+    'Point',
+    [
+      new FeatureAnchor(
+        `${id}-anchor`,
+        { start: new TimePoint(1000) },
+        { name: id, description: '' },
+        { type: 'Point', vertexId },
+        { layerId: 'l1', parentId: null, childIds: [] }
+      ),
+    ]
+  );
+}
+
+function makeLineFeature(id: string, vertexIds: readonly string[]): Feature {
+  return new Feature(
+    id,
+    'Line',
+    [
+      new FeatureAnchor(
+        `${id}-anchor`,
+        { start: new TimePoint(1000) },
+        { name: id, description: '' },
+        { type: 'LineString', vertexIds },
+        { layerId: 'l1', parentId: null, childIds: [] }
+      ),
+    ]
+  );
+}
+
+function makePolygonFeature(id: string, rings: readonly Ring[]): Feature {
+  return new Feature(
+    id,
+    'Polygon',
+    [
+      new FeatureAnchor(
+        `${id}-anchor`,
+        { start: new TimePoint(1000) },
+        { name: id, description: '' },
+        { type: 'Polygon', rings },
+        { layerId: 'l1', parentId: null, childIds: [] }
+      ),
+    ]
+  );
 }
 
 // ---- テスト ----
@@ -139,6 +192,53 @@ describe('SharedVertexService', () => {
     it('共有関係がなければ空配列', () => {
       const groups = groupsMap(makeGroup('g1', ['v1', 'v2'], 0, 0));
       expect(getLinkedVertexIds('v99', groups)).toEqual([]);
+    });
+  });
+
+  describe('isSharedVertexMergeAllowed', () => {
+    const time = new TimePoint(1000);
+
+    it('同一線形内の非隣接頂点どうしは共有頂点化できない', () => {
+      const line = makeLineFeature('line-1', ['l1', 'l2', 'l3']);
+
+      expect(isSharedVertexMergeAllowed('l1', 'l3', [line], new Map(), time)).toBe(false);
+    });
+
+    it('同一リング内の非隣接頂点どうしは共有頂点化できない', () => {
+      const polygon = makePolygonFeature(
+        'polygon-1',
+        [new Ring('ring-1', ['r1', 'r2', 'r3', 'r4'], 'territory', null)]
+      );
+
+      expect(isSharedVertexMergeAllowed('r1', 'r3', [polygon], new Map(), time)).toBe(false);
+    });
+
+    it('同一地物でも別リングに属する頂点どうしは共有頂点化できる', () => {
+      const polygon = makePolygonFeature(
+        'polygon-1',
+        [
+          new Ring('outer-1', ['o1', 'o2', 'o3', 'o4'], 'territory', null),
+          new Ring('hole-1', ['h1', 'h2', 'h3', 'h4'], 'hole', 'outer-1'),
+          new Ring('island-1', ['i1', 'i2', 'i3'], 'territory', 'hole-1'),
+        ]
+      );
+
+      expect(isSharedVertexMergeAllowed('h1', 'i1', [polygon], new Map(), time)).toBe(true);
+    });
+
+    it('マージ後の共有グループ内に同一リング頂点が共存する場合は拒否する', () => {
+      const polygon = makePolygonFeature(
+        'polygon-1',
+        [new Ring('hole-1', ['h1', 'h2', 'h3', 'h4'], 'hole', 'outer-1')]
+      );
+      const pointA = makePointFeature('point-1', 'p1');
+      const pointB = makePointFeature('point-2', 'p2');
+      const groups = groupsMap(
+        makeGroup('g1', ['p1', 'h1'], 0, 0),
+        makeGroup('g2', ['p2', 'h3'], 10, 10)
+      );
+
+      expect(isSharedVertexMergeAllowed('p1', 'p2', [polygon, pointA, pointB], groups, time)).toBe(false);
     });
   });
 

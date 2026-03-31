@@ -134,7 +134,7 @@ describe('MoveVertexCommand', () => {
     expect(addFeature.getVertices().get(targetVertexId)!.coordinate).toEqual(new Coordinate(50, 60));
   });
 
-  it('同一地物内の別頂点には共有頂点化しない', () => {
+  it('同一線形内の別頂点には共有頂点化しない', () => {
     const line = addFeature.addLine(
       [new Coordinate(10, 20), new Coordinate(50, 60)],
       'l1',
@@ -161,6 +161,72 @@ describe('MoveVertexCommand', () => {
 
     expect(addFeature.getVertices().get(lineVertexIds[0])!.coordinate).toEqual(new Coordinate(10, 20));
     expect(addFeature.getVertices().get(lineVertexIds[1])!.coordinate).toEqual(new Coordinate(50, 60));
+  });
+
+  it('同一地物でも別リングの頂点には共有頂点化できる', () => {
+    const time = new TimePoint(1000);
+    const polygon = addFeature.addPolygon(
+      [
+        new Coordinate(0, 0),
+        new Coordinate(30, 0),
+        new Coordinate(30, 30),
+        new Coordinate(0, 30),
+      ],
+      'l1',
+      time
+    );
+
+    const activeAnchor = polygon.getActiveAnchor(time)!;
+    if (activeAnchor.shape.type !== 'Polygon') {
+      throw new Error('polygon anchor expected');
+    }
+
+    const polygonVertices = addFeature.getVertices() as Map<string, Vertex>;
+    polygonVertices.set('h1', new Vertex('h1', new Coordinate(6, 6)));
+    polygonVertices.set('h2', new Vertex('h2', new Coordinate(24, 6)));
+    polygonVertices.set('h3', new Vertex('h3', new Coordinate(24, 24)));
+    polygonVertices.set('h4', new Vertex('h4', new Coordinate(6, 24)));
+    polygonVertices.set('i1', new Vertex('i1', new Coordinate(8, 8)));
+    polygonVertices.set('i2', new Vertex('i2', new Coordinate(12, 8)));
+    polygonVertices.set('i3', new Vertex('i3', new Coordinate(10, 12)));
+
+    const holeRing = new Ring(
+      'hole-1',
+      ['h1', 'h2', 'h3', 'h4'],
+      'hole',
+      activeAnchor.shape.rings[0].id
+    );
+    const islandRing = new Ring(
+      'island-1',
+      ['i1', 'i2', 'i3'],
+      'territory',
+      holeRing.id
+    );
+    const updatedFeature = polygon.withAnchors([
+      activeAnchor.withShape({
+        type: 'Polygon',
+        rings: [...activeAnchor.shape.rings, holeRing, islandRing],
+      }),
+    ]);
+    (addFeature.getFeaturesMap() as Map<string, typeof polygon>).set(polygon.id, updatedFeature);
+
+    undoRedo.execute(
+      new MoveVertexCommand(
+        vertexEdit,
+        addFeature,
+        'h1',
+        new Coordinate(8, 8),
+        'i1',
+        time
+      )
+    );
+
+    expect(addFeature.getSharedVertexGroups().size).toBe(1);
+    const group = [...addFeature.getSharedVertexGroups().values()][0];
+    expect(group.vertexIds).toContain('h1');
+    expect(group.vertexIds).toContain('i1');
+    expect(addFeature.getVertices().get('h1')!.coordinate).toEqual(new Coordinate(8, 8));
+    expect(addFeature.getVertices().get('i1')!.coordinate).toEqual(new Coordinate(8, 8));
   });
 
   it('同一地物の隣接頂点は同じ共有先頂点に共有頂点化できない', () => {

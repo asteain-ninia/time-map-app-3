@@ -44,7 +44,7 @@ export {
   findSnapCandidates,
   findGroupForVertex,
   getLinkedVertexIds,
-  areVerticesInSameFeature,
+  wouldCreateShapeComponentSharedVertexConflict,
   wouldCreateAdjacentSharedVertexConflict,
   isSharedVertexMergeAllowed,
   mergeVertices,

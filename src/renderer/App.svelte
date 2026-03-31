@@ -434,34 +434,6 @@
     sharedGroups = new Map(addFeature.getSharedVertexGroups());
   }
 
-  function collectFeatureVertexIds(featureId: string): Set<string> {
-    const feature = features.find((candidate) => candidate.id === featureId);
-    if (!feature) return new Set();
-
-    const vertexIds = new Set<string>();
-    for (const anchor of feature.anchors) {
-      switch (anchor.shape.type) {
-        case 'Point':
-          vertexIds.add(anchor.shape.vertexId);
-          break;
-        case 'LineString':
-          for (const vertexId of anchor.shape.vertexIds) {
-            vertexIds.add(vertexId);
-          }
-          break;
-        case 'Polygon':
-          for (const ring of anchor.shape.rings) {
-            for (const vertexId of ring.vertexIds) {
-              vertexIds.add(vertexId);
-            }
-          }
-          break;
-      }
-    }
-
-    return vertexIds;
-  }
-
   function resetVertexDragContext(): void {
     dragMovesMultipleVertices = false;
     dragMovedVertexIds = [];
@@ -1479,11 +1451,6 @@
           ? linkedVertexIds
           : [dragState.vertexId]
       );
-      for (const ownerFeatureId of visibleVertexOwnerMap.get(dragState.vertexId) ?? []) {
-        for (const vertexId of collectFeatureVertexIds(ownerFeatureId)) {
-          excludedVertexIds.add(vertexId);
-        }
-      }
       const snapDist = screenToWorldSnapDistance(50, viewWidthPx, zoom);
       const candidates = findSnapCandidates(
         geo.lon, geo.lat, currentVertices,

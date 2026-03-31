@@ -189,21 +189,63 @@ function getAdjacentVertexIdsInAnchor(anchor: FeatureAnchor, vertexId: string): 
   }
 }
 
-export function areVerticesInSameFeature(
-  vertexIdA: string,
-  vertexIdB: string,
+function getRestrictedShapeComponentKeys(
+  vertexId: string,
   features: readonly Feature[],
   currentTime?: TimePoint
-): boolean {
+): Set<string> {
+  const componentKeys = new Set<string>();
+
   for (const feature of features) {
     const anchors = getAnchorsForValidation(feature, currentTime);
-    if (
-      anchors.some((anchor) =>
-        anchorContainsVertex(anchor, vertexIdA) &&
-        anchorContainsVertex(anchor, vertexIdB)
-      )
-    ) {
-      return true;
+    for (const anchor of anchors) {
+      switch (anchor.shape.type) {
+        case 'Point':
+          break;
+        case 'LineString':
+          if (anchor.shape.vertexIds.includes(vertexId)) {
+            componentKeys.add(`line:${feature.id}:${anchor.id}`);
+          }
+          break;
+        case 'Polygon':
+          for (const ring of anchor.shape.rings) {
+            if (ring.vertexIds.includes(vertexId)) {
+              componentKeys.add(`ring:${feature.id}:${ring.id}`);
+            }
+          }
+          break;
+      }
+    }
+  }
+
+  return componentKeys;
+}
+
+export function wouldCreateShapeComponentSharedVertexConflict(
+  draggedVertexId: string,
+  targetVertexId: string,
+  features: readonly Feature[],
+  groups: ReadonlyMap<string, SharedVertexGroup>,
+  currentTime?: TimePoint
+): boolean {
+  const draggedVertexIds = getLinkedVertexIds(draggedVertexId, groups);
+  const sourceVertexIds = draggedVertexIds.length > 0 ? draggedVertexIds : [draggedVertexId];
+  const linkedTargetIds = getLinkedVertexIds(targetVertexId, groups);
+  const targetVertexIds = linkedTargetIds.length > 0 ? linkedTargetIds : [targetVertexId];
+
+  const sourceComponentKeys = new Set<string>();
+  for (const sourceVertexId of sourceVertexIds) {
+    for (const componentKey of getRestrictedShapeComponentKeys(sourceVertexId, features, currentTime)) {
+      sourceComponentKeys.add(componentKey);
+    }
+  }
+
+  for (const targetVertexId of targetVertexIds) {
+    const targetComponentKeys = getRestrictedShapeComponentKeys(targetVertexId, features, currentTime);
+    for (const componentKey of targetComponentKeys) {
+      if (sourceComponentKeys.has(componentKey)) {
+        return true;
+      }
     }
   }
 
@@ -250,7 +292,15 @@ export function isSharedVertexMergeAllowed(
   currentTime?: TimePoint
 ): boolean {
   if (draggedVertexId === targetVertexId) return false;
-  if (areVerticesInSameFeature(draggedVertexId, targetVertexId, features, currentTime)) {
+  if (
+    wouldCreateShapeComponentSharedVertexConflict(
+      draggedVertexId,
+      targetVertexId,
+      features,
+      groups,
+      currentTime
+    )
+  ) {
     return false;
   }
 
