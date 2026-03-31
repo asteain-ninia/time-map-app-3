@@ -25,8 +25,26 @@ function makePolygonFeature(
   vertexIds: string[],
   time: TimePoint = time100
 ): Feature {
-  const ring = new Ring('ring-1', vertexIds, 'territory', null);
-  const shape: FeatureShape = { type: 'Polygon', rings: [ring] };
+  return makePolygonFeatureWithRings(featureId, layerId, [
+    { id: 'ring-1', vertexIds, ringType: 'territory', parentId: null },
+  ], time);
+}
+
+function makePolygonFeatureWithRings(
+  featureId: string,
+  layerId: string,
+  rings: readonly {
+    id: string;
+    vertexIds: string[];
+    ringType: 'territory' | 'hole';
+    parentId: string | null;
+  }[],
+  time: TimePoint = time100
+): Feature {
+  const shape: FeatureShape = {
+    type: 'Polygon',
+    rings: rings.map((ring) => new Ring(ring.id, ring.vertexIds, ring.ringType, ring.parentId)),
+  };
   const property: AnchorProperty = { name: 'test', description: '' };
   const placement: AnchorPlacement = { layerId, parentId: null, childIds: [] };
   const anchor = new FeatureAnchor('a-1', { start: time }, property, shape, placement);
@@ -63,6 +81,31 @@ const vertices = new Map<string, Vertex>([
   ['vC2', makeVertex('vC2', 30, 0)],
   ['vC3', makeVertex('vC3', 30, 10)],
   ['vC4', makeVertex('vC4', 20, 10)],
+  // outerWithHole: (0,0)-(20,20)
+  ['vD1', makeVertex('vD1', 0, 0)],
+  ['vD2', makeVertex('vD2', 20, 0)],
+  ['vD3', makeVertex('vD3', 20, 20)],
+  ['vD4', makeVertex('vD4', 0, 20)],
+  // hole: (5,5)-(15,15)
+  ['vH1', makeVertex('vH1', 5, 5)],
+  ['vH2', makeVertex('vH2', 15, 5)],
+  ['vH3', makeVertex('vH3', 15, 15)],
+  ['vH4', makeVertex('vH4', 5, 15)],
+  // exclave in hole: (7,7)-(9,9)
+  ['vI1', makeVertex('vI1', 7, 7)],
+  ['vI2', makeVertex('vI2', 9, 7)],
+  ['vI3', makeVertex('vI3', 9, 9)],
+  ['vI4', makeVertex('vI4', 7, 9)],
+  // polygon fully inside hole but outside exclave: (11,11)-(13,13)
+  ['vP1', makeVertex('vP1', 11, 11)],
+  ['vP2', makeVertex('vP2', 13, 11)],
+  ['vP3', makeVertex('vP3', 13, 13)],
+  ['vP4', makeVertex('vP4', 11, 13)],
+  // polygon overlapping exclave: (8,8)-(10,10)
+  ['vQ1', makeVertex('vQ1', 8, 8)],
+  ['vQ2', makeVertex('vQ2', 10, 8)],
+  ['vQ3', makeVertex('vQ3', 10, 10)],
+  ['vQ4', makeVertex('vQ4', 8, 10)],
 ]);
 
 // ---- テスト ----
@@ -142,6 +185,35 @@ describe('ConflictDetectionService', () => {
       expect(result.conflicts).toEqual([]);
     });
 
+    it('穴の内部にある別地物は競合として検出しない', () => {
+      const featureWithHole = makePolygonFeatureWithRings('f-hole', 'layer-1', [
+        { id: 'outer', vertexIds: ['vD1', 'vD2', 'vD3', 'vD4'], ringType: 'territory', parentId: null },
+        { id: 'hole', vertexIds: ['vH1', 'vH2', 'vH3', 'vH4'], ringType: 'hole', parentId: 'outer' },
+      ]);
+      const featureInsideHole = makePolygonFeature('f-inside', 'layer-1', ['vP1', 'vP2', 'vP3', 'vP4']);
+
+      const result = detectSpatialConflicts([featureWithHole, featureInsideHole], vertices, time100);
+
+      expect(result.hasConflicts).toBe(false);
+      expect(result.conflicts).toEqual([]);
+    });
+
+    it('穴の中の飛び地と重なる別地物は競合として検出する', () => {
+      const featureWithNestedTerritory = makePolygonFeatureWithRings('f-hole', 'layer-1', [
+        { id: 'outer', vertexIds: ['vD1', 'vD2', 'vD3', 'vD4'], ringType: 'territory', parentId: null },
+        { id: 'hole', vertexIds: ['vH1', 'vH2', 'vH3', 'vH4'], ringType: 'hole', parentId: 'outer' },
+        { id: 'island', vertexIds: ['vI1', 'vI2', 'vI3', 'vI4'], ringType: 'territory', parentId: 'hole' },
+      ]);
+      const overlappingFeature = makePolygonFeature('f-overlap', 'layer-1', ['vQ1', 'vQ2', 'vQ3', 'vQ4']);
+
+      const result = detectSpatialConflicts([featureWithNestedTerritory, overlappingFeature], vertices, time100);
+
+      expect(result.hasConflicts).toBe(true);
+      expect(result.conflicts).toHaveLength(1);
+      expect(result.conflicts[0].featureIdA).toBe('f-hole');
+      expect(result.conflicts[0].featureIdB).toBe('f-overlap');
+    });
+
     it('競合IDは一意である', () => {
       // 同じレイヤーに3つの重なるポリゴンを配置 → 3つの競合ペア
       const features = [
@@ -212,6 +284,23 @@ describe('ConflictDetectionService', () => {
       expect(conflicts).toHaveLength(1);
       expect(conflicts[0].featureIdA).toBe('f-temp');
       expect(conflicts[0].featureIdB).toBe('f1');
+    });
+
+    it('穴の内部にある別地物は対象地物の競合として返さない', () => {
+      const featureWithHole = makePolygonFeatureWithRings('f-hole', 'layer-1', [
+        { id: 'outer', vertexIds: ['vD1', 'vD2', 'vD3', 'vD4'], ringType: 'territory', parentId: null },
+        { id: 'hole', vertexIds: ['vH1', 'vH2', 'vH3', 'vH4'], ringType: 'hole', parentId: 'outer' },
+      ]);
+      const featureInsideHole = makePolygonFeature('f-inside', 'layer-1', ['vP1', 'vP2', 'vP3', 'vP4']);
+
+      const conflicts = detectConflictsForFeature(
+        'f-inside',
+        [featureWithHole, featureInsideHole],
+        vertices,
+        time100
+      );
+
+      expect(conflicts).toEqual([]);
     });
   });
 });

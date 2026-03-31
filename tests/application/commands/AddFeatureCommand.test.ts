@@ -5,6 +5,10 @@ import { ManageLayersUseCase } from '@application/ManageLayersUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
+import { Feature } from '@domain/entities/Feature';
+import { Vertex } from '@domain/entities/Vertex';
+import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import { Ring } from '@domain/value-objects/Ring';
 
 describe('AddFeatureCommand', () => {
   let addFeature: AddFeatureUseCase;
@@ -144,6 +148,49 @@ describe('AddFeatureCommand', () => {
 
       expect(() => undoRedo.execute(cmd)).toThrow('重なっています');
       expect(addFeature.getFeatures()).toHaveLength(1);
+    });
+
+    it('既存ポリゴンの穴の内部には別地物を追加できる', () => {
+      const vertices = new Map<string, Vertex>([
+        ['outer-1', new Vertex('outer-1', new Coordinate(0, 0))],
+        ['outer-2', new Vertex('outer-2', new Coordinate(20, 0))],
+        ['outer-3', new Vertex('outer-3', new Coordinate(20, 20))],
+        ['outer-4', new Vertex('outer-4', new Coordinate(0, 20))],
+        ['hole-1', new Vertex('hole-1', new Coordinate(5, 5))],
+        ['hole-2', new Vertex('hole-2', new Coordinate(15, 5))],
+        ['hole-3', new Vertex('hole-3', new Coordinate(15, 15))],
+        ['hole-4', new Vertex('hole-4', new Coordinate(5, 15))],
+      ]);
+      const rings = [
+        new Ring('outer', ['outer-1', 'outer-2', 'outer-3', 'outer-4'], 'territory', null),
+        new Ring('hole', ['hole-1', 'hole-2', 'hole-3', 'hole-4'], 'hole', 'outer'),
+      ];
+      const anchor = new FeatureAnchor(
+        'a-existing',
+        { start: time },
+        { name: '穴あき地物', description: '' },
+        { type: 'Polygon', rings },
+        { layerId, parentId: null, childIds: [] }
+      );
+      addFeature.restore(
+        new Map([['f-existing', new Feature('f-existing', 'Polygon', [anchor])]]),
+        vertices
+      );
+
+      const cmd = new AddFeatureCommand(addFeature, {
+        type: 'polygon',
+        coords: [
+          new Coordinate(11, 11),
+          new Coordinate(13, 11),
+          new Coordinate(13, 13),
+          new Coordinate(11, 13),
+        ],
+        layerId,
+        time,
+      });
+
+      expect(() => undoRedo.execute(cmd)).not.toThrow();
+      expect(addFeature.getFeatures()).toHaveLength(2);
     });
   });
 

@@ -12,7 +12,8 @@ import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
-import { ringsOverlap, type RingCoords } from './GeometryService';
+import type { RingCoords } from './GeometryService';
+import { polygonIntersection } from './BooleanOperationService';
 
 /** 空間的競合 */
 export interface SpatialConflict {
@@ -66,8 +67,8 @@ export function detectSpatialConflicts(
         const a = polygonInfos[i];
         const b = polygonInfos[j];
 
-        const ringsA = resolvePolygonTerritoryRings(a.anchor, vertices);
-        const ringsB = resolvePolygonTerritoryRings(b.anchor, vertices);
+        const ringsA = resolveOccupiedPolygons(a.anchor, vertices);
+        const ringsB = resolveOccupiedPolygons(b.anchor, vertices);
 
         if (ringsA.length === 0 || ringsB.length === 0) continue;
 
@@ -130,7 +131,7 @@ export function detectConflictsForFeature(
   const targetAnchor = targetFeature.getActiveAnchor(time);
   if (!targetAnchor || targetAnchor.shape.type !== 'Polygon') return [];
 
-  const targetRings = resolvePolygonTerritoryRings(targetAnchor, vertices);
+  const targetRings = resolveOccupiedPolygons(targetAnchor, vertices);
   if (targetRings.length === 0) return [];
 
   const targetLayerId = explicitLayerId ?? targetAnchor.placement.layerId;
@@ -145,7 +146,7 @@ export function detectConflictsForFeature(
     if (!otherAnchor || otherAnchor.shape.type !== 'Polygon') continue;
     if (otherAnchor.placement.layerId !== targetLayerId) continue;
 
-    const otherRings = resolvePolygonTerritoryRings(otherAnchor, vertices);
+    const otherRings = resolveOccupiedPolygons(otherAnchor, vertices);
     if (otherRings.length === 0) continue;
 
     if (territorySetsOverlap(targetRings, otherRings)) {
@@ -192,13 +193,14 @@ function groupPolygonsByLayer(
 interface ResolvedPolygonRing {
   readonly ringId: string;
   readonly ringType: 'territory' | 'hole';
+  readonly parentId: string | null;
   readonly coords: RingCoords;
 }
 
-function resolvePolygonTerritoryRings(
+function resolveOccupiedPolygons(
   anchor: FeatureAnchor,
   vertices: ReadonlyMap<string, Vertex>
-): RingCoords[] {
+): RingCoords[][] {
   if (anchor.shape.type !== 'Polygon') return [];
 
   const rings: ResolvedPolygonRing[] = [];
@@ -214,22 +216,34 @@ function resolvePolygonTerritoryRings(
       rings.push({
         ringId: ring.id,
         ringType: ring.ringType,
+        parentId: ring.parentId,
         coords,
       });
     }
   }
+
+  const holesByParentId = new Map<string, RingCoords[]>();
+  for (const ring of rings) {
+    if (ring.ringType !== 'hole' || ring.parentId === null) continue;
+
+    if (!holesByParentId.has(ring.parentId)) {
+      holesByParentId.set(ring.parentId, []);
+    }
+    holesByParentId.get(ring.parentId)!.push(ring.coords);
+  }
+
   return rings
     .filter((ring) => ring.ringType === 'territory')
-    .map((ring) => ring.coords);
+    .map((ring) => [ring.coords, ...(holesByParentId.get(ring.ringId) ?? [])]);
 }
 
 function territorySetsOverlap(
-  ringsA: readonly RingCoords[],
-  ringsB: readonly RingCoords[]
+  ringsA: readonly RingCoords[][],
+  ringsB: readonly RingCoords[][]
 ): boolean {
   for (const ringA of ringsA) {
     for (const ringB of ringsB) {
-      if (ringsOverlap(ringA, ringB)) {
+      if (!polygonIntersection(ringA, ringB).isEmpty) {
         return true;
       }
     }

@@ -328,6 +328,43 @@ test('穴/飛び地追加ツールで穴の中に飛び地を追加できる', a
   expect(await page.locator('.vertex-handle').count()).toBeGreaterThanOrEqual(10);
 });
 
+test('面追加で既存ポリゴンの穴の中に別地物を追加できる', async ({ page }) => {
+  await addSquarePolygonFeature(page);
+  await selectCenterPolygon(page);
+
+  await drawRingWithOffsets(page, [
+    { x: -30, y: -20 },
+    { x: 30, y: -20 },
+    { x: 0, y: 30 },
+  ]);
+  await expect(page.locator('.validation-banner')).toHaveCount(0);
+
+  await page.keyboard.press('a');
+  await page.locator('.tool-button.sub-tool[title="面を追加"]').click();
+
+  const map = page.locator('.map-svg');
+  const box = await map.boundingBox();
+  if (!box) throw new Error('map not found');
+
+  const cx = box.width / 2;
+  const cy = box.height / 2;
+
+  await map.click({ position: { x: cx - 8, y: cy - 6 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx + 8, y: cy - 6 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx, y: cy + 4 } });
+  await page.waitForTimeout(100);
+  await page.locator('.drawing-btn.confirm').click();
+  await page.waitForTimeout(300);
+
+  await expect(page.locator('.validation-banner')).toHaveCount(0);
+  const featureIds = await page.locator('.map-svg path[data-feature-id]').evaluateAll((elements) =>
+    [...new Set(elements.map((element) => element.getAttribute('data-feature-id')).filter(Boolean))]
+  );
+  expect(featureIds).toHaveLength(2);
+});
+
 test('頂点選択コンテキストが単一地物ならプロパティを表示し続ける', async ({ page }) => {
   await addPolygonFeature(page);
   await selectCenterPolygon(page);
