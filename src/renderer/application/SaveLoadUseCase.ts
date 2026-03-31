@@ -6,7 +6,7 @@
  *        各ユースケースの状態を World 集約ルートに組み立て/分配する。
  */
 
-import { World, DEFAULT_METADATA, type WorldMetadata } from '@domain/entities/World';
+import { World, DEFAULT_METADATA, type WorldMetadata, type WorldSettings } from '@domain/entities/World';
 import type { WorldRepository } from '@domain/repositories/WorldRepository';
 import type { AddFeatureUseCase } from './AddFeatureUseCase';
 import type { ManageLayersUseCase } from './ManageLayersUseCase';
@@ -19,9 +19,23 @@ export interface DialogPort {
   showSaveDialog(): Promise<string | null>;
 }
 
+function cloneSettings(settings: WorldSettings): WorldSettings {
+  return {
+    ...settings,
+    customPalettes: [...settings.customPalettes],
+  };
+}
+
+function cloneMetadata(metadata: WorldMetadata): WorldMetadata {
+  return {
+    ...metadata,
+    settings: cloneSettings(metadata.settings),
+  };
+}
+
 export class SaveLoadUseCase {
   private currentFilePath: string | null = null;
-  private metadata: WorldMetadata = { ...DEFAULT_METADATA };
+  private metadata: WorldMetadata = cloneMetadata(DEFAULT_METADATA);
 
   constructor(
     private readonly repository: WorldRepository,
@@ -33,12 +47,12 @@ export class SaveLoadUseCase {
 
   /** メタデータを設定する（プロジェクト設定変更時に呼ぶ） */
   setMetadata(metadata: WorldMetadata): void {
-    this.metadata = metadata;
+    this.metadata = cloneMetadata(metadata);
   }
 
   /** メタデータを取得する */
   getMetadata(): WorldMetadata {
-    return this.metadata;
+    return cloneMetadata(this.metadata);
   }
 
   /** 現在のファイルパスを取得する */
@@ -88,6 +102,12 @@ export class SaveLoadUseCase {
     return true;
   }
 
+  /** 新規プロジェクト開始時に保存先とメタデータを初期化する */
+  resetProjectState(): void {
+    this.currentFilePath = null;
+    this.metadata = cloneMetadata(DEFAULT_METADATA);
+  }
+
   /** 現在の状態をWorldに組み立てる */
   assembleWorld(): World {
     return new World(
@@ -114,6 +134,6 @@ export class SaveLoadUseCase {
   private distributeWorld(world: World): void {
     this.addFeature.restore(world.features, world.vertices, world.sharedVertexGroups);
     this.manageLayers.restore(world.layers);
-    this.metadata = world.metadata;
+    this.metadata = cloneMetadata(world.metadata);
   }
 }

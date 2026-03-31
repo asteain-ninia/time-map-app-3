@@ -1643,6 +1643,7 @@
   /** 新規プロジェクト */
   function newProject(): void {
     if (!confirmUnsavedChanges()) return;
+    saveLoad.resetProjectState();
     addFeature.restore(new Map(), new Map(), []);
     manageLayers.restore([]);
     manageLayers.addLayer('default', 'レイヤー1');
@@ -1653,8 +1654,9 @@
     surveyState = resetSurvey(surveyState);
     surveyMeasurements = [];
     dirtyState = resetDirty();
-    projectSettings = { ...DEFAULT_SETTINGS };
-    projectMetadata = { ...DEFAULT_METADATA };
+    const resetMetadata = saveLoad.getMetadata();
+    projectMetadata = resetMetadata;
+    projectSettings = resetMetadata.settings;
   }
 
   /** ウィンドウクローズ時の未保存警告 */

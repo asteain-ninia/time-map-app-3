@@ -354,6 +354,31 @@ describe('SaveLoadUseCase', () => {
     });
   });
 
+  describe('resetProjectState', () => {
+    it('新規プロジェクト開始時に保存先パスとメタデータを初期化する', async () => {
+      dialog.showSaveDialog.mockResolvedValue('/saved/path.json');
+      repo.save.mockResolvedValue(undefined);
+      await useCase.saveAs();
+
+      useCase.setMetadata({
+        ...DEFAULT_METADATA,
+        worldName: '既存プロジェクト',
+        worldDescription: '旧設定',
+        sliderMin: 100,
+        sliderMax: 900,
+        settings: {
+          ...DEFAULT_METADATA.settings,
+          gridColor: '#123456',
+        },
+      });
+
+      useCase.resetProjectState();
+
+      expect(useCase.getCurrentFilePath()).toBeNull();
+      expect(useCase.getMetadata()).toEqual(DEFAULT_METADATA);
+    });
+  });
+
   describe('getCurrentFilePath', () => {
     it('初期状態はnull', () => {
       expect(useCase.getCurrentFilePath()).toBeNull();
