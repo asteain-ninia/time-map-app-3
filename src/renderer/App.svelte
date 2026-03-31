@@ -1507,7 +1507,10 @@
       </div>
     </div>
     <div class="bottom-area">
-      <TimelinePanel />
+      <TimelinePanel
+        sliderMin={projectMetadata.sliderMin}
+        sliderMax={projectMetadata.sliderMax}
+      />
       <StatusBar />
     </div>
   </div>

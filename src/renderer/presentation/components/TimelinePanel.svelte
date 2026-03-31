@@ -8,23 +8,46 @@
     type PlaybackSpeed,
     type StepUnit,
   } from '@presentation/state/timelineMachine';
-  import { TimePoint } from '@domain/value-objects/TimePoint';
+  import {
+    applyTimelineStep,
+    applyTimelineTick,
+    clampTimelineTime,
+    createTimelineTime,
+    hasReachedTimelineMax,
+    prepareTimelinePlaybackStart,
+    toTimelineDisplayState,
+  } from './timelinePanelUtils';
+
+  let {
+    sliderMin = 0,
+    sliderMax = 10000,
+  }: {
+    sliderMin?: number;
+    sliderMax?: number;
+  } = $props();
 
   let currentYear = $state(navigateTime.getCurrentTime().year);
   let currentMonth = $state(navigateTime.getCurrentTime().month ?? 1);
   let currentDay = $state(navigateTime.getCurrentTime().day ?? 1);
-  let sliderMin = $state(0);
-  let sliderMax = $state(10000);
   let isPlaying = $state(false);
   let speed = $state<PlaybackSpeed>(1);
   let stepUnit = $state<StepUnit>('year');
   let playIntervalId = $state<ReturnType<typeof setInterval> | null>(null);
 
+  function syncDisplayedTime(time: ReturnType<typeof createTimelineTime>): void {
+    const next = toTimelineDisplayState(time);
+    currentYear = next.year;
+    currentMonth = next.month;
+    currentDay = next.day;
+  }
+
+  function getCurrentTime(): ReturnType<typeof createTimelineTime> {
+    return createTimelineTime(currentYear, currentMonth, currentDay);
+  }
+
   /** 外部からの時刻変更を反映する */
   const unsubTimeChanged = eventBus.on('time:changed', (e) => {
-    currentYear = e.time.year;
-    currentMonth = e.time.month ?? 1;
-    currentDay = e.time.day ?? 1;
+    syncDisplayedTime(e.time);
   });
 
   onDestroy(() => {
@@ -33,7 +56,9 @@
   });
 
   function navigateToCurrentTime(): void {
-    navigateTime.navigateToYear(currentYear);
+    const nextTime = clampTimelineTime(getCurrentTime(), sliderMin, sliderMax);
+    syncDisplayedTime(nextTime);
+    navigateTime.navigateTo(nextTime);
   }
 
   function onSliderInput(e: Event): void {
@@ -52,23 +77,15 @@
   }
 
   function applyStep(direction: 1 | -1): void {
-    if (stepUnit === 'year') {
-      currentYear += direction;
-    } else if (stepUnit === 'month') {
-      currentMonth += direction;
-      if (currentMonth > 12) { currentMonth = 1; currentYear++; }
-      if (currentMonth < 1) { currentMonth = 12; currentYear--; }
-    } else {
-      currentDay += direction;
-      if (currentDay > 28) { currentDay = 1; currentMonth++; }
-      if (currentDay < 1) { currentDay = 28; currentMonth--; }
-      if (currentMonth > 12) { currentMonth = 1; currentYear++; }
-      if (currentMonth < 1) { currentMonth = 12; currentYear--; }
-    }
-
-    if (currentYear < sliderMin) { currentYear = sliderMin; }
-    if (currentYear > sliderMax) { currentYear = sliderMax; }
-    navigateToCurrentTime();
+    const nextTime = applyTimelineStep(
+      getCurrentTime(),
+      stepUnit,
+      direction,
+      sliderMin,
+      sliderMax
+    );
+    syncDisplayedTime(nextTime);
+    navigateTime.navigateTo(nextTime);
   }
 
   /** 再生/停止 */
@@ -81,10 +98,15 @@
   }
 
   function startPlayback(): void {
+    const startTime = prepareTimelinePlaybackStart(getCurrentTime(), sliderMin, sliderMax);
+    syncDisplayedTime(startTime);
+    navigateTime.navigateTo(startTime);
     isPlaying = true;
     playIntervalId = setInterval(() => {
-      applyStep(1);
-      if (currentYear >= sliderMax) {
+      const nextTime = applyTimelineTick(getCurrentTime(), speed, sliderMin, sliderMax);
+      syncDisplayedTime(nextTime);
+      navigateTime.navigateTo(nextTime);
+      if (hasReachedTimelineMax(nextTime, sliderMax)) {
         stopPlayback();
       }
     }, TICK_INTERVAL_MS / speed);
