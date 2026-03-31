@@ -1,61 +1,81 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  buildBackupDirectoryPath,
+  createAutoBackup,
+  createBackupTimestamp,
   DEFAULT_BACKUP_CONFIG,
+  getBackupDirectoryName,
   getBackupFileName,
-  getRotationPlan,
-  rotateBackupFiles,
+  getBackupFilesToDelete,
   shouldBackup,
 } from '@infrastructure/rendering/autoBackupManager';
 
 describe('autoBackupManager', () => {
   describe('DEFAULT_BACKUP_CONFIG', () => {
-    it('5分間隔、5世代', () => {
+    it('5分間隔、10世代', () => {
       expect(DEFAULT_BACKUP_CONFIG.intervalMs).toBe(300000);
-      expect(DEFAULT_BACKUP_CONFIG.maxGenerations).toBe(5);
+      expect(DEFAULT_BACKUP_CONFIG.maxGenerations).toBe(10);
+    });
+  });
+
+  describe('getBackupDirectoryName', () => {
+    it('POSIXパスの保存ファイル名を返す', () => {
+      expect(getBackupDirectoryName('/path/to/file.json'))
+        .toBe('file.json');
+    });
+
+    it('Windowsパスの保存ファイル名を返す', () => {
+      expect(getBackupDirectoryName('C:\\path\\to\\file.json'))
+        .toBe('file.json');
+    });
+  });
+
+  describe('buildBackupDirectoryPath', () => {
+    it('POSIXパスの保存先ディレクトリを生成する', () => {
+      expect(buildBackupDirectoryPath('/app/savebackup', '/path/to/file.json'))
+        .toBe('/app/savebackup/file.json');
+    });
+
+    it('Windowsパスの保存先ディレクトリを生成する', () => {
+      expect(buildBackupDirectoryPath('C:\\app\\savebackup', 'C:\\path\\to\\file.json'))
+        .toBe('C:\\app\\savebackup\\file.json');
+    });
+  });
+
+  describe('createBackupTimestamp', () => {
+    it('UTCベースの固定幅タイムスタンプを生成する', () => {
+      expect(createBackupTimestamp(new Date(Date.UTC(2026, 2, 31, 11, 22, 33, 444))))
+        .toBe('20260331-112233-444');
     });
   });
 
   describe('getBackupFileName', () => {
-    it('拡張子ありのファイル', () => {
-      expect(getBackupFileName('/path/to/file.json', 1))
-        .toBe('/path/to/file.backup-1.json');
+    it('通常のバックアップファイル名を生成する', () => {
+      expect(getBackupFileName('20260331-112233-444'))
+        .toBe('20260331-112233-444.json');
     });
 
-    it('世代番号が変わる', () => {
-      expect(getBackupFileName('/path/to/file.json', 3))
-        .toBe('/path/to/file.backup-3.json');
-    });
-
-    it('拡張子なしのファイル', () => {
-      expect(getBackupFileName('/path/to/file', 2))
-        .toBe('/path/to/file.backup-2');
-    });
-
-    it('複数ドットのファイル名', () => {
-      expect(getBackupFileName('/path/to/my.project.json', 1))
-        .toBe('/path/to/my.project.backup-1.json');
+    it('重複時のサフィックスを付与する', () => {
+      expect(getBackupFileName('20260331-112233-444', 1))
+        .toBe('20260331-112233-444-1.json');
     });
   });
 
-  describe('getRotationPlan', () => {
-    it('5世代のローテーション計画', () => {
-      const plan = getRotationPlan(5);
-      expect(plan).toEqual([
-        { from: 4, to: 5 },
-        { from: 3, to: 4 },
-        { from: 2, to: 3 },
-        { from: 1, to: 2 },
-      ]);
+  describe('getBackupFilesToDelete', () => {
+    it('保持上限を超えた最古バックアップだけを返す', () => {
+      expect(getBackupFilesToDelete([
+        '20260331-090000-000.json',
+        '20260331-100000-000.json',
+        '20260331-110000-000.json',
+      ], 2)).toEqual(['20260331-090000-000.json']);
     });
 
-    it('2世代のローテーション計画', () => {
-      const plan = getRotationPlan(2);
-      expect(plan).toEqual([{ from: 1, to: 2 }]);
-    });
-
-    it('1世代はローテーション不要', () => {
-      const plan = getRotationPlan(1);
-      expect(plan).toEqual([]);
+    it('バックアップ以外のファイルは削除対象に含めない', () => {
+      expect(getBackupFilesToDelete([
+        '20260331-090000-000.json',
+        'memo.txt',
+        '20260331-100000-000.json',
+      ], 2)).toEqual([]);
     });
   });
 
@@ -73,40 +93,71 @@ describe('autoBackupManager', () => {
     });
   });
 
-  describe('rotateBackupFiles', () => {
-    it('存在する世代だけをローテーションする', async () => {
-      const contents = new Map<string, string>([
-        ['/path/to/file.backup-1.json', 'gen1'],
-        ['/path/to/file.backup-3.json', 'gen3'],
-      ]);
+  describe('createAutoBackup', () => {
+    it('savebackup配下へタイムスタンプ付きバックアップを保存し、超過分を削除する', async () => {
       const writes: Array<{ path: string; data: string }> = [];
+      const deletes: string[] = [];
+      const listFiles = vi.fn(async (_dirPath: string) => [
+        '20260331-090000-000.json',
+        '20260331-100000-000.json',
+        'note.txt',
+      ]);
       const filePort = {
-        existsFile: async (filePath: string) => contents.has(filePath),
-        readFile: async (filePath: string) => contents.get(filePath) ?? '',
         writeFile: async (filePath: string, data: string) => {
           writes.push({ path: filePath, data });
         },
+        listFiles,
+        deleteFile: async (filePath: string) => {
+          deletes.push(filePath);
+        },
+        getAutoBackupRootPath: async () => '/app/savebackup',
       };
 
-      await rotateBackupFiles('/path/to/file.json', 5, filePort);
+      const backupPath = await createAutoBackup(
+        '/projects/world.json',
+        '{"world":true}',
+        2,
+        filePort,
+        new Date(Date.UTC(2026, 2, 31, 12, 0, 0, 0))
+      );
 
+      expect(listFiles).toHaveBeenCalledWith('/app/savebackup/world.json');
+      expect(backupPath).toBe('/app/savebackup/world.json/20260331-120000-000.json');
       expect(writes).toEqual([
-        { path: '/path/to/file.backup-4.json', data: 'gen3' },
-        { path: '/path/to/file.backup-2.json', data: 'gen1' },
+        {
+          path: '/app/savebackup/world.json/20260331-120000-000.json',
+          data: '{"world":true}',
+        },
+      ]);
+      expect(deletes).toEqual([
+        '/app/savebackup/world.json/20260331-090000-000.json',
       ]);
     });
 
-    it('存在しない世代に readFile を呼ばない', async () => {
-      const readFile = vi.fn(async (_filePath: string) => '');
+    it('同一タイムスタンプが存在するときは重複回避サフィックスを付ける', async () => {
+      const writes: string[] = [];
       const filePort = {
-        existsFile: async (_filePath: string) => false,
-        readFile,
-        writeFile: async (_filePath: string, _data: string) => undefined,
+        writeFile: async (filePath: string, _data: string) => {
+          writes.push(filePath);
+        },
+        listFiles: async (_dirPath: string) => [
+          '20260331-120000-000.json',
+        ],
+        deleteFile: async (_filePath: string) => undefined,
+        getAutoBackupRootPath: async () => '/app/savebackup',
       };
 
-      await rotateBackupFiles('/path/to/file.json', 5, filePort);
+      await createAutoBackup(
+        '/projects/world.json',
+        '{}',
+        10,
+        filePort,
+        new Date(Date.UTC(2026, 2, 31, 12, 0, 0, 0))
+      );
 
-      expect(readFile).not.toHaveBeenCalled();
+      expect(writes).toEqual([
+        '/app/savebackup/world.json/20260331-120000-000-1.json',
+      ]);
     });
   });
 });

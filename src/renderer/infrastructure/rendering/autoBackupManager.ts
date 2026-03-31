@@ -1,9 +1,14 @@
 /**
  * 自動バックアップマネージャー（純粋ユーティリティ）
  *
- * §2.5: 5分間隔、5世代のローテーションバックアップ。
- * バックアップファイル名の生成とローテーション管理を行う。
+ * 要件定義書 §2.5.4:
+ * - デフォルト5分間隔
+ * - /savebackup/<保存ファイル名>/ 配下に保存
+ * - 最大10世代保持
+ * - タイムスタンプ付きファイル名
  */
+
+const BACKUP_FILE_NAME_PATTERN = /^\d{8}-\d{6}-\d{3}(?:-\d+)?\.json$/;
 
 /** バックアップ設定 */
 export interface AutoBackupConfig {
@@ -13,71 +18,135 @@ export interface AutoBackupConfig {
   readonly maxGenerations: number;
 }
 
-/** デフォルト設定：5分間隔、5世代 */
+/** デフォルト設定：5分間隔、10世代 */
 export const DEFAULT_BACKUP_CONFIG: AutoBackupConfig = {
   intervalMs: 5 * 60 * 1000,
-  maxGenerations: 5,
+  maxGenerations: 10,
 };
 
 /** 自動バックアップで使用するファイルI/O */
 export interface BackupFilePort {
-  existsFile(filePath: string): Promise<boolean>;
-  readFile(filePath: string): Promise<string>;
   writeFile(filePath: string, data: string): Promise<void>;
+  listFiles(dirPath: string): Promise<readonly string[]>;
+  deleteFile(filePath: string): Promise<void>;
+  getAutoBackupRootPath(): Promise<string>;
+}
+
+function getPathSeparator(path: string): '/' | '\\' {
+  return path.includes('\\') ? '\\' : '/';
+}
+
+function joinPath(basePath: string, childPath: string): string {
+  if (basePath.length === 0) return childPath;
+  if (basePath.endsWith('/') || basePath.endsWith('\\')) {
+    return `${basePath}${childPath}`;
+  }
+  return `${basePath}${getPathSeparator(basePath)}${childPath}`;
+}
+
+/**
+ * バックアップ対象サブフォルダ名を取得する
+ * 例: /path/to/world.json -> world.json
+ */
+export function getBackupDirectoryName(originalPath: string): string {
+  const parts = originalPath.split(/[\\/]/);
+  return parts[parts.length - 1] ?? originalPath;
+}
+
+/**
+ * savebackup 配下のバックアップ用ディレクトリを生成する
+ */
+export function buildBackupDirectoryPath(
+  backupRootPath: string,
+  originalPath: string
+): string {
+  return joinPath(backupRootPath, getBackupDirectoryName(originalPath));
+}
+
+/**
+ * UTCベースのバックアップ用タイムスタンプを生成する
+ * 例: 20260331-102530-123
+ */
+export function createBackupTimestamp(date: Date = new Date()): string {
+  const pad = (value: number, digits: number): string =>
+    value.toString().padStart(digits, '0');
+
+  return [
+    `${pad(date.getUTCFullYear(), 4)}${pad(date.getUTCMonth() + 1, 2)}${pad(date.getUTCDate(), 2)}`,
+    `${pad(date.getUTCHours(), 2)}${pad(date.getUTCMinutes(), 2)}${pad(date.getUTCSeconds(), 2)}`,
+    pad(date.getUTCMilliseconds(), 3),
+  ].join('-');
 }
 
 /**
  * バックアップファイル名を生成する
- * 元ファイル: /path/to/file.json → /path/to/file.backup-1.json
+ * 例: 20260331-102530-123.json
+ * 重複時: 20260331-102530-123-1.json
  */
 export function getBackupFileName(
-  originalPath: string,
-  generation: number
+  timestamp: string,
+  duplicateIndex: number = 0
 ): string {
-  const dotIndex = originalPath.lastIndexOf('.');
-  if (dotIndex === -1) {
-    return `${originalPath}.backup-${generation}`;
-  }
-  const base = originalPath.substring(0, dotIndex);
-  const ext = originalPath.substring(dotIndex);
-  return `${base}.backup-${generation}${ext}`;
+  return duplicateIndex === 0
+    ? `${timestamp}.json`
+    : `${timestamp}-${duplicateIndex}.json`;
 }
 
 /**
- * ローテーション対象の世代番号リストを取得する（古い順）
- * generation 1が最新、maxGenerationsが最古。
- * ローテーション時は maxGenerations → 削除, N → N+1 へリネーム, 1 に新規保存。
+ * 保持上限を超えた古いバックアップを返す
  */
-export function getRotationPlan(
+export function getBackupFilesToDelete(
+  fileNames: readonly string[],
   maxGenerations: number
-): Array<{ from: number; to: number }> {
-  const plan: Array<{ from: number; to: number }> = [];
-  // 古い方から順にシフト（最古は削除されるので含まない）
-  for (let i = maxGenerations - 1; i >= 1; i--) {
-    plan.push({ from: i, to: i + 1 });
-  }
-  return plan;
+): string[] {
+  const sortedBackupFiles = [...fileNames]
+    .filter((fileName) => BACKUP_FILE_NAME_PATTERN.test(fileName))
+    .sort((left, right) => left.localeCompare(right));
+
+  const overflowCount = sortedBackupFiles.length - maxGenerations;
+  return overflowCount > 0
+    ? sortedBackupFiles.slice(0, overflowCount)
+    : [];
 }
 
 /**
- * 既存バックアップのみをローテーションする
- *
- * 未生成世代に対する readFile を防ぎ、IPC handler の ENOENT ログを出さない。
+ * 要件定義書 §2.5.4 準拠の自動バックアップを1件作成する
  */
-export async function rotateBackupFiles(
+export async function createAutoBackup(
   originalPath: string,
+  data: string,
   maxGenerations: number,
-  filePort: BackupFilePort
-): Promise<void> {
-  const plan = getRotationPlan(maxGenerations);
+  filePort: BackupFilePort,
+  now: Date = new Date()
+): Promise<string> {
+  const backupRootPath = await filePort.getAutoBackupRootPath();
+  const backupDirectoryPath = buildBackupDirectoryPath(
+    backupRootPath,
+    originalPath
+  );
+  const existingFileNames = await filePort.listFiles(backupDirectoryPath);
 
-  for (const { from, to } of plan) {
-    const fromPath = getBackupFileName(originalPath, from);
-    if (!(await filePort.existsFile(fromPath))) continue;
-
-    const content = await filePort.readFile(fromPath);
-    await filePort.writeFile(getBackupFileName(originalPath, to), content);
+  const timestamp = createBackupTimestamp(now);
+  let duplicateIndex = 0;
+  let backupFileName = getBackupFileName(timestamp, duplicateIndex);
+  while (existingFileNames.includes(backupFileName)) {
+    duplicateIndex += 1;
+    backupFileName = getBackupFileName(timestamp, duplicateIndex);
   }
+
+  const backupFilePath = joinPath(backupDirectoryPath, backupFileName);
+  await filePort.writeFile(backupFilePath, data);
+
+  const filesToDelete = getBackupFilesToDelete(
+    [...existingFileNames, backupFileName],
+    maxGenerations
+  );
+
+  for (const fileName of filesToDelete) {
+    await filePort.deleteFile(joinPath(backupDirectoryPath, fileName));
+  }
+
+  return backupFilePath;
 }
 
 /**

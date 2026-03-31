@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { join } from 'path';
-import { access, readFile, writeFile } from 'fs/promises';
+import { dirname, join } from 'path';
+import { access, mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
 
 const MIN_WIDTH = 800;
 const MIN_HEIGHT = 600;
@@ -45,6 +45,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('file:write', async (_event, filePath: string, data: string): Promise<void> => {
+    await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, data, 'utf-8');
   });
 
@@ -55,6 +56,37 @@ function registerIpcHandlers(): void {
     } catch {
       return false;
     }
+  });
+
+  ipcMain.handle('file:list', async (_event, dirPath: string): Promise<readonly string[]> => {
+    try {
+      const entries = await readdir(dirPath, { withFileTypes: true });
+      return entries
+        .filter((entry) => entry.isFile())
+        .map((entry) => entry.name);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return [];
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('file:delete', async (_event, filePath: string): Promise<void> => {
+    try {
+      await unlink(filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  });
+
+  ipcMain.handle('file:autoBackupRoot', async (): Promise<string> => {
+    const appRootPath = app.isPackaged
+      ? dirname(app.getPath('exe'))
+      : app.getAppPath();
+    return join(appRootPath, 'savebackup');
   });
 
   ipcMain.handle('dialog:open', async (): Promise<string | null> => {

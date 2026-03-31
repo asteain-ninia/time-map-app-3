@@ -118,9 +118,8 @@
     type DirtyState,
   } from '@infrastructure/rendering/dirtyTracker';
   import {
+    createAutoBackup,
     DEFAULT_BACKUP_CONFIG,
-    getBackupFileName,
-    rotateBackupFiles,
     shouldBackup,
   } from '@infrastructure/rendering/autoBackupManager';
   import {
@@ -182,6 +181,12 @@
   let settingsDialogOpen = $state(false);
   let projectSettings = $state<WorldSettings>({ ...DEFAULT_SETTINGS });
   let projectMetadata = $state<WorldMetadata>({ ...DEFAULT_METADATA });
+  let autoBackupIntervalMs = $derived(
+    Number.isFinite(projectSettings.autoSaveInterval) &&
+      projectSettings.autoSaveInterval > 0
+      ? projectSettings.autoSaveInterval * 1000
+      : DEFAULT_BACKUP_CONFIG.intervalMs
+  );
   let visibleVertexOwnerMap = $derived(
     buildVisibleVertexOwnerMap(features, layers, currentTime)
   );
@@ -359,15 +364,17 @@
     backupIntervalId = setInterval(async () => {
       const filePath = saveLoad.getCurrentFilePath();
       if (!filePath || !dirtyState.isDirty) return;
-      if (!shouldBackup(lastBackupTime, Date.now(), DEFAULT_BACKUP_CONFIG.intervalMs)) return;
+      if (!shouldBackup(lastBackupTime, Date.now(), autoBackupIntervalMs)) return;
 
       try {
-        // ローテーション：古い世代をシフト
-        await rotateBackupFiles(filePath, DEFAULT_BACKUP_CONFIG.maxGenerations, window.api);
-        // 世代1に現在の状態を保存
         const world = saveLoad.assembleWorld();
         const json = serializeWorld(world);
-        await window.api.writeFile(getBackupFileName(filePath, 1), json);
+        await createAutoBackup(
+          filePath,
+          json,
+          DEFAULT_BACKUP_CONFIG.maxGenerations,
+          window.api
+        );
         lastBackupTime = Date.now();
       } catch (err) {
         console.warn('Auto-backup failed:', err);
@@ -655,10 +662,12 @@
     const loaded = saveLoad.getMetadata();
     projectMetadata = loaded;
     projectSettings = loaded.settings;
+    lastBackupTime = Date.now();
   });
 
   const unsubWorldSaved = eventBus.on('world:saved', () => {
     dirtyState = markSaved(dirtyState);
+    lastBackupTime = Date.now();
   });
 
   const unsubFeatureChanged = eventBus.on('feature:added', () => {
@@ -1657,6 +1666,7 @@
     const resetMetadata = saveLoad.getMetadata();
     projectMetadata = resetMetadata;
     projectSettings = resetMetadata.settings;
+    lastBackupTime = Date.now();
   }
 
   /** ウィンドウクローズ時の未保存警告 */
