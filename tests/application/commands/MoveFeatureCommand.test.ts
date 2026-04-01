@@ -43,6 +43,21 @@ describe('MoveFeatureCommand', () => {
       expect(vertex.coordinate.x).toBe(10);
       expect(vertex.coordinate.y).toBe(20);
     });
+
+    it('横方向ラップをまたぐ移動でも経度を正規化する', () => {
+      const feature = addFeature.addPoint(new Coordinate(170, 20), 'l1', time);
+      const anchor = feature.getActiveAnchor(time)!;
+      const vid = (anchor.shape as { type: 'Point'; vertexId: string }).vertexId;
+
+      const cmd = new MoveFeatureCommand(addFeature, {
+        featureId: feature.id, dx: 30, dy: 0, currentTime: time,
+      });
+      cmd.execute();
+
+      const vertex = addFeature.getVertices().get(vid)!;
+      expect(vertex.coordinate.x).toBe(-160);
+      expect(vertex.coordinate.y).toBe(20);
+    });
   });
 
   describe('ライン地物の移動', () => {
