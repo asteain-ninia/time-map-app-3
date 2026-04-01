@@ -152,6 +152,31 @@ test('再生速度セレクタに0.1x/0.5x/1x/2x/5x/10xの選択肢がある', a
   expect(texts.some(t => t.includes('10'))).toBe(true);
 });
 
+// §2.2.4.3 再生速度 — 10x でも速度は線形で、異常に年が飛ばない
+test('10x再生でも時間が二重加速しない', async ({ page }) => {
+  const yearInput = page.locator('#year-input');
+  const speedSelect = page.locator('.speed-select');
+  const playBtn = page.locator('.play-button');
+
+  if (await yearInput.count() === 0 || await speedSelect.count() === 0 || await playBtn.count() === 0) {
+    return;
+  }
+
+  await speedSelect.selectOption('10');
+  await page.waitForTimeout(100);
+
+  const beforeValue = parseInt(await yearInput.inputValue(), 10);
+
+  await playBtn.click();
+  await page.waitForTimeout(350);
+  await playBtn.click();
+  await page.waitForTimeout(100);
+
+  const afterValue = parseInt(await yearInput.inputValue(), 10);
+  expect(afterValue).toBeGreaterThan(beforeValue);
+  expect(afterValue - beforeValue).toBeLessThanOrEqual(5);
+});
+
 // §2.2.4 タイムラインスライダー — 最小年と最大年が表示される
 test('タイムラインスライダーに最小年と最大年が表示される', async ({ page }) => {
   const minLabel = page.locator('.year-label.min');

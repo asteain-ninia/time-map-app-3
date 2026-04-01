@@ -109,7 +109,7 @@
       if (hasReachedTimelineMax(nextTime, sliderMax)) {
         stopPlayback();
       }
-    }, TICK_INTERVAL_MS / speed);
+    }, TICK_INTERVAL_MS);
   }
 
   function stopPlayback(): void {
