@@ -4,12 +4,12 @@
   import type { Layer } from '@domain/entities/Layer';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+  import LabelRenderer from '@presentation/components/LabelRenderer.svelte';
   import {
     geoToWrappedSvgX,
     geoToSvgY,
     buildPolygonPath,
     buildLinePoints,
-    unwrapLongitudeSequence,
     DEFAULT_POINT_COLOR,
     DEFAULT_LINE_COLOR,
     DEFAULT_POLYGON_FILL,
@@ -22,6 +22,7 @@
     layers,
     currentTime,
     zoom,
+    labelAreaThreshold = 0.0005,
     selectedFeatureId = null,
     contextFeatureId = null,
   }: {
@@ -30,6 +31,7 @@
     layers: readonly Layer[];
     currentTime: TimePoint;
     zoom: number;
+    labelAreaThreshold?: number;
     selectedFeatureId?: string | null;
     contextFeatureId?: string | null;
   } = $props();
@@ -37,43 +39,6 @@
   /** 選択色（要件定義書§2.3.3.1: シアン系ハイライト） */
   const SELECTION_STROKE = '#00ccff';
   const SELECTION_FILL = 'rgba(0, 204, 255, 0.2)';
-
-  /** ラベルの最小ズーム（小さすぎるとラベルが見えないため） */
-  const LABEL_MIN_ZOOM = 2;
-
-  /** 地物の重心を計算（ラベル配置用） */
-  function getCentroid(anchor: FeatureAnchor): { x: number; y: number } | null {
-    if (anchor.shape.type === 'Point') {
-      const v = vertices.get(anchor.shape.vertexId);
-      return v ? { x: geoToWrappedSvgX(v.x), y: geoToSvgY(v.y) } : null;
-    }
-    if (anchor.shape.type === 'LineString') {
-      const ids = anchor.shape.vertexIds;
-      if (ids.length === 0) return null;
-      const mid = Math.floor(ids.length / 2);
-      const v = vertices.get(ids[mid]);
-      return v ? { x: geoToWrappedSvgX(v.x), y: geoToSvgY(v.y) } : null;
-    }
-    if (anchor.shape.type === 'Polygon') {
-      const ring = anchor.shape.rings[0];
-      if (!ring || ring.vertexIds.length === 0) return null;
-      const longitudes: number[] = [];
-      let sy = 0, count = 0;
-      for (const vid of ring.vertexIds) {
-        const v = vertices.get(vid);
-        if (v) {
-          longitudes.push(v.x);
-          sy += v.y;
-          count++;
-        }
-      }
-      if (count === 0) return null;
-      const unwrappedLongitudes = unwrapLongitudeSequence(longitudes);
-      const sx = unwrappedLongitudes.reduce((sum, lon) => sum + lon, 0);
-      return { x: geoToWrappedSvgX(sx / count), y: geoToSvgY(sy / count) };
-    }
-    return null;
-  }
 
   /** 表示中レイヤー（order昇順 = 下から描画） */
   let visibleLayers = $derived(
@@ -214,27 +179,7 @@
         {/if}
       {/if}
 
-      <!-- ラベル表示 -->
-      {#if anchor.property.name && zoom >= LABEL_MIN_ZOOM}
-        {@const centroid = getCentroid(anchor)}
-        {#if centroid}
-          <text
-            x={centroid.x}
-            y={centroid.y}
-            text-anchor="middle"
-            dominant-baseline="central"
-            font-size={9 / zoom}
-            fill="#e0e0e0"
-            stroke="#1a1a2e"
-            stroke-width={2 / zoom}
-            paint-order="stroke"
-            pointer-events="none"
-            style="user-select: none;"
-          >
-            {anchor.property.name}
-          </text>
-        {/if}
-      {/if}
+      <LabelRenderer {anchor} {vertices} {zoom} {labelAreaThreshold} />
     {/each}
   </g>
 {/each}

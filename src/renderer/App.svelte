@@ -209,9 +209,25 @@
     settingsDialogOpen = true;
   }
 
+  function normalizeWorldSettings(settings: WorldSettings): WorldSettings {
+    const safeZoomMin = Number.isFinite(settings.zoomMin) ? settings.zoomMin : DEFAULT_SETTINGS.zoomMin;
+    const safeZoomMax = Number.isFinite(settings.zoomMax) ? settings.zoomMax : DEFAULT_SETTINGS.zoomMax;
+    const zoomMin = Math.max(0.1, Math.min(safeZoomMin, safeZoomMax));
+    const zoomMax = Math.max(zoomMin, Math.max(safeZoomMin, safeZoomMax));
+
+    return {
+      ...settings,
+      zoomMin,
+      zoomMax,
+      gridOpacity: Math.max(0, Math.min(1, settings.gridOpacity)),
+      labelAreaThreshold: Math.max(0, settings.labelAreaThreshold),
+      autoSaveInterval: Math.max(1, Math.round(settings.autoSaveInterval)),
+    };
+  }
+
   function onSettingsSave(metaPatch: Partial<WorldMetadata>, settingsPatch: Partial<WorldSettings>): void {
     projectMetadata = { ...projectMetadata, ...metaPatch };
-    projectSettings = { ...projectSettings, ...settingsPatch };
+    projectSettings = normalizeWorldSettings({ ...projectSettings, ...settingsPatch });
     projectMetadata = { ...projectMetadata, settings: projectSettings };
     saveLoad.setMetadata(projectMetadata);
     markAsDirty();
@@ -660,8 +676,8 @@
     dirtyState = resetDirty();
     // メタデータ・設定を復元
     const loaded = saveLoad.getMetadata();
-    projectMetadata = loaded;
-    projectSettings = loaded.settings;
+    projectSettings = normalizeWorldSettings(loaded.settings);
+    projectMetadata = { ...loaded, settings: projectSettings };
     lastBackupTime = Date.now();
   });
 
@@ -1664,8 +1680,8 @@
     surveyMeasurements = [];
     dirtyState = resetDirty();
     const resetMetadata = saveLoad.getMetadata();
-    projectMetadata = resetMetadata;
-    projectSettings = resetMetadata.settings;
+    projectSettings = normalizeWorldSettings(resetMetadata.settings);
+    projectMetadata = { ...resetMetadata, settings: projectSettings };
     lastBackupTime = Date.now();
   }
 
@@ -1728,6 +1744,9 @@
           gridInterval={projectSettings.gridInterval}
           gridColor={projectSettings.gridColor}
           gridOpacity={projectSettings.gridOpacity}
+          zoomMin={projectSettings.zoomMin}
+          zoomMax={projectSettings.zoomMax}
+          labelAreaThreshold={projectSettings.labelAreaThreshold}
           {currentTime}
           {toolMode}
           {addToolType}

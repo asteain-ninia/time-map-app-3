@@ -97,6 +97,19 @@ test('プロジェクト設定にグリッド間隔セレクタがある', async
   }
 });
 
+test('プロジェクト設定にズーム制限と自動保存の入力欄がある', async ({ page }) => {
+  const toolsTrigger = page.locator('.menu-trigger', { hasText: 'ツール' });
+  await toolsTrigger.click();
+  await page.waitForTimeout(200);
+  const settingsAction = page.locator('.menu-action', { hasText: 'プロジェクト設定' });
+  await settingsAction.click();
+  await page.waitForTimeout(300);
+
+  await expect(page.locator('#ps-zoom-min')).toBeVisible();
+  await expect(page.locator('#ps-zoom-max')).toBeVisible();
+  await expect(page.locator('#ps-auto-save')).toBeVisible();
+});
+
 // §2.6.2 保存したグリッド設定が地図描画に反映される
 test('プロジェクト設定で変更したグリッド設定が地図に反映される', async ({ page }) => {
   const initialGridLineCount = await page.locator('.grid-layer line').count();

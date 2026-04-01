@@ -20,11 +20,14 @@
   let worldDescription = $state('');
   let sliderMin = $state(0);
   let sliderMax = $state(10000);
+  let zoomMin = $state(1);
+  let zoomMax = $state(50);
   let equatorLength = $state(40000);
   let oblateness = $state(0.00335);
   let gridInterval = $state(10);
   let gridColor = $state('#888888');
   let gridOpacity = $state(0.3);
+  let autoSaveInterval = $state(300);
   let labelAreaThreshold = $state(0.0005);
   let defaultAutoColor = $state(true);
 
@@ -35,11 +38,14 @@
       worldDescription = metadata.worldDescription;
       sliderMin = metadata.sliderMin;
       sliderMax = metadata.sliderMax;
+      zoomMin = settings.zoomMin;
+      zoomMax = settings.zoomMax;
       equatorLength = settings.equatorLength;
       oblateness = settings.oblateness;
       gridInterval = settings.gridInterval;
       gridColor = settings.gridColor;
       gridOpacity = settings.gridOpacity;
+      autoSaveInterval = settings.autoSaveInterval;
       labelAreaThreshold = settings.labelAreaThreshold;
       defaultAutoColor = settings.defaultAutoColor;
     }
@@ -48,7 +54,18 @@
   function save(): void {
     onSave?.(
       { worldName, worldDescription, sliderMin, sliderMax },
-      { equatorLength, oblateness, gridInterval, gridColor, gridOpacity, labelAreaThreshold, defaultAutoColor }
+      {
+        zoomMin,
+        zoomMax,
+        equatorLength,
+        oblateness,
+        gridInterval,
+        gridColor,
+        gridOpacity,
+        autoSaveInterval,
+        labelAreaThreshold,
+        defaultAutoColor,
+      }
     );
     onClose?.();
   }
@@ -100,6 +117,19 @@
           </div>
         </div>
 
+        <div class="section">表示</div>
+
+        <div class="field-row">
+          <div class="field">
+            <label class="field-label" for="ps-zoom-min">最小ズーム</label>
+            <input class="field-input short" id="ps-zoom-min" type="number" min="0.1" step="0.1" bind:value={zoomMin} />
+          </div>
+          <div class="field">
+            <label class="field-label" for="ps-zoom-max">最大ズーム</label>
+            <input class="field-input short" id="ps-zoom-max" type="number" min="0.1" step="0.1" bind:value={zoomMax} />
+          </div>
+        </div>
+
         <div class="section">グリッド</div>
 
         <div class="field-row">
@@ -134,6 +164,13 @@
             <input type="checkbox" bind:checked={defaultAutoColor} />
             新規面の自動配色
           </label>
+        </div>
+
+        <div class="section">自動保存</div>
+
+        <div class="field">
+          <label class="field-label" for="ps-auto-save">バックアップ間隔 (秒)</label>
+          <input class="field-input short" id="ps-auto-save" type="number" min="1" step="1" bind:value={autoSaveInterval} />
         </div>
       </div>
 

@@ -12,6 +12,7 @@
   import type { Layer } from '@domain/entities/Layer';
   import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
+  import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
   import type { SnapIndicator } from '@infrastructure/rendering/snapIndicatorUtils';
   import type { SurveyMeasurement, SurveyResult } from '@infrastructure/rendering/surveyModeManager';
@@ -25,6 +26,9 @@
     gridInterval = 10,
     gridColor = '#888888',
     gridOpacity = 0.3,
+    zoomMin = 1,
+    zoomMax = 50,
+    labelAreaThreshold = 0.0005,
     currentTime = undefined as TimePoint | undefined,
     toolMode = 'view' as ToolMode,
     addToolType = 'polygon' as AddToolType,
@@ -81,6 +85,9 @@
     gridInterval?: number;
     gridColor?: string;
     gridOpacity?: number;
+    zoomMin?: number;
+    zoomMax?: number;
+    labelAreaThreshold?: number;
     currentTime?: TimePoint;
     toolMode?: ToolMode;
     addToolType?: AddToolType;
@@ -236,6 +243,20 @@
         const match = text.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
         if (match) baseMapContent = match[1];
       });
+  });
+
+  function normalizeZoomLimits(min: number, max: number): { min: number; max: number } {
+    const safeMin = Number.isFinite(min) ? min : 1;
+    const safeMax = Number.isFinite(max) ? max : 50;
+    const lower = Math.max(0.1, Math.min(safeMin, safeMax));
+    const upper = Math.max(lower, Math.max(safeMin, safeMax));
+    return { min: lower, max: upper };
+  }
+
+  $effect(() => {
+    const limits = normalizeZoomLimits(zoomMin, zoomMax);
+    viewport.setZoomLimits(limits.min, limits.max);
+    syncViewport();
   });
 
   /** コンテナサイズの変更を監視 */
@@ -416,6 +437,7 @@
             {layers}
             {currentTime}
             zoom={zoomLevel}
+            {labelAreaThreshold}
             {selectedFeatureId}
             contextFeatureId={vertexSelectionContextFeatureId}
           />
