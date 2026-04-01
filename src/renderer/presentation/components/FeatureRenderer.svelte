@@ -5,7 +5,7 @@
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
   import {
-    geoToSvgX,
+    geoToWrappedSvgX,
     geoToSvgY,
     buildPolygonPath,
     buildLinePoints,
@@ -45,14 +45,14 @@
   function getCentroid(anchor: FeatureAnchor): { x: number; y: number } | null {
     if (anchor.shape.type === 'Point') {
       const v = vertices.get(anchor.shape.vertexId);
-      return v ? { x: geoToSvgX(v.x), y: geoToSvgY(v.y) } : null;
+      return v ? { x: geoToWrappedSvgX(v.x), y: geoToSvgY(v.y) } : null;
     }
     if (anchor.shape.type === 'LineString') {
       const ids = anchor.shape.vertexIds;
       if (ids.length === 0) return null;
       const mid = Math.floor(ids.length / 2);
       const v = vertices.get(ids[mid]);
-      return v ? { x: geoToSvgX(v.x), y: geoToSvgY(v.y) } : null;
+      return v ? { x: geoToWrappedSvgX(v.x), y: geoToSvgY(v.y) } : null;
     }
     if (anchor.shape.type === 'Polygon') {
       const ring = anchor.shape.rings[0];
@@ -70,7 +70,7 @@
       if (count === 0) return null;
       const unwrappedLongitudes = unwrapLongitudeSequence(longitudes);
       const sx = unwrappedLongitudes.reduce((sum, lon) => sum + lon, 0);
-      return { x: geoToSvgX(sx / count), y: geoToSvgY(sy / count) };
+      return { x: geoToWrappedSvgX(sx / count), y: geoToSvgY(sy / count) };
     }
     return null;
   }
@@ -107,7 +107,7 @@
           {#if isSelected}
             <circle
               pointer-events="none"
-              cx={geoToSvgX(vertex.x)}
+              cx={geoToWrappedSvgX(vertex.x)}
               cy={geoToSvgY(vertex.y)}
               r={7 / zoom}
               fill="none"
@@ -118,7 +118,7 @@
           {#if isContext}
             <circle
               pointer-events="none"
-              cx={geoToSvgX(vertex.x)}
+              cx={geoToWrappedSvgX(vertex.x)}
               cy={geoToSvgY(vertex.y)}
               r={6 / zoom}
               fill="none"
@@ -130,7 +130,7 @@
           {/if}
           <circle
             data-feature-id={feature.id}
-            cx={geoToSvgX(vertex.x)}
+            cx={geoToWrappedSvgX(vertex.x)}
             cy={geoToSvgY(vertex.y)}
             r={4 / zoom}
             fill={anchor.property.style?.fillColor ?? DEFAULT_POINT_COLOR}

@@ -2,7 +2,9 @@ import type { FeatureShape } from '@domain/value-objects/FeatureAnchor';
 import type { Vertex } from '@domain/entities/Vertex';
 import {
   shiftLongitudeSequenceNearReference,
+  shiftLongitudeSequenceToPrimaryRange,
   unwrapLongitudeSequence,
+  wrapLongitudeToPrimaryRange,
 } from './featureRenderingUtils';
 
 /**
@@ -66,7 +68,7 @@ function resolveGroupPositions(
   const unwrappedLongitudes = unwrapLongitudeSequence(resolved.map((vertex) => vertex.lon));
   const alignedLongitudes =
     referenceLon === undefined
-      ? unwrappedLongitudes
+      ? shiftLongitudeSequenceToPrimaryRange(unwrappedLongitudes)
       : shiftLongitudeSequenceNearReference(unwrappedLongitudes, referenceLon);
 
   return resolved.map((vertex, index) => ({
@@ -112,7 +114,9 @@ export function getShapeVertexPositions(
 ): VertexPosition[] {
   if (shape.type === 'Point') {
     const vertex = vertices.get(shape.vertexId);
-    return vertex ? [{ vertexId: shape.vertexId, x: vertex.x, y: vertex.y }] : [];
+    return vertex
+      ? [{ vertexId: shape.vertexId, x: wrapLongitudeToPrimaryRange(vertex.x), y: vertex.y }]
+      : [];
   }
 
   const positioned = new Map<string, VertexPosition>();

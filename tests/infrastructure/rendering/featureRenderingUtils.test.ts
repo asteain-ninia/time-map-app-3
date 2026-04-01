@@ -6,6 +6,7 @@ import {
   buildPolygonPath,
   buildLinePoints,
   wrapLongitudeNearReference,
+  wrapLongitudeToPrimaryRange,
   unwrapLongitudeSequence,
 } from '@infrastructure/rendering/featureRenderingUtils';
 import { Vertex } from '@domain/entities/Vertex';
@@ -58,6 +59,17 @@ describe('wrapLongitudeNearReference', () => {
 
   it('すでに近い場合はそのまま返す', () => {
     expect(wrapLongitudeNearReference(20, 30)).toBe(20);
+  });
+
+  it('180度子午線をまたぐドラッグでも連続した経度を返す', () => {
+    expect(wrapLongitudeNearReference(-179, 179)).toBe(181);
+  });
+});
+
+describe('wrapLongitudeToPrimaryRange', () => {
+  it('主表示帯の外へ出た経度を-180〜180へ折り返す', () => {
+    expect(wrapLongitudeToPrimaryRange(195)).toBe(-165);
+    expect(wrapLongitudeToPrimaryRange(-190)).toBe(170);
   });
 });
 
@@ -206,6 +218,23 @@ describe('buildPolygonPath', () => {
       'M350 100 L370 100 L370 80 L350 80 Z M365 95 L355 95 L355 85 L365 85 Z'
     );
   });
+
+  it('全頂点が180度を超えたプレビューでも主表示帯へ寄せて描画する', () => {
+    const vertices = makeVertices(
+      ['v1', 185, -10],
+      ['v2', 205, -10],
+      ['v3', 205, 10],
+      ['v4', 185, 10]
+    );
+    const shape = {
+      type: 'Polygon' as const,
+      rings: [new Ring('outer', ['v1', 'v2', 'v3', 'v4'], 'territory', null)],
+    };
+
+    expect(buildPolygonPath(shape, vertices)).toBe(
+      'M5 100 L25 100 L25 80 L5 80 Z'
+    );
+  });
 });
 
 describe('buildLinePoints', () => {
@@ -234,5 +263,11 @@ describe('buildLinePoints', () => {
     const vertices = makeVertices(['v1', 170, 0], ['v2', -170, 0]);
     const points = buildLinePoints(['v1', 'v2'], vertices);
     expect(points).toBe('350,90 370,90');
+  });
+
+  it('全頂点が180度を超えたラインも主表示帯へ寄せて描画する', () => {
+    const vertices = makeVertices(['v1', 185, 0], ['v2', 195, 0], ['v3', 205, 10]);
+    const points = buildLinePoints(['v1', 'v2', 'v3'], vertices);
+    expect(points).toBe('5,90 15,90 25,80');
   });
 });

@@ -157,6 +157,15 @@ describe('vertexHandleUtils', () => {
   });
 
   describe('getShapeVertexPositions', () => {
+    it('Point: 主表示帯の外へ出た頂点も表示用に折り返す', () => {
+      const shape: FeatureShape = { type: 'Point', vertexId: 'v1' };
+      const vertices = makeVertices(['v1', 195, 0]);
+
+      expect(getShapeVertexPositions(shape, vertices)).toEqual([
+        { vertexId: 'v1', x: -165, y: 0 },
+      ]);
+    });
+
     it('東西端またぎの頂点を連続した座標へ展開する', () => {
       const shape: FeatureShape = {
         type: 'LineString',
@@ -172,6 +181,24 @@ describe('vertexHandleUtils', () => {
         { vertexId: 'v1', x: 170, y: 0 },
         { vertexId: 'v2', x: 190, y: 0 },
         { vertexId: 'v3', x: 200, y: 5 },
+      ]);
+    });
+
+    it('全頂点が180度を超えたラインでも主表示帯へ寄せる', () => {
+      const shape: FeatureShape = {
+        type: 'LineString',
+        vertexIds: ['v1', 'v2', 'v3'],
+      };
+      const vertices = makeVertices(
+        ['v1', 185, 0],
+        ['v2', 195, 0],
+        ['v3', 205, 5]
+      );
+
+      expect(getShapeVertexPositions(shape, vertices)).toEqual([
+        { vertexId: 'v1', x: -175, y: 0 },
+        { vertexId: 'v2', x: -165, y: 0 },
+        { vertexId: 'v3', x: -155, y: 5 },
       ]);
     });
   });

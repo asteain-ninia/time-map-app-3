@@ -6,6 +6,19 @@ export function geoToSvgX(lon: number): number {
   return lon + 180;
 }
 
+/** 経度を主表示帯（-180〜180）へ折り返す */
+export function wrapLongitudeToPrimaryRange(lon: number): number {
+  let wrapped = lon;
+  while (wrapped > 180) wrapped -= 360;
+  while (wrapped < -180) wrapped += 360;
+  return wrapped;
+}
+
+/** 単一点の経度を主表示帯に折り返したSVG x座標 */
+export function geoToWrappedSvgX(lon: number): number {
+  return geoToSvgX(wrapLongitudeToPrimaryRange(lon));
+}
+
 /** 緯度 → SVG y座標 */
 export function geoToSvgY(lat: number): number {
   return 90 - lat;
@@ -46,6 +59,15 @@ export function shiftLongitudeSequenceNearReference(
   return longitudes.map((lon) => lon + shift);
 }
 
+/** 連続化済み経度列を主表示帯へ寄せる */
+export function shiftLongitudeSequenceToPrimaryRange(longitudes: readonly number[]): number[] {
+  if (longitudes.length === 0) return [];
+  return shiftLongitudeSequenceNearReference(
+    longitudes,
+    wrapLongitudeToPrimaryRange(longitudes[0])
+  );
+}
+
 /** 頂点IDリストからSVGパス文字列を生成（閉じたリング用） */
 export function buildRingPath(
   vertexIds: readonly string[],
@@ -64,7 +86,7 @@ export function buildRingPath(
   const unwrappedLongitudes = unwrapLongitudeSequence(coords.map((coord) => coord.lon));
   const alignedLongitudes =
     referenceLon === undefined
-      ? unwrappedLongitudes
+      ? shiftLongitudeSequenceToPrimaryRange(unwrappedLongitudes)
       : shiftLongitudeSequenceNearReference(unwrappedLongitudes, referenceLon);
   const points = coords.map((coord, index) => ({
     x: geoToSvgX(alignedLongitudes[index]),
@@ -94,7 +116,7 @@ export function buildPolygonPath(
       const firstVertexId = ring.vertexIds.find((vertexId) => vertices.has(vertexId));
       const firstVertex = firstVertexId ? vertices.get(firstVertexId) : undefined;
       if (firstVertex) {
-        referenceLon = firstVertex.x;
+        referenceLon = wrapLongitudeToPrimaryRange(firstVertex.x);
       }
     }
 
@@ -117,8 +139,9 @@ export function buildLinePoints(
     }
   }
   const unwrappedLongitudes = unwrapLongitudeSequence(coords.map((coord) => coord.lon));
+  const alignedLongitudes = shiftLongitudeSequenceToPrimaryRange(unwrappedLongitudes);
   const points = coords.map(
-    (coord, index) => `${geoToSvgX(unwrappedLongitudes[index])},${geoToSvgY(coord.lat)}`
+    (coord, index) => `${geoToSvgX(alignedLongitudes[index])},${geoToSvgY(coord.lat)}`
   );
   return points.join(' ');
 }
