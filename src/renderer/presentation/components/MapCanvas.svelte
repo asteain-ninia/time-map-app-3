@@ -507,116 +507,140 @@
     onclick={onClick}
     ondblclick={onDblClick}
   >
-    <!-- §2.1: 横方向無限スクロール — 複数オフセットでコンテンツを描画 -->
-    {#each wrapOffsets as offset}
-      <g transform="translate({offset}, 0)">
-        <!-- 海の背景 -->
-        <rect x="0" y="0" width="360" height="180" fill="#1a1a2e" pointer-events="none" />
-
-        <!-- ベースマップ（§2.1: pointer-events無効、テキスト選択不可） -->
-        <g
-          transform="scale({360 / 4243.4}, {180 / 2121.7})"
-          pointer-events="none"
-          style="user-select: none;"
-        >
-          {@html baseMapContent}
+    <!-- §2.1: 横方向無限スクロール — レイヤーごとに全タイルを描画し、隣タイルの背景が地物を上書きしないようにする -->
+    <g class="wrap-background-layer" pointer-events="none">
+      {#each wrapOffsets as offset}
+        <g class="wrap-background-tile" transform="translate({offset}, 0)">
+          <rect x="0" y="0" width="360" height="180" fill="#1a1a2e" />
         </g>
+      {/each}
+    </g>
 
-        <!-- 地物描画 -->
-        {#if currentTime}
-          <FeatureRenderer
-            {features}
-            {vertices}
-            {layers}
-            {currentTime}
-            {settings}
-            zoom={zoomLevel}
-            {labelAreaThreshold}
-            {selectedFeatureId}
-            contextFeatureId={vertexSelectionContextFeatureId}
-          />
-        {/if}
+    <g class="wrap-base-map-layer" pointer-events="none" style="user-select: none;">
+      {#each wrapOffsets as offset}
+        <g class="base-map-layer" transform="translate({offset}, 0)">
+          <g transform="scale({360 / 4243.4}, {180 / 2121.7})">
+            {@html baseMapContent}
+          </g>
+        </g>
+      {/each}
+    </g>
 
-        <!-- グリッド線 -->
-        <GridRenderer
-          zoom={zoomLevel}
-          interval={gridInterval}
-          color={gridColor}
-          opacity={gridOpacity}
-          isPrimaryWrap={offset === 0}
-        />
-
-        <!-- 頂点ハンドル・エッジハンドル -->
-        {#if !isDrawing && showVertexHandles}
-          {#each vertexHandleEntries() as entry (entry.featureId)}
-            <VertexHandles
-              anchor={entry.anchor}
+    {#if currentTime}
+      <g class="wrap-feature-layer">
+        {#each wrapOffsets as offset}
+          <g class="wrap-feature-tile" transform="translate({offset}, 0)">
+            <FeatureRenderer
+              {features}
               {vertices}
+              {layers}
+              {currentTime}
+              {settings}
               zoom={zoomLevel}
-              {selectedVertexIds}
-              {sharedGroups}
-              {snapIndicators}
-              showEdgeHandles={!suppressPassiveVertexHandles && entry.showEdgeHandles}
-              visibleVertexIds={suppressPassiveVertexHandles ? selectedVertexIds : undefined}
-              {onVertexMouseDown}
-              {onEdgeHandleMouseDown}
+              {labelAreaThreshold}
+              {selectedFeatureId}
+              contextFeatureId={vertexSelectionContextFeatureId}
+            />
+          </g>
+        {/each}
+      </g>
+    {/if}
+
+    <g class="wrap-grid-layer">
+      {#each wrapOffsets as offset}
+        <g class="wrap-grid-tile" transform="translate({offset}, 0)">
+          <GridRenderer
+            zoom={zoomLevel}
+            interval={gridInterval}
+            color={gridColor}
+            opacity={gridOpacity}
+            isPrimaryWrap={offset === 0}
+          />
+        </g>
+      {/each}
+    </g>
+
+    <g class="wrap-edit-overlay-layer">
+      {#each wrapOffsets as offset}
+        <g class="wrap-edit-overlay-tile" transform="translate({offset}, 0)">
+          <!-- 頂点ハンドル・エッジハンドル -->
+          {#if !isDrawing && showVertexHandles}
+            {#each vertexHandleEntries() as entry (entry.featureId)}
+              <VertexHandles
+                anchor={entry.anchor}
+                {vertices}
+                zoom={zoomLevel}
+                {selectedVertexIds}
+                {sharedGroups}
+                {snapIndicators}
+                showEdgeHandles={!suppressPassiveVertexHandles && entry.showEdgeHandles}
+                visibleVertexIds={suppressPassiveVertexHandles ? selectedVertexIds : undefined}
+                {onVertexMouseDown}
+                {onEdgeHandleMouseDown}
+              />
+            {/each}
+          {/if}
+
+          <!-- 描画プレビュー -->
+          {#if isDrawing && drawingCoords.length > 0}
+            <DrawingPreview
+              coords={drawingCoords}
+              zoom={zoomLevel}
+              cursorGeo={cursorGeo}
+              isPolygon={addToolType === 'polygon'}
+            />
+          {/if}
+
+          <!-- リング描画プレビュー（穴/飛び地追加中） -->
+          {#if isRingDrawing && ringDrawingCoords.length > 0}
+            <DrawingPreview
+              coords={ringDrawingCoords}
+              zoom={zoomLevel}
+              cursorGeo={cursorGeo}
+              isPolygon={true}
+            />
+          {/if}
+
+          <!-- ナイフツール描画プレビュー（分断線） -->
+          {#if isKnifeDrawing && knifeDrawingCoords.length > 0}
+            <DrawingPreview
+              coords={knifeDrawingCoords}
+              zoom={zoomLevel}
+              cursorGeo={cursorGeo}
+              isPolygon={false}
+            />
+          {/if}
+        </g>
+      {/each}
+    </g>
+
+    <g class="wrap-measurement-layer">
+      {#each wrapOffsets as offset}
+        <g class="wrap-measurement-tile" transform="translate({offset}, 0)">
+          <!-- 完了済み測量オーバーレイ -->
+          {#each surveyMeasurements as measurement}
+            <MeasurementOverlay
+              pointA={measurement.pointA}
+              pointB={measurement.pointB}
+              result={measurement.result}
+              zoom={zoomLevel}
+              isPrimaryWrap={offset === 0}
             />
           {/each}
-        {/if}
 
-        <!-- 描画プレビュー -->
-        {#if isDrawing && drawingCoords.length > 0}
-          <DrawingPreview
-            coords={drawingCoords}
-            zoom={zoomLevel}
-            cursorGeo={cursorGeo}
-            isPolygon={addToolType === 'polygon'}
-          />
-        {/if}
-
-        <!-- リング描画プレビュー（穴/飛び地追加中） -->
-        {#if isRingDrawing && ringDrawingCoords.length > 0}
-          <DrawingPreview
-            coords={ringDrawingCoords}
-            zoom={zoomLevel}
-            cursorGeo={cursorGeo}
-            isPolygon={true}
-          />
-        {/if}
-
-        <!-- ナイフツール描画プレビュー（分断線） -->
-        {#if isKnifeDrawing && knifeDrawingCoords.length > 0}
-          <DrawingPreview
-            coords={knifeDrawingCoords}
-            zoom={zoomLevel}
-            cursorGeo={cursorGeo}
-            isPolygon={false}
-          />
-        {/if}
-
-        <!-- 完了済み測量オーバーレイ -->
-        {#each surveyMeasurements as measurement}
-          <MeasurementOverlay
-            pointA={measurement.pointA}
-            pointB={measurement.pointB}
-            result={measurement.result}
-            zoom={zoomLevel}
-            isPrimaryWrap={offset === 0}
-          />
-        {/each}
-
-        <!-- 測量中オーバーレイ -->
-        {#if toolMode === 'measure' && surveyPointA && !surveyPointB}
-          <MeasurementOverlay
-            pointA={surveyPointA}
-            pointB={null}
-            result={null}
-            zoom={zoomLevel}
-            isPrimaryWrap={offset === 0}
-          />
-        {/if}
-      </g>
-    {/each}
+          <!-- 測量中オーバーレイ -->
+          {#if toolMode === 'measure' && surveyPointA && !surveyPointB}
+            <MeasurementOverlay
+              pointA={surveyPointA}
+              pointB={null}
+              result={null}
+              zoom={zoomLevel}
+              isPrimaryWrap={offset === 0}
+            />
+          {/if}
+        </g>
+      {/each}
+    </g>
 
     <!-- 矩形選択オーバーレイ -->
     {#if boxSelectBox}

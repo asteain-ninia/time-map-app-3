@@ -107,6 +107,44 @@ test('横方向無限スクロール: 複数周パンしても表示タイルが
   expect(transforms.some((transform) => transform.includes('-720'))).toBe(true);
 });
 
+// §2.1 横方向無限スクロール — レイヤー単位の描画順でタイル干渉を防ぐ
+test('横方向無限スクロール: 背景・地物・グリッドがレイヤー分離されている', async ({ page }) => {
+  const svg = page.locator('.map-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('SVG not found');
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -300);
+  await page.waitForTimeout(300);
+
+  const layerNames = await svg.evaluate((el) =>
+    Array.from(el.children)
+      .map((child) => child.getAttribute('class'))
+      .filter((className): className is string => Boolean(className))
+  );
+
+  expect(layerNames.some((className) => className.includes('wrap-background-layer'))).toBe(true);
+  expect(layerNames.some((className) => className.includes('wrap-feature-layer'))).toBe(true);
+  expect(layerNames.some((className) => className.includes('wrap-grid-layer'))).toBe(true);
+
+  expect(layerNames.findIndex((className) => className.includes('wrap-background-layer'))).toBeLessThan(
+    layerNames.findIndex((className) => className.includes('wrap-feature-layer'))
+  );
+  expect(layerNames.findIndex((className) => className.includes('wrap-feature-layer'))).toBeLessThan(
+    layerNames.findIndex((className) => className.includes('wrap-grid-layer'))
+  );
+
+  const wrapTileCounts = await Promise.all([
+    svg.locator('.wrap-background-layer > .wrap-background-tile').count(),
+    svg.locator('.wrap-feature-layer > .wrap-feature-tile').count(),
+    svg.locator('.wrap-grid-layer > .wrap-grid-tile').count(),
+  ]);
+
+  expect(wrapTileCounts[0]).toBeGreaterThanOrEqual(2);
+  expect(wrapTileCounts[0]).toBe(wrapTileCounts[1]);
+  expect(wrapTileCounts[1]).toBe(wrapTileCounts[2]);
+});
+
 // ============================================================
 // §2.1 パン操作 — 中ボタンドラッグ
 // ============================================================
@@ -285,7 +323,7 @@ test('測量モードでもホイールズームが動作する', async ({ page 
 
 // §2.1 ベースマップ — テキスト選択不可
 test('ベースマップのテキスト選択が不可である', async ({ page }) => {
-  const baseGroup = page.locator('.base-map-layer');
+  const baseGroup = page.locator('.wrap-base-map-layer').first();
   if (await baseGroup.count() > 0) {
     const userSelect = await baseGroup.evaluate(el => getComputedStyle(el).userSelect);
     expect(userSelect).toBe('none');
