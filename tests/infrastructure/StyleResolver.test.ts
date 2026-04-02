@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildSharedBoundaryAdjacencies,
   createDefaultPolygonStyle,
   getAvailablePaletteNames,
   getPalette,
   getAutoColor,
+  resolvePolygonAutoColors,
   resolveStyle,
   resolveLineStyle,
   resolvePointStyle,
@@ -11,6 +13,34 @@ import {
 import type { PolygonStyle } from '@domain/value-objects/FeatureAnchor';
 import type { WorldSettings } from '@domain/entities/World';
 import { DEFAULT_SETTINGS } from '@domain/entities/World';
+import { Vertex } from '@domain/entities/Vertex';
+import { Coordinate } from '@domain/value-objects/Coordinate';
+import { Ring } from '@domain/value-objects/Ring';
+
+function makeVertices(
+  ...defs: Array<[string, number, number]>
+): ReadonlyMap<string, Vertex> {
+  const vertices = new Map<string, Vertex>();
+  for (const [id, lon, lat] of defs) {
+    vertices.set(id, new Vertex(id, new Coordinate(lon, lat)));
+  }
+  return vertices;
+}
+
+function makePolygonEntry(
+  featureId: string,
+  vertexIds: readonly string[],
+  style?: PolygonStyle
+) {
+  return {
+    featureId,
+    shape: {
+      type: 'Polygon' as const,
+      rings: [new Ring(`${featureId}-ring`, vertexIds, 'territory', null)],
+    },
+    style,
+  };
+}
 
 describe('StyleResolver', () => {
   describe('getPalette', () => {
@@ -88,6 +118,21 @@ describe('StyleResolver', () => {
       expect(style.fillColor).not.toBe('#ff0000');
     });
 
+    it('自動配色時の選択色は解決後の塗り色から再計算する', () => {
+      const polygonStyle: PolygonStyle = {
+        fillColor: '#ff0000',
+        selectedFillColor: '#00ff00',
+        autoColor: true,
+        palette: 'クラシック',
+      };
+      const style = resolveStyle(polygonStyle, 0, undefined, 1, {
+        fillColor: '#123456',
+        selectedFillColor: '#abcdef',
+      });
+      expect(style.fillColor).toBe('#123456');
+      expect(style.selectedFillColor).toBe('#abcdef');
+    });
+
     it('レイヤー透明度が反映される', () => {
       const full = resolveStyle(undefined, 0, undefined, 1);
       const half = resolveStyle(undefined, 0, undefined, 0.5);
@@ -128,6 +173,88 @@ describe('StyleResolver', () => {
       expect(style.palette).toBe('パステル');
       expect(style.fillColor).toBe(getAutoColor(2, 'パステル'));
       expect(style.selectedFillColor).toMatch(/^#[0-9a-f]{6}$/);
+    });
+  });
+
+  describe('buildSharedBoundaryAdjacencies', () => {
+    it('共有辺を持つ面同士だけを隣接として抽出する', () => {
+      const vertices = makeVertices(
+        ['a1', 0, 0],
+        ['a2', 1, 0],
+        ['a3', 1, 1],
+        ['a4', 0, 1],
+        ['b1', 1, 0],
+        ['b2', 2, 0],
+        ['b3', 2, 1],
+        ['b4', 1, 1],
+        ['c1', 3, 0],
+        ['c2', 4, 0],
+        ['c3', 4, 1],
+        ['c4', 3, 1]
+      );
+
+      const adjacencies = buildSharedBoundaryAdjacencies([
+        makePolygonEntry('A', ['a1', 'a2', 'a3', 'a4']),
+        makePolygonEntry('B', ['b1', 'b2', 'b3', 'b4']),
+        makePolygonEntry('C', ['c1', 'c2', 'c3', 'c4']),
+      ], vertices);
+
+      expect(adjacencies).toEqual([['A', 'B']]);
+    });
+  });
+
+  describe('resolvePolygonAutoColors', () => {
+    it('共有辺を持つ面には異なる色を割り当てる', () => {
+      const vertices = makeVertices(
+        ['a1', 0, 0],
+        ['a2', 1, 0],
+        ['a3', 1, 1],
+        ['a4', 0, 1],
+        ['b1', 1, 0],
+        ['b2', 2, 0],
+        ['b3', 2, 1],
+        ['b4', 1, 1]
+      );
+
+      const colors = resolvePolygonAutoColors([
+        makePolygonEntry('A', ['a1', 'a2', 'a3', 'a4'], {
+          fillColor: '#000000',
+          selectedFillColor: '#111111',
+          autoColor: true,
+          palette: 'クラシック',
+        }),
+        makePolygonEntry('B', ['b1', 'b2', 'b3', 'b4'], {
+          fillColor: '#000000',
+          selectedFillColor: '#111111',
+          autoColor: true,
+          palette: 'クラシック',
+        }),
+      ], vertices);
+
+      expect(colors.get('A')?.fillColor).toBeDefined();
+      expect(colors.get('B')?.fillColor).toBeDefined();
+      expect(colors.get('A')?.fillColor).not.toBe(colors.get('B')?.fillColor);
+      expect(colors.get('A')?.selectedFillColor).not.toBe(colors.get('A')?.fillColor);
+    });
+
+    it('180度子午線またぎの共有辺も隣接として扱う', () => {
+      const vertices = makeVertices(
+        ['a1', 170, -5],
+        ['a2', 180, -5],
+        ['a3', 180, 5],
+        ['a4', 170, 5],
+        ['b1', 180, -5],
+        ['b2', -170, -5],
+        ['b3', -170, 5],
+        ['b4', 180, 5]
+      );
+
+      const colors = resolvePolygonAutoColors([
+        makePolygonEntry('A', ['a1', 'a2', 'a3', 'a4']),
+        makePolygonEntry('B', ['b1', 'b2', 'b3', 'b4']),
+      ], vertices, DEFAULT_SETTINGS);
+
+      expect(colors.get('A')?.fillColor).not.toBe(colors.get('B')?.fillColor);
     });
   });
 

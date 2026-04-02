@@ -13,6 +13,7 @@
     buildLinePoints,
   } from '@infrastructure/rendering/featureRenderingUtils';
   import {
+    resolvePolygonAutoColors,
     resolveLineStyle,
     resolvePointStyle,
     resolveStyle,
@@ -65,8 +66,18 @@
 </script>
 
 {#each visibleLayers as layer (layer.id)}
+  {@const layerFeatures = getLayerFeatures(layer.id)}
+  {@const polygonAutoColors = resolvePolygonAutoColors(
+    layerFeatures.map(({ feature, anchor }) => ({
+      featureId: feature.id,
+      shape: anchor.shape,
+      style: anchor.property.style,
+    })),
+    vertices,
+    settings
+  )}
   <g opacity={layer.opacity}>
-    {#each getLayerFeatures(layer.id) as { feature, anchor, featureIndex } (feature.id)}
+    {#each layerFeatures as { feature, anchor, featureIndex } (feature.id)}
       {@const isSelected = feature.id === selectedFeatureId}
       {@const isContext = feature.id === contextFeatureId && !isSelected}
       {#if anchor.shape.type === 'Point'}
@@ -149,7 +160,13 @@
           />
         {/if}
       {:else if anchor.shape.type === 'Polygon'}
-        {@const polygonStyle = resolveStyle(anchor.property.style, featureIndex, settings)}
+        {@const polygonStyle = resolveStyle(
+          anchor.property.style,
+          featureIndex,
+          settings,
+          1,
+          polygonAutoColors.get(feature.id)
+        )}
         {@const d = buildPolygonPath(anchor.shape, vertices)}
         {#if d}
           {#if isContext}
