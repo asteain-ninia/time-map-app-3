@@ -21,6 +21,7 @@
     selectedVertexIds = new Set<string>(),
     sharedGroups = new Map<string, SharedVertexGroup>(),
     snapIndicators = [],
+    visibleVertexIds = undefined as ReadonlySet<string> | undefined,
     showEdgeHandles = true,
     onVertexMouseDown,
     onEdgeHandleMouseDown,
@@ -31,6 +32,7 @@
     selectedVertexIds?: ReadonlySet<string>;
     sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
     snapIndicators?: readonly SnapIndicator[];
+    visibleVertexIds?: ReadonlySet<string>;
     showEdgeHandles?: boolean;
     onVertexMouseDown?: (vertexId: string, e: MouseEvent) => void;
     onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
@@ -39,11 +41,19 @@
   /** 形状のアンラップ済み頂点位置 */
   let vertexPositions = $derived(() => getShapeVertexPositions(anchor.shape, vertices));
 
+  /** 表示対象の頂点位置 */
+  let renderedVertexPositions = $derived(() => {
+    if (!visibleVertexIds) {
+      return vertexPositions();
+    }
+    return vertexPositions().filter((vertex) => visibleVertexIds.has(vertex.vertexId));
+  });
+
   /** 形状のアンラップ済みエッジ位置 */
   let edgePositions = $derived(() => getShapeEdgePositions(anchor.shape, vertices));
 
   /** スナップ表示を選択形状と同じラップへ寄せるための基準経度 */
-  let snapReferenceLon = $derived(() => vertexPositions()[0]?.x);
+  let snapReferenceLon = $derived(() => renderedVertexPositions()[0]?.x ?? vertexPositions()[0]?.x);
 
   /** ハンドルサイズ */
   const VERTEX_RADIUS = 5;
@@ -76,7 +86,7 @@
 {/if}
 
 <!-- 頂点ハンドル -->
-{#each vertexPositions() as vertex (vertex.vertexId)}
+{#each renderedVertexPositions() as vertex (vertex.vertexId)}
   {@const isSelected = selectedVertexIds.has(vertex.vertexId)}
   {@const shared = isVertexShared(vertex.vertexId, sharedGroups)}
   <!-- svelte-ignore a11y_no_static_element_interactions -->

@@ -18,7 +18,17 @@ export interface AppConfig {
   readonly windowHeight: number;
   readonly lastOpenPath: string;
   readonly autoSaveEnabled: boolean;
+  readonly snapDistancePx: number;
+  readonly renderFps: number;
+  readonly alwaysVisibleVertexLimit: number;
 }
+
+export interface AppConfigStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+const APP_CONFIG_STORAGE_KEY = 'time-map-app:app-config';
 
 const DEFAULT_APP_CONFIG: AppConfig = {
   recentFiles: [],
@@ -26,7 +36,47 @@ const DEFAULT_APP_CONFIG: AppConfig = {
   windowHeight: 800,
   lastOpenPath: '',
   autoSaveEnabled: true,
+  snapDistancePx: 50,
+  renderFps: 60,
+  alwaysVisibleVertexLimit: 1000,
 };
+
+function normalizePositiveInteger(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+  max = Number.MAX_SAFE_INTEGER
+): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function normalizeAppConfig(appConfig: Partial<AppConfig>): AppConfig {
+  const recentFiles = Array.isArray(appConfig.recentFiles)
+    ? [...new Set(appConfig.recentFiles.filter((filePath): filePath is string => typeof filePath === 'string'))].slice(0, 10)
+    : [...DEFAULT_APP_CONFIG.recentFiles];
+
+  return {
+    recentFiles,
+    windowWidth: normalizePositiveInteger(appConfig.windowWidth, DEFAULT_APP_CONFIG.windowWidth, 1),
+    windowHeight: normalizePositiveInteger(appConfig.windowHeight, DEFAULT_APP_CONFIG.windowHeight, 1),
+    lastOpenPath: typeof appConfig.lastOpenPath === 'string'
+      ? appConfig.lastOpenPath
+      : DEFAULT_APP_CONFIG.lastOpenPath,
+    autoSaveEnabled: typeof appConfig.autoSaveEnabled === 'boolean'
+      ? appConfig.autoSaveEnabled
+      : DEFAULT_APP_CONFIG.autoSaveEnabled,
+    snapDistancePx: normalizePositiveInteger(appConfig.snapDistancePx, DEFAULT_APP_CONFIG.snapDistancePx, 1),
+    renderFps: normalizePositiveInteger(appConfig.renderFps, DEFAULT_APP_CONFIG.renderFps, 1, 60),
+    alwaysVisibleVertexLimit: normalizePositiveInteger(
+      appConfig.alwaysVisibleVertexLimit,
+      DEFAULT_APP_CONFIG.alwaysVisibleVertexLimit,
+      1
+    ),
+  };
+}
 
 /**
  * 設定管理サービス
@@ -43,7 +93,7 @@ export class ConfigManager {
   ) {
     this.settings = settings ?? DEFAULT_SETTINGS;
     this.metadata = metadata ?? DEFAULT_METADATA;
-    this.appConfig = { ...DEFAULT_APP_CONFIG, ...appConfig };
+    this.appConfig = normalizeAppConfig({ ...DEFAULT_APP_CONFIG, ...appConfig });
   }
 
   // ──────────────────────────────────────────
@@ -91,11 +141,35 @@ export class ConfigManager {
   // ──────────────────────────────────────────
 
   getAppConfig(): AppConfig {
-    return this.appConfig;
+    return {
+      ...this.appConfig,
+      recentFiles: [...this.appConfig.recentFiles],
+    };
   }
 
   updateAppConfig(partial: Partial<AppConfig>): void {
-    this.appConfig = { ...this.appConfig, ...partial };
+    this.appConfig = normalizeAppConfig({ ...this.appConfig, ...partial });
+  }
+
+  restoreAppConfig(appConfig: Partial<AppConfig>): void {
+    this.appConfig = normalizeAppConfig({ ...DEFAULT_APP_CONFIG, ...appConfig });
+  }
+
+  loadAppConfig(storage: AppConfigStorage): void {
+    const raw = storage.getItem(APP_CONFIG_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    try {
+      this.restoreAppConfig(JSON.parse(raw) as Partial<AppConfig>);
+    } catch {
+      this.appConfig = normalizeAppConfig(DEFAULT_APP_CONFIG);
+    }
+  }
+
+  saveAppConfig(storage: AppConfigStorage): void {
+    storage.setItem(APP_CONFIG_STORAGE_KEY, JSON.stringify(this.appConfig));
   }
 
   /**

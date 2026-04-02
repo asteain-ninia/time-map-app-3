@@ -14,6 +14,7 @@ import { VertexEditUseCase } from '@application/VertexEditUseCase';
 import { UpdateFeatureAnchorUseCase } from '@application/UpdateFeatureAnchorUseCase';
 import { DeleteFeatureUseCase } from '@application/DeleteFeatureUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
+import { ConfigManager } from '@infrastructure/ConfigManager';
 import { JSONWorldRepository, createElectronFileSystem } from '@infrastructure/persistence/JSONWorldRepository';
 
 export const manageLayers = new ManageLayersUseCase();
@@ -30,6 +31,7 @@ export const saveLoad = new SaveLoadUseCase(repository, dialog, addFeature, mana
 export const vertexEdit = new VertexEditUseCase(addFeature);
 export const anchorEdit = new UpdateFeatureAnchorUseCase(addFeature);
 export const undoRedo = new UndoRedoManager();
+export const configManager = new ConfigManager();
 
 /** 選択中の地物ID */
 export let selectedFeatureId: string | null = null;

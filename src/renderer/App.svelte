@@ -14,7 +14,7 @@
   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
   import StatusBar from '@presentation/components/StatusBar.svelte';
   import { createToolStore } from '@presentation/state/toolStore';
-  import { addFeature, anchorEdit, deleteFeature, manageLayers, navigateTime, saveLoad, undoRedo, vertexEdit } from '@presentation/state/appState';
+  import { addFeature, anchorEdit, configManager, deleteFeature, manageLayers, navigateTime, saveLoad, undoRedo, vertexEdit } from '@presentation/state/appState';
   import { AddFeatureCommand } from '@application/commands/AddFeatureCommand';
   import { DeleteFeatureCommand } from '@application/commands/DeleteFeatureCommand';
   import { MoveVertexCommand } from '@application/commands/MoveVertexCommand';
@@ -103,6 +103,7 @@
   import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
   import { DEFAULT_SETTINGS, DEFAULT_METADATA, type WorldSettings, type WorldMetadata } from '@domain/entities/World';
   import { Vertex } from '@domain/entities/Vertex';
+  import type { AppConfig } from '@infrastructure/ConfigManager';
   import { serialize as serializeWorld } from '@infrastructure/persistence/JSONSerializer';
   import {
     PolygonValidationError,
@@ -192,6 +193,7 @@
   let settingsDialogOpen = $state(false);
   let projectSettings = $state<WorldSettings>({ ...DEFAULT_SETTINGS });
   let projectMetadata = $state<WorldMetadata>({ ...DEFAULT_METADATA });
+  let appConfig = $state<AppConfig>(configManager.getAppConfig());
   let autoBackupIntervalMs = $derived(
     Number.isFinite(projectSettings.autoSaveInterval) &&
       projectSettings.autoSaveInterval > 0
@@ -227,6 +229,21 @@
     settingsDialogOpen = true;
   }
 
+  function loadAppConfig(): void {
+    if (typeof localStorage === 'undefined') {
+      return;
+    }
+    configManager.loadAppConfig(localStorage);
+    appConfig = configManager.getAppConfig();
+  }
+
+  function saveAppConfig(): void {
+    if (typeof localStorage === 'undefined') {
+      return;
+    }
+    configManager.saveAppConfig(localStorage);
+  }
+
   function normalizeWorldSettings(settings: WorldSettings): WorldSettings {
     const safeZoomMin = Number.isFinite(settings.zoomMin) ? settings.zoomMin : DEFAULT_SETTINGS.zoomMin;
     const safeZoomMax = Number.isFinite(settings.zoomMax) ? settings.zoomMax : DEFAULT_SETTINGS.zoomMax;
@@ -243,19 +260,71 @@
     };
   }
 
+  function areLayersEqual(left: readonly Layer[], right: readonly Layer[]): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    return left.every((layer, index) => {
+      const other = right[index];
+      return other !== undefined &&
+        layer.id === other.id &&
+        layer.name === other.name &&
+        layer.order === other.order &&
+        layer.visible === other.visible &&
+        layer.opacity === other.opacity;
+    });
+  }
+
+  function hasProjectSettingsChanged(
+    nextMetadata: WorldMetadata,
+    nextSettings: WorldSettings,
+    nextLayers: readonly Layer[]
+  ): boolean {
+    return projectMetadata.worldName !== nextMetadata.worldName ||
+      projectMetadata.worldDescription !== nextMetadata.worldDescription ||
+      projectMetadata.sliderMin !== nextMetadata.sliderMin ||
+      projectMetadata.sliderMax !== nextMetadata.sliderMax ||
+      projectSettings.zoomMin !== nextSettings.zoomMin ||
+      projectSettings.zoomMax !== nextSettings.zoomMax ||
+      projectSettings.gridInterval !== nextSettings.gridInterval ||
+      projectSettings.gridColor !== nextSettings.gridColor ||
+      projectSettings.gridOpacity !== nextSettings.gridOpacity ||
+      projectSettings.autoSaveInterval !== nextSettings.autoSaveInterval ||
+      projectSettings.equatorLength !== nextSettings.equatorLength ||
+      projectSettings.oblateness !== nextSettings.oblateness ||
+      projectSettings.labelAreaThreshold !== nextSettings.labelAreaThreshold ||
+      projectSettings.defaultAutoColor !== nextSettings.defaultAutoColor ||
+      projectSettings.defaultPalette !== nextSettings.defaultPalette ||
+      projectSettings.customPalettes.length !== nextSettings.customPalettes.length ||
+      projectSettings.customPalettes.some((palette, index) => palette !== nextSettings.customPalettes[index]) ||
+      !areLayersEqual(layers, nextLayers);
+  }
+
   function onSettingsSave(
     metaPatch: Partial<WorldMetadata>,
     settingsPatch: Partial<WorldSettings>,
-    nextLayers: readonly Layer[]
+    nextLayers: readonly Layer[],
+    appConfigPatch: Partial<AppConfig>
   ): void {
+    const nextProjectSettings = normalizeWorldSettings({ ...projectSettings, ...settingsPatch });
+    const nextProjectMetadata = { ...projectMetadata, ...metaPatch, settings: nextProjectSettings };
+    const hasProjectChange = hasProjectSettingsChanged(nextProjectMetadata, nextProjectSettings, nextLayers);
+
     manageLayers.restore(nextLayers);
     refreshLayerData();
-    projectMetadata = { ...projectMetadata, ...metaPatch };
-    projectSettings = normalizeWorldSettings({ ...projectSettings, ...settingsPatch });
-    projectMetadata = { ...projectMetadata, settings: projectSettings };
-    saveLoad.setMetadata(projectMetadata);
-    markAsDirty();
+    projectSettings = nextProjectSettings;
+    projectMetadata = nextProjectMetadata;
+    saveLoad.setMetadata(nextProjectMetadata);
+    configManager.updateAppConfig(appConfigPatch);
+    appConfig = configManager.getAppConfig();
+    saveAppConfig();
+    if (hasProjectChange) {
+      markAsDirty();
+    }
   }
+
+  loadAppConfig();
 
   // --- ダーティ状態管理 ---
   let dirtyState = $state<DirtyState>(createDirtyState());
@@ -1501,7 +1570,7 @@
           ? linkedVertexIds
           : [dragState.vertexId]
       );
-      const snapDist = screenToWorldSnapDistance(50, viewWidthPx, zoom);
+      const snapDist = screenToWorldSnapDistance(appConfig.snapDistancePx, viewWidthPx, zoom);
       const candidates = findSnapCandidates(
         geo.lon, geo.lat, currentVertices,
         excludedVertexIds,
@@ -1772,6 +1841,8 @@
           gridOpacity={projectSettings.gridOpacity}
           zoomMin={projectSettings.zoomMin}
           zoomMax={projectSettings.zoomMax}
+          targetFps={appConfig.renderFps}
+          vertexMarkerDisplayLimit={appConfig.alwaysVisibleVertexLimit}
           labelAreaThreshold={projectSettings.labelAreaThreshold}
           {currentTime}
           {toolMode}
@@ -1882,6 +1953,7 @@
   isOpen={settingsDialogOpen}
   metadata={projectMetadata}
   settings={projectSettings}
+  {appConfig}
   {layers}
   {lockedLayerIds}
   onSave={onSettingsSave}

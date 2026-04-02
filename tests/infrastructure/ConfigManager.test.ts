@@ -3,6 +3,18 @@ import { ConfigManager } from '@infrastructure/ConfigManager';
 import { DEFAULT_SETTINGS, DEFAULT_METADATA } from '@domain/entities/World';
 
 describe('ConfigManager', () => {
+  function createStorage(initial: Record<string, string> = {}) {
+    const data = new Map(Object.entries(initial));
+    return {
+      getItem(key: string): string | null {
+        return data.get(key) ?? null;
+      },
+      setItem(key: string, value: string): void {
+        data.set(key, value);
+      },
+    };
+  }
+
   describe('初期化', () => {
     it('デフォルト設定で初期化される', () => {
       const cm = new ConfigManager();
@@ -55,12 +67,31 @@ describe('ConfigManager', () => {
       const config = cm.getAppConfig();
       expect(config.recentFiles).toHaveLength(0);
       expect(config.autoSaveEnabled).toBe(true);
+      expect(config.snapDistancePx).toBe(50);
+      expect(config.renderFps).toBe(60);
+      expect(config.alwaysVisibleVertexLimit).toBe(1000);
     });
 
     it('アプリ設定を更新できる', () => {
       const cm = new ConfigManager();
-      cm.updateAppConfig({ autoSaveEnabled: false });
+      cm.updateAppConfig({ autoSaveEnabled: false, snapDistancePx: 24, renderFps: 30 });
       expect(cm.getAppConfig().autoSaveEnabled).toBe(false);
+      expect(cm.getAppConfig().snapDistancePx).toBe(24);
+      expect(cm.getAppConfig().renderFps).toBe(30);
+    });
+
+    it('アプリ設定値を要件範囲に正規化する', () => {
+      const cm = new ConfigManager();
+      cm.updateAppConfig({
+        snapDistancePx: 0,
+        renderFps: 999,
+        alwaysVisibleVertexLimit: -5,
+      });
+
+      const config = cm.getAppConfig();
+      expect(config.snapDistancePx).toBe(1);
+      expect(config.renderFps).toBe(60);
+      expect(config.alwaysVisibleVertexLimit).toBe(1);
     });
 
     it('最近使ったファイルを追加できる', () => {
@@ -90,6 +121,37 @@ describe('ConfigManager', () => {
         cm.addRecentFile(`/path/file${i}.json`);
       }
       expect(cm.getAppConfig().recentFiles).toHaveLength(10);
+    });
+
+    it('ローカル設定領域へ保存して復元できる', () => {
+      const storage = createStorage();
+      const cm = new ConfigManager();
+      cm.updateAppConfig({
+        snapDistancePx: 18,
+        renderFps: 24,
+        alwaysVisibleVertexLimit: 321,
+      });
+      cm.saveAppConfig(storage);
+
+      const restored = new ConfigManager();
+      restored.loadAppConfig(storage);
+
+      expect(restored.getAppConfig().snapDistancePx).toBe(18);
+      expect(restored.getAppConfig().renderFps).toBe(24);
+      expect(restored.getAppConfig().alwaysVisibleVertexLimit).toBe(321);
+    });
+
+    it('壊れた保存データを読んでも既定値へフォールバックする', () => {
+      const storage = createStorage({
+        'time-map-app:app-config': '{invalid json',
+      });
+      const cm = new ConfigManager();
+      cm.loadAppConfig(storage);
+
+      const config = cm.getAppConfig();
+      expect(config.snapDistancePx).toBe(50);
+      expect(config.renderFps).toBe(60);
+      expect(config.alwaysVisibleVertexLimit).toBe(1000);
     });
   });
 });

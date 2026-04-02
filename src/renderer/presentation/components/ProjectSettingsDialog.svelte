@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { WorldSettings, WorldMetadata } from '@domain/entities/World';
   import { Layer } from '@domain/entities/Layer';
+  import type { AppConfig } from '@infrastructure/ConfigManager';
   import {
     DEFAULT_PALETTE_NAME,
     getAvailablePaletteNames,
@@ -10,6 +11,7 @@
     isOpen = false,
     metadata = undefined as WorldMetadata | undefined,
     settings = undefined as WorldSettings | undefined,
+    appConfig = undefined as AppConfig | undefined,
     layers = [] as readonly Layer[],
     lockedLayerIds = new Set<string>() as ReadonlySet<string>,
     onSave,
@@ -18,12 +20,14 @@
     isOpen?: boolean;
     metadata?: WorldMetadata;
     settings?: WorldSettings;
+    appConfig?: AppConfig;
     layers?: readonly Layer[];
     lockedLayerIds?: ReadonlySet<string>;
     onSave?: (
       metadata: Partial<WorldMetadata>,
       settings: Partial<WorldSettings>,
-      layers: readonly Layer[]
+      layers: readonly Layer[],
+      appConfig: Partial<AppConfig>
     ) => void;
     onClose?: () => void;
   } = $props();
@@ -46,12 +50,15 @@
   let labelAreaThreshold = $state(0.0005);
   let defaultAutoColor = $state(true);
   let defaultPalette = $state(DEFAULT_PALETTE_NAME);
+  let snapDistancePx = $state(50);
+  let renderFps = $state(60);
+  let alwaysVisibleVertexLimit = $state(1000);
   let draftLayers = $state<readonly Layer[]>([]);
   let newLayerName = $state('');
 
   /** ダイアログが開いたらフォームを初期化 */
   $effect(() => {
-    if (isOpen && metadata && settings) {
+    if (isOpen && metadata && settings && appConfig) {
       worldName = metadata.worldName;
       worldDescription = metadata.worldDescription;
       sliderMin = metadata.sliderMin;
@@ -67,6 +74,9 @@
       labelAreaThreshold = settings.labelAreaThreshold;
       defaultAutoColor = settings.defaultAutoColor;
       defaultPalette = settings.defaultPalette ?? DEFAULT_PALETTE_NAME;
+      snapDistancePx = appConfig.snapDistancePx;
+      renderFps = appConfig.renderFps;
+      alwaysVisibleVertexLimit = appConfig.alwaysVisibleVertexLimit;
       draftLayers = [...layers];
       newLayerName = '';
     }
@@ -129,7 +139,12 @@
         defaultAutoColor,
         defaultPalette,
       },
-      draftLayers
+      draftLayers,
+      {
+        snapDistancePx,
+        renderFps,
+        alwaysVisibleVertexLimit,
+      }
     );
     onClose?.();
   }
@@ -222,6 +237,24 @@
             <label class="field-label" for="ps-max">最大年</label>
             <input class="field-input short" id="ps-max" type="number" bind:value={sliderMax} />
           </div>
+        </div>
+
+        <div class="section">アプリ設定</div>
+
+        <div class="field-row">
+          <div class="field">
+            <label class="field-label" for="ps-app-snap">共有頂点スナップ距離 (px)</label>
+            <input class="field-input short" id="ps-app-snap" type="number" min="1" step="1" bind:value={snapDistancePx} />
+          </div>
+          <div class="field">
+            <label class="field-label" for="ps-app-fps">描画更新頻度 (FPS)</label>
+            <input class="field-input short" id="ps-app-fps" type="number" min="1" max="60" step="1" bind:value={renderFps} />
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="ps-app-vertex-limit">全頂点マーカー表示上限</label>
+          <input class="field-input short" id="ps-app-vertex-limit" type="number" min="1" step="1" bind:value={alwaysVisibleVertexLimit} />
         </div>
 
         <div class="section">惑星パラメータ</div>

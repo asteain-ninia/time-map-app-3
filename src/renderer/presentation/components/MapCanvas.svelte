@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { ViewportManager } from '@infrastructure/ViewportManager';
   import { eventBus } from '@application/EventBus';
   import { Coordinate } from '@domain/value-objects/Coordinate';
@@ -30,6 +31,8 @@
     gridOpacity = 0.3,
     zoomMin = 1,
     zoomMax = 50,
+    targetFps = 60,
+    vertexMarkerDisplayLimit = 1000,
     labelAreaThreshold = 0.0005,
     currentTime = undefined as TimePoint | undefined,
     toolMode = 'view' as ToolMode,
@@ -90,6 +93,8 @@
     gridOpacity?: number;
     zoomMin?: number;
     zoomMax?: number;
+    targetFps?: number;
+    vertexMarkerDisplayLimit?: number;
     labelAreaThreshold?: number;
     currentTime?: TimePoint;
     toolMode?: ToolMode;
@@ -218,6 +223,40 @@
     return entries;
   });
 
+  function getAnchorVertexCount(anchor: FeatureAnchor): number {
+    switch (anchor.shape.type) {
+      case 'Point':
+        return 1;
+      case 'LineString':
+        return anchor.shape.vertexIds.length;
+      case 'Polygon':
+        return anchor.shape.rings.reduce((sum, ring) => sum + ring.vertexIds.length, 0);
+    }
+  }
+
+  function normalizeRenderFps(fps: number): number {
+    if (!Number.isFinite(fps)) {
+      return 60;
+    }
+    return Math.max(1, Math.min(60, Math.round(fps)));
+  }
+
+  function normalizeVertexMarkerDisplayLimit(limit: number): number {
+    if (!Number.isFinite(limit)) {
+      return 1000;
+    }
+    return Math.max(1, Math.round(limit));
+  }
+
+  let totalVertexHandleCount = $derived(
+    vertexHandleEntries().reduce((sum, entry) => sum + getAnchorVertexCount(entry.anchor), 0)
+  );
+
+  let suppressPassiveVertexHandles = $derived(
+    !selectedFeatureId &&
+      totalVertexHandleCount > normalizeVertexMarkerDisplayLimit(vertexMarkerDisplayLimit)
+  );
+
   const viewport = new ViewportManager();
 
   let containerEl = $state<HTMLDivElement | null>(null);
@@ -228,6 +267,9 @@
   let lastPanY = $state(0);
   let cursorGeo = $state<{ lon: number; lat: number } | null>(null);
   let wrapOffsets = $state<number[]>([0]);
+  let pendingPointerMove: { clientX: number; clientY: number } | null = null;
+  let pointerMoveFrameId: number | null = null;
+  let lastPointerMoveAt = 0;
 
   /** viewBoxとwrapOffsetsを一括更新 */
   function syncViewport(): void {
@@ -260,6 +302,12 @@
     const limits = normalizeZoomLimits(zoomMin, zoomMax);
     viewport.setZoomLimits(limits.min, limits.max);
     syncViewport();
+  });
+
+  onDestroy(() => {
+    if (pointerMoveFrameId !== null) {
+      cancelAnimationFrame(pointerMoveFrameId);
+    }
   });
 
   /** コンテナサイズの変更を監視 */
@@ -342,29 +390,70 @@
     }
   }
 
-  function onMouseMove(e: MouseEvent): void {
+  function processPointerMove(clientX: number, clientY: number): void {
     const rect = containerEl?.getBoundingClientRect();
     if (!rect) return;
 
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
     cursorGeo = viewport.screenToGeo(x, y);
     if (cursorGeo) {
       eventBus.emit('cursor:moved', { lon: cursorGeo.lon, lat: cursorGeo.lat });
-      onCursorGeoUpdate?.(cursorGeo, e.clientX, e.clientY, zoomLevel, rect.width);
+      onCursorGeoUpdate?.(cursorGeo, clientX, clientY, zoomLevel, rect.width);
     }
 
     if (isPanning) {
-      const dx = e.clientX - lastPanX;
-      const dy = e.clientY - lastPanY;
+      const dx = clientX - lastPanX;
+      const dy = clientY - lastPanY;
       viewport.pan(dx, dy);
       syncViewport();
-      lastPanX = e.clientX;
-      lastPanY = e.clientY;
+      lastPanX = clientX;
+      lastPanY = clientY;
     }
   }
 
+  function flushPendingPointerMove(force = false): void {
+    if (!pendingPointerMove) {
+      return;
+    }
+
+    const frameIntervalMs = 1000 / normalizeRenderFps(targetFps);
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (!force && now - lastPointerMoveAt < frameIntervalMs) {
+      return;
+    }
+
+    const next = pendingPointerMove;
+    pendingPointerMove = null;
+    lastPointerMoveAt = now;
+    processPointerMove(next.clientX, next.clientY);
+  }
+
+  function schedulePointerMoveFlush(): void {
+    if (pointerMoveFrameId !== null) {
+      return;
+    }
+
+    pointerMoveFrameId = requestAnimationFrame(() => {
+      pointerMoveFrameId = null;
+      flushPendingPointerMove();
+      if (pendingPointerMove) {
+        schedulePointerMoveFlush();
+      }
+    });
+  }
+
+  function onMouseMove(e: MouseEvent): void {
+    pendingPointerMove = { clientX: e.clientX, clientY: e.clientY };
+    if (normalizeRenderFps(targetFps) >= 60) {
+      flushPendingPointerMove(true);
+      return;
+    }
+    schedulePointerMoveFlush();
+  }
+
   function onMouseUp(_e: MouseEvent): void {
+    flushPendingPointerMove(true);
     onDragEnd?.();
     if (isPanning) {
       isPanning = false;
@@ -373,6 +462,7 @@
   }
 
   function onMouseLeave(_e: MouseEvent): void {
+    flushPendingPointerMove(true);
     if (isPanning) {
       isPanning = false;
       onPanEnd?.();
@@ -466,7 +556,8 @@
               {selectedVertexIds}
               {sharedGroups}
               {snapIndicators}
-              showEdgeHandles={entry.showEdgeHandles}
+              showEdgeHandles={!suppressPassiveVertexHandles && entry.showEdgeHandles}
+              visibleVertexIds={suppressPassiveVertexHandles ? selectedVertexIds : undefined}
               {onVertexMouseDown}
               {onEdgeHandleMouseDown}
             />
