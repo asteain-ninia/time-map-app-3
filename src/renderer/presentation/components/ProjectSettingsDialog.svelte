@@ -1,19 +1,34 @@
 <script lang="ts">
   import type { WorldSettings, WorldMetadata } from '@domain/entities/World';
+  import { Layer } from '@domain/entities/Layer';
+  import {
+    DEFAULT_PALETTE_NAME,
+    getAvailablePaletteNames,
+  } from '@infrastructure/StyleResolver';
 
   let {
     isOpen = false,
     metadata = undefined as WorldMetadata | undefined,
     settings = undefined as WorldSettings | undefined,
+    layers = [] as readonly Layer[],
+    lockedLayerIds = new Set<string>() as ReadonlySet<string>,
     onSave,
     onClose,
   }: {
     isOpen?: boolean;
     metadata?: WorldMetadata;
     settings?: WorldSettings;
-    onSave?: (metadata: Partial<WorldMetadata>, settings: Partial<WorldSettings>) => void;
+    layers?: readonly Layer[];
+    lockedLayerIds?: ReadonlySet<string>;
+    onSave?: (
+      metadata: Partial<WorldMetadata>,
+      settings: Partial<WorldSettings>,
+      layers: readonly Layer[]
+    ) => void;
     onClose?: () => void;
   } = $props();
+
+  const availablePalettes = getAvailablePaletteNames();
 
   // 編集用ローカル状態
   let worldName = $state('');
@@ -30,6 +45,9 @@
   let autoSaveInterval = $state(300);
   let labelAreaThreshold = $state(0.0005);
   let defaultAutoColor = $state(true);
+  let defaultPalette = $state(DEFAULT_PALETTE_NAME);
+  let draftLayers = $state<readonly Layer[]>([]);
+  let newLayerName = $state('');
 
   /** ダイアログが開いたらフォームを初期化 */
   $effect(() => {
@@ -48,8 +66,52 @@
       autoSaveInterval = settings.autoSaveInterval;
       labelAreaThreshold = settings.labelAreaThreshold;
       defaultAutoColor = settings.defaultAutoColor;
+      defaultPalette = settings.defaultPalette ?? DEFAULT_PALETTE_NAME;
+      draftLayers = [...layers];
+      newLayerName = '';
     }
   });
+
+  function createDraftLayerId(): string {
+    const existingIds = new Set(draftLayers.map((layer) => layer.id));
+    let index = draftLayers.length + 1;
+    let candidate = `layer-${index}`;
+    while (existingIds.has(candidate)) {
+      index += 1;
+      candidate = `layer-${index}`;
+    }
+    return candidate;
+  }
+
+  function addDraftLayer(): void {
+    const trimmedName = newLayerName.trim();
+    if (!trimmedName) return;
+
+    draftLayers = [
+      ...draftLayers,
+      new Layer(createDraftLayerId(), trimmedName, draftLayers.length),
+    ];
+    newLayerName = '';
+  }
+
+  function updateDraftLayerName(layerId: string, name: string): void {
+    draftLayers = draftLayers.map((layer) =>
+      layer.id === layerId ? layer.withName(name) : layer
+    );
+  }
+
+  function canDeleteLayer(layerId: string): boolean {
+    return !lockedLayerIds.has(layerId);
+  }
+
+  function deleteDraftLayer(layerId: string): void {
+    if (!canDeleteLayer(layerId)) return;
+    if (!confirm('このレイヤーを削除しますか？')) return;
+
+    draftLayers = draftLayers
+      .filter((layer) => layer.id !== layerId)
+      .map((layer, index) => layer.withOrder(index));
+  }
 
   function save(): void {
     onSave?.(
@@ -65,7 +127,9 @@
         autoSaveInterval,
         labelAreaThreshold,
         defaultAutoColor,
-      }
+        defaultPalette,
+      },
+      draftLayers
     );
     onClose?.();
   }
@@ -89,6 +153,62 @@
         <div class="field">
           <label class="field-label" for="ps-desc">説明</label>
           <textarea class="field-textarea" id="ps-desc" rows="2" bind:value={worldDescription}></textarea>
+        </div>
+
+        <div class="section">レイヤー管理</div>
+
+        <div class="field">
+          <label class="field-label" for="ps-new-layer-name">新規レイヤー</label>
+          <div class="layer-create-row">
+            <input
+              class="field-input"
+              id="ps-new-layer-name"
+              type="text"
+              placeholder="レイヤー名"
+              bind:value={newLayerName}
+              onkeydown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  addDraftLayer();
+                }
+              }}
+            />
+            <button class="btn secondary" type="button" onclick={addDraftLayer}>レイヤー追加</button>
+          </div>
+        </div>
+
+        <div class="layer-list">
+          {#if draftLayers.length === 0}
+            <div class="layer-empty">レイヤーはまだありません</div>
+          {:else}
+            {#each draftLayers as layer (layer.id)}
+              <div class="layer-row">
+                <span class="layer-order">#{layer.order + 1}</span>
+                <input
+                  class="field-input"
+                  type="text"
+                  value={layer.name}
+                  oninput={(event) =>
+                    updateDraftLayerName(layer.id, (event.currentTarget as HTMLInputElement).value)}
+                />
+                <button
+                  class="btn danger"
+                  type="button"
+                  disabled={!canDeleteLayer(layer.id)}
+                  title={canDeleteLayer(layer.id)
+                    ? '空レイヤーを削除'
+                    : 'このレイヤーには地物が所属しているため削除できません'}
+                  onclick={() => deleteDraftLayer(layer.id)}
+                >
+                  削除
+                </button>
+              </div>
+            {/each}
+          {/if}
+        </div>
+
+        <div class="help-text">
+          地物が存在するレイヤーは削除できません。レイヤー順序は固定です。
         </div>
 
         <div class="section">タイムライン</div>
@@ -166,6 +286,15 @@
           </label>
         </div>
 
+        <div class="field">
+          <label class="field-label" for="ps-default-palette">既定パレット</label>
+          <select class="field-select" id="ps-default-palette" bind:value={defaultPalette}>
+            {#each availablePalettes as paletteName}
+              <option value={paletteName}>{paletteName}</option>
+            {/each}
+          </select>
+        </div>
+
         <div class="section">自動保存</div>
 
         <div class="field">
@@ -175,8 +304,8 @@
       </div>
 
       <div class="dialog-actions">
-        <button class="btn confirm" onclick={save}>保存</button>
-        <button class="btn cancel" onclick={() => onClose?.()}>キャンセル</button>
+        <button class="btn confirm" type="button" onclick={save}>保存</button>
+        <button class="btn cancel" type="button" onclick={() => onClose?.()}>キャンセル</button>
       </div>
     </div>
   </div>
@@ -185,9 +314,14 @@
 <style>
   .modal-overlay {
     position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     background: rgba(0, 0, 0, 0.6);
-    display: flex; align-items: center; justify-content: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     z-index: 1000;
   }
 
@@ -196,8 +330,8 @@
     border: 1px solid #555;
     border-radius: 8px;
     padding: 20px;
-    min-width: 400px;
-    max-width: 520px;
+    min-width: 420px;
+    max-width: 640px;
     max-height: 80vh;
     display: flex;
     flex-direction: column;
@@ -264,7 +398,9 @@
     width: 100%;
   }
 
-  .field-input:focus {
+  .field-input:focus,
+  .field-select:focus,
+  .field-textarea:focus {
     border-color: #007acc;
     outline: none;
   }
@@ -279,11 +415,6 @@
     font-size: 12px;
     font-family: inherit;
     resize: vertical;
-  }
-
-  .field-textarea:focus {
-    border-color: #007acc;
-    outline: none;
   }
 
   .field-select {
@@ -315,6 +446,46 @@
     cursor: pointer;
   }
 
+  .layer-create-row,
+  .layer-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .layer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .layer-row {
+    padding: 6px 8px;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    background: #252526;
+  }
+
+  .layer-order {
+    width: 28px;
+    flex-shrink: 0;
+    color: #888;
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .layer-empty,
+  .help-text {
+    color: #888;
+    font-size: 11px;
+  }
+
+  .help-text {
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
   .dialog-actions {
     display: flex;
     gap: 8px;
@@ -332,6 +503,11 @@
     cursor: pointer;
   }
 
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
   .btn.confirm {
     background: #094771;
     color: #fff;
@@ -342,12 +518,24 @@
     background: #0b5a8e;
   }
 
-  .btn.cancel {
+  .btn.cancel,
+  .btn.secondary {
     background: #3c3c3c;
     color: #ccc;
   }
 
-  .btn.cancel:hover {
+  .btn.cancel:hover,
+  .btn.secondary:hover {
     background: #4c4c4c;
+  }
+
+  .btn.danger {
+    background: #5b2d2d;
+    color: #ffdede;
+    border-color: #7d3b3b;
+  }
+
+  .btn.danger:hover:not(:disabled) {
+    background: #713737;
   }
 </style>

@@ -102,6 +102,30 @@ describe('AddFeatureCommand', () => {
       expect(addFeature.getVertices().size).toBe(3);
     });
 
+    it('面スタイル指定を地物へ引き継ぐ', () => {
+      const cmd = new AddFeatureCommand(addFeature, {
+        type: 'polygon',
+        coords,
+        layerId,
+        time,
+        style: {
+          fillColor: '#abcdef',
+          selectedFillColor: '#fedcba',
+          autoColor: true,
+          palette: 'パステル',
+        },
+      });
+
+      undoRedo.execute(cmd);
+
+      expect(addFeature.getFeatures()[0].anchors[0].property.style).toEqual({
+        fillColor: '#abcdef',
+        selectedFillColor: '#fedcba',
+        autoColor: true,
+        palette: 'パステル',
+      });
+    });
+
     it('undoで面と全頂点が除去される', () => {
       const cmd = new AddFeatureCommand(addFeature, {
         type: 'polygon', coords, layerId, time,

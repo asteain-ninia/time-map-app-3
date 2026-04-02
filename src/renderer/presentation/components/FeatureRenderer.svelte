@@ -2,6 +2,7 @@
   import type { Feature } from '@domain/entities/Feature';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { Layer } from '@domain/entities/Layer';
+  import type { WorldSettings } from '@domain/entities/World';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
   import LabelRenderer from '@presentation/components/LabelRenderer.svelte';
@@ -10,17 +11,19 @@
     geoToSvgY,
     buildPolygonPath,
     buildLinePoints,
-    DEFAULT_POINT_COLOR,
-    DEFAULT_LINE_COLOR,
-    DEFAULT_POLYGON_FILL,
-    DEFAULT_POLYGON_STROKE,
   } from '@infrastructure/rendering/featureRenderingUtils';
+  import {
+    resolveLineStyle,
+    resolvePointStyle,
+    resolveStyle,
+  } from '@infrastructure/StyleResolver';
 
   let {
     features,
     vertices,
     layers,
     currentTime,
+    settings = undefined as WorldSettings | undefined,
     zoom,
     labelAreaThreshold = 0.0005,
     selectedFeatureId = null,
@@ -30,6 +33,7 @@
     vertices: ReadonlyMap<string, Vertex>;
     layers: readonly Layer[];
     currentTime: TimePoint;
+    settings?: WorldSettings;
     zoom: number;
     labelAreaThreshold?: number;
     selectedFeatureId?: string | null;
@@ -48,12 +52,12 @@
   /** 指定レイヤーに所属する、現在時刻でアクティブな地物を取得 */
   function getLayerFeatures(
     layerId: string
-  ): Array<{ feature: Feature; anchor: FeatureAnchor }> {
-    const result: Array<{ feature: Feature; anchor: FeatureAnchor }> = [];
+  ): Array<{ feature: Feature; anchor: FeatureAnchor; featureIndex: number }> {
+    const result: Array<{ feature: Feature; anchor: FeatureAnchor; featureIndex: number }> = [];
     for (const feature of features) {
       const anchor = feature.getActiveAnchor(currentTime);
       if (anchor && anchor.placement.layerId === layerId) {
-        result.push({ feature, anchor });
+        result.push({ feature, anchor, featureIndex: result.length });
       }
     }
     return result;
@@ -62,10 +66,11 @@
 
 {#each visibleLayers as layer (layer.id)}
   <g opacity={layer.opacity}>
-    {#each getLayerFeatures(layer.id) as { feature, anchor } (feature.id)}
+    {#each getLayerFeatures(layer.id) as { feature, anchor, featureIndex } (feature.id)}
       {@const isSelected = feature.id === selectedFeatureId}
       {@const isContext = feature.id === contextFeatureId && !isSelected}
       {#if anchor.shape.type === 'Point'}
+        {@const pointStyle = resolvePointStyle(featureIndex, settings)}
         {@const vertex = vertices.get(anchor.shape.vertexId)}
         {#if vertex}
           <!-- 選択ハイライト -->
@@ -98,12 +103,13 @@
             cx={geoToWrappedSvgX(vertex.x)}
             cy={geoToSvgY(vertex.y)}
             r={4 / zoom}
-            fill={anchor.property.style?.fillColor ?? DEFAULT_POINT_COLOR}
+            fill={pointStyle.fillColor}
             stroke="#ffffff"
             stroke-width={1 / zoom}
           />
         {/if}
       {:else if anchor.shape.type === 'LineString'}
+        {@const lineStyle = resolveLineStyle(featureIndex, settings)}
         {@const points = buildLinePoints(anchor.shape.vertexIds, vertices)}
         {#if points.includes(',')}
           <!-- 選択ハイライト -->
@@ -136,13 +142,14 @@
             data-feature-id={feature.id}
             {points}
             fill="none"
-            stroke={anchor.property.style?.fillColor ?? DEFAULT_LINE_COLOR}
+            stroke={lineStyle.strokeColor}
             stroke-width={2 / zoom}
             stroke-linecap="round"
             stroke-linejoin="round"
           />
         {/if}
       {:else if anchor.shape.type === 'Polygon'}
+        {@const polygonStyle = resolveStyle(anchor.property.style, featureIndex, settings)}
         {@const d = buildPolygonPath(anchor.shape, vertices)}
         {#if d}
           {#if isContext}
@@ -160,8 +167,8 @@
           <path
             data-feature-id={feature.id}
             {d}
-            fill={anchor.property.style?.fillColor ?? DEFAULT_POLYGON_FILL}
-            stroke={isSelected ? SELECTION_STROKE : (anchor.property.style?.fillColor ?? DEFAULT_POLYGON_STROKE)}
+            fill={polygonStyle.fillColor}
+            stroke={isSelected ? SELECTION_STROKE : polygonStyle.fillColor}
             stroke-width={isSelected ? 2 / zoom : 1 / zoom}
             fill-rule="evenodd"
           />
@@ -170,7 +177,7 @@
             <path
               pointer-events="none"
               {d}
-              fill={anchor.property.style?.selectedFillColor ?? SELECTION_FILL}
+              fill={polygonStyle.selectedFillColor ?? SELECTION_FILL}
               stroke="none"
               fill-rule="evenodd"
               opacity="0.4"

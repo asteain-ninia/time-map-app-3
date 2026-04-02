@@ -192,6 +192,29 @@ describe('AddFeatureUseCase', () => {
       expect(listener).toHaveBeenCalledTimes(1);
       unsub();
     });
+
+    it('面スタイルの初期値を指定できる', () => {
+      useCase = new AddFeatureUseCase();
+      const feature = useCase.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+        'l1',
+        time,
+        undefined,
+        {
+          fillColor: '#abcdef',
+          selectedFillColor: '#fedcba',
+          autoColor: true,
+          palette: 'パステル',
+        }
+      );
+
+      expect(feature.anchors[0].property.style).toEqual({
+        fillColor: '#abcdef',
+        selectedFillColor: '#fedcba',
+        autoColor: true,
+        palette: 'パステル',
+      });
+    });
   });
 
   describe('getFeatures / getVertices', () => {

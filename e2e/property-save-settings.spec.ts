@@ -33,6 +33,28 @@ async function addAndSelectPoint(page: import('@playwright/test').Page) {
   await page.waitForTimeout(300);
 }
 
+/** ポリゴン地物を追加して選択するヘルパー */
+async function addAndSelectPolygon(page: import('@playwright/test').Page) {
+  await page.keyboard.press('a');
+  const polygonTool = page.locator('.tool-button.sub-tool[title="面を追加"]');
+  await polygonTool.click();
+  const map = page.locator('.map-svg');
+  const box = await map.boundingBox();
+  if (!box) throw new Error('map not found');
+  await map.click({ position: { x: box.width * 0.35, y: box.height * 0.4 } });
+  await map.click({ position: { x: box.width * 0.5, y: box.height * 0.35 } });
+  await map.click({ position: { x: box.width * 0.45, y: box.height * 0.55 } });
+  await page.locator('.drawing-btn.confirm').click();
+  await page.waitForTimeout(500);
+  await page.keyboard.press('v');
+
+  const featureTab = page.locator('.tab', { hasText: '地物一覧' });
+  await featureTab.click();
+  await page.waitForTimeout(200);
+  await page.locator('.feature-item').first().click();
+  await page.waitForTimeout(300);
+}
+
 // ============================================================
 // §2.4.1 プロパティパネル
 // ============================================================
@@ -143,6 +165,27 @@ test('何も選択していない時に「選択されていません」が表�
     const text = await emptyMsg.textContent();
     expect(text).toContain('選択されていません');
   }
+});
+
+test('プロジェクト設定の既定パレットが新規面のプロパティ初期値に反映される', async ({ page }) => {
+  const toolsTrigger = page.locator('.menu-trigger', { hasText: 'ツール' });
+  await toolsTrigger.click();
+  await page.waitForTimeout(200);
+  await page.locator('.menu-action', { hasText: 'プロジェクト設定' }).click();
+  await page.waitForTimeout(300);
+
+  await page.locator('#ps-default-palette').selectOption('パステル');
+  await page.locator('button', { hasText: '保存' }).click();
+  await page.waitForTimeout(300);
+
+  await addAndSelectPolygon(page);
+
+  const propTab = page.locator('.tab', { hasText: 'プロパティ' });
+  await propTab.click();
+  await page.waitForTimeout(200);
+
+  await expect(page.locator('#prop-auto-color')).toBeChecked();
+  await expect(page.locator('#prop-palette')).toHaveValue('パステル');
 });
 
 // ============================================================

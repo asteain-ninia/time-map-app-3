@@ -2,6 +2,10 @@
   import type { Feature } from '@domain/entities/Feature';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
+  import {
+    DEFAULT_PALETTE_NAME,
+    getAvailablePaletteNames,
+  } from '@infrastructure/StyleResolver';
 
   let {
     feature = null as Feature | null,
@@ -32,6 +36,8 @@
   let editFillColor = $state('#4a90d9');
   let editSelectedFillColor = $state('#00ccff');
   let editAutoColor = $state(false);
+  let editPalette = $state(DEFAULT_PALETTE_NAME);
+  const availablePalettes = getAvailablePaletteNames();
 
   /** featureまたはanchor変更時にフォームを同期 */
   $effect(() => {
@@ -44,6 +50,7 @@
       editFillColor = anchor.property.style?.fillColor ?? '#4a90d9';
       editSelectedFillColor = anchor.property.style?.selectedFillColor ?? '#00ccff';
       editAutoColor = anchor.property.style?.autoColor ?? false;
+      editPalette = anchor.property.style?.palette ?? DEFAULT_PALETTE_NAME;
     }
   });
 
@@ -55,7 +62,7 @@
           fillColor: editFillColor,
           selectedFillColor: editSelectedFillColor,
           autoColor: editAutoColor,
-          palette: anchor.property.style?.palette ?? 'default',
+          palette: editPalette,
         }
       : anchor.property.style;
     const newProperty: AnchorProperty = {
@@ -171,6 +178,21 @@
       <div class="section-header">面スタイル</div>
 
       <div class="field">
+        <label class="field-label" for="prop-palette">パレット</label>
+        <select
+          class="field-input"
+          id="prop-palette"
+          bind:value={editPalette}
+          onchange={applyChanges}
+          disabled={!editAutoColor}
+        >
+          {#each availablePalettes as paletteName}
+            <option value={paletteName}>{paletteName}</option>
+          {/each}
+        </select>
+      </div>
+
+      <div class="field">
         <label class="field-label" for="prop-fill">塗り色</label>
         <div class="color-field">
           <input
@@ -194,6 +216,7 @@
             type="color"
             bind:value={editSelectedFillColor}
             onchange={applyChanges}
+            disabled={editAutoColor}
           />
           <span class="color-value">{editSelectedFillColor}</span>
         </div>
@@ -208,6 +231,14 @@
           bind:checked={editAutoColor}
           onchange={applyChanges}
         />
+      </div>
+
+      <div class="field-hint">
+        {#if editAutoColor}
+          隣接関係が変わったときに、現在のパレットで自動更新します。
+        {:else}
+          現在の色を維持し、システムは自動更新しません。
+        {/if}
       </div>
     {/if}
 
@@ -351,6 +382,13 @@
 
   .field-checkbox {
     accent-color: #007acc;
+  }
+
+  .field-hint {
+    margin: 4px 0 0 68px;
+    color: #888;
+    font-size: 11px;
+    line-height: 1.5;
   }
 
   .anchor-list {

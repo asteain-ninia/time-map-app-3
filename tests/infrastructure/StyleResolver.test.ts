@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  createDefaultPolygonStyle,
+  getAvailablePaletteNames,
   getPalette,
   getAutoColor,
   resolveStyle,
@@ -18,8 +20,21 @@ describe('StyleResolver', () => {
       expect(palette[0]).toMatch(/^#/);
     });
 
+    it('追加された組み込みパレットを返す', () => {
+      expect(getPalette('パステル').length).toBeGreaterThan(0);
+      expect(getPalette('ハイコントラスト').length).toBeGreaterThan(0);
+    });
+
     it('未知のパレットはクラシックを返す', () => {
       expect(getPalette('unknown')).toEqual(getPalette('クラシック'));
+    });
+  });
+
+  describe('getAvailablePaletteNames', () => {
+    it('選択可能なパレット名を返す', () => {
+      expect(getAvailablePaletteNames()).toEqual(
+        expect.arrayContaining(['クラシック', 'パステル', 'ハイコントラスト'])
+      );
     });
   });
 
@@ -100,6 +115,19 @@ describe('StyleResolver', () => {
     it('レイヤー透明度が反映される', () => {
       const style = resolveLineStyle(0, undefined, 0.5);
       expect(style.opacity).toBe(0.5);
+    });
+  });
+
+  describe('createDefaultPolygonStyle', () => {
+    it('既定パレットと自動配色設定から新規面の初期スタイルを作る', () => {
+      const style = createDefaultPolygonStyle(2, {
+        defaultAutoColor: true,
+        defaultPalette: 'パステル',
+      });
+      expect(style.autoColor).toBe(true);
+      expect(style.palette).toBe('パステル');
+      expect(style.fillColor).toBe(getAutoColor(2, 'パステル'));
+      expect(style.selectedFillColor).toMatch(/^#[0-9a-f]{6}$/);
     });
   });
 

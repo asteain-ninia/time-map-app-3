@@ -37,6 +37,17 @@ describe('ManageLayersUseCase', () => {
       useCase.addLayer('l2', '地方');
       expect(useCase.getLayers().length).toBe(2);
     });
+
+    it('layers:changed イベントを発行する', () => {
+      useCase = new ManageLayersUseCase();
+      const listener = vi.fn();
+      const unsub = eventBus.on('layers:changed', listener);
+
+      useCase.addLayer('l1', '国家');
+
+      expect(listener).toHaveBeenCalledWith({});
+      unsub();
+    });
   });
 
   describe('getLayerById', () => {
@@ -127,6 +138,18 @@ describe('ManageLayersUseCase', () => {
       useCase = new ManageLayersUseCase();
       useCase.rename('xxx', '存在しない');
       expect(useCase.getLayers().length).toBe(0);
+    });
+
+    it('名前変更でも layers:changed を発行する', () => {
+      useCase = new ManageLayersUseCase();
+      useCase.addLayer('l1', '国家');
+      const listener = vi.fn();
+      const unsub = eventBus.on('layers:changed', listener);
+
+      useCase.rename('l1', '帝国');
+
+      expect(listener).toHaveBeenCalledWith({});
+      unsub();
     });
   });
 

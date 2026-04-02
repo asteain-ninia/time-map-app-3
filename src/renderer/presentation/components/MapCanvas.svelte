@@ -10,6 +10,7 @@
   import type { Feature } from '@domain/entities/Feature';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { Layer } from '@domain/entities/Layer';
+  import type { WorldSettings } from '@domain/entities/World';
   import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
@@ -23,6 +24,7 @@
     features = [] as readonly Feature[],
     vertices = new Map<string, Vertex>() as ReadonlyMap<string, Vertex>,
     layers = [] as readonly Layer[],
+    settings = undefined as WorldSettings | undefined,
     gridInterval = 10,
     gridColor = '#888888',
     gridOpacity = 0.3,
@@ -82,6 +84,7 @@
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
     layers?: readonly Layer[];
+    settings?: WorldSettings;
     gridInterval?: number;
     gridColor?: string;
     gridOpacity?: number;
@@ -436,6 +439,7 @@
             {vertices}
             {layers}
             {currentTime}
+            {settings}
             zoom={zoomLevel}
             {labelAreaThreshold}
             {selectedFeatureId}

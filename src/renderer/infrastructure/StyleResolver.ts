@@ -10,6 +10,7 @@
 
 import type { PolygonStyle } from '@domain/value-objects/FeatureAnchor';
 import type { WorldSettings } from '@domain/entities/World';
+import { generateSelectedColor } from '@domain/services/AutoColorService';
 
 /** 解決済みスタイル */
 export interface ResolvedStyle {
@@ -20,13 +21,35 @@ export interface ResolvedStyle {
   readonly selectedFillColor: string;
 }
 
-/** デフォルトパレット */
-const CLASSIC_PALETTE: readonly string[] = [
-  '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
-  '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4',
-  '#469990', '#dcbeff', '#9A6324', '#fffac8', '#800000',
-  '#aaffc3', '#808000', '#ffd8b1', '#000075', '#a9a9a9',
-];
+export const DEFAULT_PALETTE_NAME = 'クラシック';
+
+/** 組み込みパレット */
+const PALETTE_PRESETS = {
+  クラシック: [
+    '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
+    '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4',
+    '#469990', '#dcbeff', '#9a6324', '#fffac8', '#800000',
+    '#aaffc3', '#808000', '#ffd8b1', '#000075', '#a9a9a9',
+  ],
+  パステル: [
+    '#f4a7b9', '#a8d8b9', '#f7d794', '#a9c8ff',
+    '#f8b88b', '#d3b5ff', '#a7e3ef', '#f7b7e3',
+  ],
+  ハイコントラスト: [
+    '#d00000', '#0056d6', '#f0a202', '#008148',
+    '#6a00f4', '#111111',
+  ],
+} as const satisfies Record<string, readonly string[]>;
+
+export type PaletteName = keyof typeof PALETTE_PRESETS;
+
+const LEGACY_PALETTE_ALIASES: Record<string, PaletteName> = {
+  classic: 'クラシック',
+};
+
+export function getAvailablePaletteNames(): readonly PaletteName[] {
+  return Object.keys(PALETTE_PRESETS) as PaletteName[];
+}
 
 /** デフォルトスタイル */
 const DEFAULT_STYLE: ResolvedStyle = {
@@ -41,14 +64,8 @@ const DEFAULT_STYLE: ResolvedStyle = {
  * パレット名からカラー配列を取得する
  */
 export function getPalette(paletteName: string): readonly string[] {
-  // 現在はクラシックのみ。将来カスタムパレットを追加可能
-  switch (paletteName) {
-    case 'クラシック':
-    case 'classic':
-      return CLASSIC_PALETTE;
-    default:
-      return CLASSIC_PALETTE;
-  }
+  const normalizedName = LEGACY_PALETTE_ALIASES[paletteName] ?? paletteName;
+  return PALETTE_PRESETS[normalizedName as PaletteName] ?? PALETTE_PRESETS[DEFAULT_PALETTE_NAME];
 }
 
 /**
@@ -61,10 +78,24 @@ export function getPalette(paletteName: string): readonly string[] {
  */
 export function getAutoColor(
   index: number,
-  paletteName: string = 'クラシック'
+  paletteName: string = DEFAULT_PALETTE_NAME
 ): string {
   const palette = getPalette(paletteName);
   return palette[index % palette.length];
+}
+
+export function createDefaultPolygonStyle(
+  featureIndex: number,
+  settings?: Pick<WorldSettings, 'defaultAutoColor' | 'defaultPalette'>
+): PolygonStyle {
+  const palette = settings?.defaultPalette ?? DEFAULT_PALETTE_NAME;
+  const fillColor = getAutoColor(featureIndex, palette);
+  return {
+    fillColor,
+    selectedFillColor: generateSelectedColor(fillColor),
+    autoColor: settings?.defaultAutoColor ?? true,
+    palette,
+  };
 }
 
 /**
@@ -82,7 +113,7 @@ export function resolveStyle(
   layerOpacity: number = 1
 ): ResolvedStyle {
   const autoColor = settings?.defaultAutoColor ?? true;
-  const palette = settings?.defaultPalette ?? 'クラシック';
+  const palette = settings?.defaultPalette ?? DEFAULT_PALETTE_NAME;
 
   if (!style) {
     // スタイル未定義 → デフォルト + 自動配色
@@ -117,7 +148,7 @@ export function resolveLineStyle(
   layerOpacity: number = 1
 ): { strokeColor: string; strokeWidth: number; opacity: number } {
   const autoColor = settings?.defaultAutoColor ?? true;
-  const palette = settings?.defaultPalette ?? 'クラシック';
+  const palette = settings?.defaultPalette ?? DEFAULT_PALETTE_NAME;
   const color = autoColor
     ? getAutoColor(featureIndex, palette)
     : '#333333';
@@ -138,7 +169,7 @@ export function resolvePointStyle(
   layerOpacity: number = 1
 ): { fillColor: string; radius: number; opacity: number } {
   const autoColor = settings?.defaultAutoColor ?? true;
-  const palette = settings?.defaultPalette ?? 'クラシック';
+  const palette = settings?.defaultPalette ?? DEFAULT_PALETTE_NAME;
   const color = autoColor
     ? getAutoColor(featureIndex, palette)
     : '#333333';

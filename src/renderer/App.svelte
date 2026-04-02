@@ -109,6 +109,7 @@
     createTransientPolygonFeature,
     validatePolygonOrThrow,
   } from '@application/polygonValidation';
+  import { createDefaultPolygonStyle } from '@infrastructure/StyleResolver';
   import { wrapLongitudeNearReference } from '@infrastructure/rendering/featureRenderingUtils';
   import {
     createDirtyState,
@@ -136,6 +137,10 @@
     if (layers.length === 0) return;
     const layerId = layers[0].id;
     const time = navigateTime.getCurrentTime();
+    const polygonIndexInLayer = features.filter((feature) => {
+      const anchor = feature.getActiveAnchor(time);
+      return anchor?.shape.type === 'Polygon' && anchor.placement.layerId === layerId;
+    }).length;
 
     try {
       if (addToolType === 'point' && coords.length >= 1) {
@@ -143,7 +148,13 @@
       } else if (addToolType === 'line' && coords.length >= 2) {
         undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'line', coords, layerId, time }));
       } else if (addToolType === 'polygon' && coords.length >= 3) {
-        undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'polygon', coords, layerId, time }));
+        undoRedo.execute(new AddFeatureCommand(addFeature, {
+          type: 'polygon',
+          coords,
+          layerId,
+          time,
+          style: createDefaultPolygonStyle(polygonIndexInLayer, projectSettings),
+        }));
       }
       validationMessage = '';
       refreshFeatureData();
@@ -204,6 +215,13 @@
   let selectedVertexOwnerFeatureIds = $derived(
     [...collectFeatureIdsForSelectedVertices(selectedVertexIds, visibleVertexOwnerMap)]
   );
+  let lockedLayerIds = $derived(
+    new Set(
+      features.flatMap((feature) =>
+        feature.anchors.map((anchor) => anchor.placement.layerId)
+      )
+    )
+  );
 
   function openSettings(): void {
     settingsDialogOpen = true;
@@ -225,7 +243,13 @@
     };
   }
 
-  function onSettingsSave(metaPatch: Partial<WorldMetadata>, settingsPatch: Partial<WorldSettings>): void {
+  function onSettingsSave(
+    metaPatch: Partial<WorldMetadata>,
+    settingsPatch: Partial<WorldSettings>,
+    nextLayers: readonly Layer[]
+  ): void {
+    manageLayers.restore(nextLayers);
+    refreshLayerData();
     projectMetadata = { ...projectMetadata, ...metaPatch };
     projectSettings = normalizeWorldSettings({ ...projectSettings, ...settingsPatch });
     projectMetadata = { ...projectMetadata, settings: projectSettings };
@@ -662,8 +686,9 @@
     currentTime = e.time;
   });
 
-  const unsubLayerVisibility = eventBus.on('layer:visibilityChanged', () => {
+  const unsubLayersChanged = eventBus.on('layers:changed', () => {
     refreshLayerData();
+    markAsDirty();
   });
 
   const unsubWorldLoaded = eventBus.on('world:loaded', () => {
@@ -703,7 +728,7 @@
   onDestroy(() => {
     unsubFeatureAdded();
     unsubTimeChanged();
-    unsubLayerVisibility();
+    unsubLayersChanged();
     unsubWorldLoaded();
     unsubWorldSaved();
     unsubFeatureChanged();
@@ -1741,6 +1766,7 @@
           {features}
           {vertices}
           {layers}
+          settings={projectSettings}
           gridInterval={projectSettings.gridInterval}
           gridColor={projectSettings.gridColor}
           gridOpacity={projectSettings.gridOpacity}
@@ -1856,6 +1882,8 @@
   isOpen={settingsDialogOpen}
   metadata={projectMetadata}
   settings={projectSettings}
+  {layers}
+  {lockedLayerIds}
   onSave={onSettingsSave}
   onClose={() => { settingsDialogOpen = false; }}
 />

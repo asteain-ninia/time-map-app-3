@@ -33,6 +33,7 @@ export class ManageLayersUseCase {
   addLayer(id: string, name: string): Layer {
     const layer = new Layer(id, name, this.nextOrder++);
     this.layers.push(layer);
+    eventBus.emit('layers:changed', {});
     return layer;
   }
 
@@ -46,6 +47,7 @@ export class ManageLayersUseCase {
       layerId,
       visible: this.layers[idx].visible,
     });
+    eventBus.emit('layers:changed', {});
   }
 
   /** レイヤーの透明度を変更する */
@@ -54,6 +56,7 @@ export class ManageLayersUseCase {
     if (idx === -1) return;
     const clamped = Math.max(0, Math.min(1, opacity));
     this.layers[idx] = this.layers[idx].withOpacity(clamped);
+    eventBus.emit('layers:changed', {});
   }
 
   /** 保存データから状態を復元する */
@@ -64,6 +67,7 @@ export class ManageLayersUseCase {
       if (l.order >= maxOrder) maxOrder = l.order + 1;
     }
     this.nextOrder = maxOrder;
+    eventBus.emit('layers:changed', {});
   }
 
   /** レイヤー名を変更する */
@@ -71,6 +75,7 @@ export class ManageLayersUseCase {
     const idx = this.layers.findIndex(l => l.id === layerId);
     if (idx === -1) return;
     this.layers[idx] = this.layers[idx].withName(name);
+    eventBus.emit('layers:changed', {});
   }
 
   /**
@@ -93,6 +98,7 @@ export class ManageLayersUseCase {
     if (hasFeatures) return false;
 
     this.layers.splice(idx, 1);
+    eventBus.emit('layers:changed', {});
     return true;
   }
 }

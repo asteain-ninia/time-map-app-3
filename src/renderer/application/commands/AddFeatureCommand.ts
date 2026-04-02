@@ -10,6 +10,7 @@ import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
+import type { PolygonStyle } from '@domain/value-objects/FeatureAnchor';
 import type { AddFeatureUseCase } from '../AddFeatureUseCase';
 import type { UndoableCommand } from '../UndoRedoManager';
 import {
@@ -21,7 +22,7 @@ import {
 export type AddFeatureParams =
   | { type: 'point'; coord: Coordinate; layerId: string; time: TimePoint; name?: string }
   | { type: 'line'; coords: readonly Coordinate[]; layerId: string; time: TimePoint; name?: string }
-  | { type: 'polygon'; coords: readonly Coordinate[]; layerId: string; time: TimePoint; name?: string };
+  | { type: 'polygon'; coords: readonly Coordinate[]; layerId: string; time: TimePoint; name?: string; style?: PolygonStyle };
 
 export class AddFeatureCommand implements UndoableCommand {
   readonly description: string;
@@ -78,7 +79,7 @@ export class AddFeatureCommand implements UndoableCommand {
         break;
       case 'polygon':
         feature = this.featureUseCase.addPolygon(
-          this.params.coords, this.params.layerId, this.params.time, this.params.name
+          this.params.coords, this.params.layerId, this.params.time, this.params.name, this.params.style
         );
         break;
     }

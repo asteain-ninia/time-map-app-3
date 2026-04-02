@@ -20,13 +20,13 @@
     layers = manageLayers.getLayers();
   }
 
-  /** 外部からの表示切替イベントに追従 */
-  const unsubVisibility = eventBus.on('layer:visibilityChanged', () => {
+  /** 外部からのレイヤー更新イベントに追従 */
+  const unsubLayersChanged = eventBus.on('layers:changed', () => {
     layers = manageLayers.getLayers();
   });
 
   onDestroy(() => {
-    unsubVisibility();
+    unsubLayersChanged();
   });
 </script>
 

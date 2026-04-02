@@ -11,7 +11,7 @@
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
-import type { AnchorProperty, AnchorPlacement, FeatureShape } from '@domain/value-objects/FeatureAnchor';
+import type { AnchorProperty, AnchorPlacement, FeatureShape, PolygonStyle } from '@domain/value-objects/FeatureAnchor';
 import { Ring } from '@domain/value-objects/Ring';
 import { Vertex } from '@domain/entities/Vertex';
 import { Feature } from '@domain/entities/Feature';
@@ -163,7 +163,8 @@ export class AddFeatureUseCase {
     coords: readonly Coordinate[],
     layerId: string,
     currentTime: TimePoint,
-    name?: string
+    name?: string,
+    style?: PolygonStyle
   ): Feature {
     if (coords.length < 3) {
       throw new Error('面情報には3点以上の座標が必要です');
@@ -172,7 +173,7 @@ export class AddFeatureUseCase {
     const ringId = `ring-${this.nextRingNum++}`;
     const ring = new Ring(ringId, vertexIds, 'territory', null);
     const shape: FeatureShape = { type: 'Polygon', rings: [ring] };
-    return this.createFeature('Polygon', shape, layerId, currentTime, name);
+    return this.createFeature('Polygon', shape, layerId, currentTime, name, style ? { style } : undefined);
   }
 
   /**
@@ -185,9 +186,10 @@ export class AddFeatureUseCase {
     shape: FeatureShape & { type: 'Polygon' },
     layerId: string,
     currentTime: TimePoint,
-    name?: string
+    name?: string,
+    style?: PolygonStyle
   ): Feature {
-    return this.createFeature('Polygon', shape, layerId, currentTime, name);
+    return this.createFeature('Polygon', shape, layerId, currentTime, name, style ? { style } : undefined);
   }
 
   /** 頂点を生成して登録する */
@@ -204,7 +206,8 @@ export class AddFeatureUseCase {
     shape: FeatureShape,
     layerId: string,
     currentTime: TimePoint,
-    name?: string
+    name?: string,
+    propertyPatch?: Partial<AnchorProperty>
   ): Feature {
     const featureId = `f-${this.nextFeatureNum++}`;
     const anchorId = `a-${this.nextAnchorNum++}`;
@@ -217,6 +220,7 @@ export class AddFeatureUseCase {
     const property: AnchorProperty = {
       name: featureName,
       description: '',
+      ...propertyPatch,
     };
 
     const placement: AnchorPlacement = {
