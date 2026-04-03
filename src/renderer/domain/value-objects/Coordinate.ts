@@ -23,4 +23,9 @@ export class Coordinate {
     const ny = Math.max(-90, Math.min(90, this.y));
     return new Coordinate(nx, ny);
   }
+
+  /** 緯度だけを有効範囲（-90〜90）に収め、経度は保持する */
+  clampLatitude(): Coordinate {
+    return new Coordinate(this.x, Math.max(-90, Math.min(90, this.y)));
+  }
 }

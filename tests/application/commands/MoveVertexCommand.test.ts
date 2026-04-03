@@ -37,6 +37,15 @@ describe('MoveVertexCommand', () => {
     expect(v.y).toBe(40);
   });
 
+  it('180度を超える経度を保持して頂点を移動する', () => {
+    const cmd = new MoveVertexCommand(vertexEdit, addFeature, vertexId, new Coordinate(181, 40));
+    undoRedo.execute(cmd);
+
+    const v = addFeature.getVertices().get(vertexId)!;
+    expect(v.x).toBe(181);
+    expect(v.y).toBe(40);
+  });
+
   it('undoで元座標に戻る', () => {
     const cmd = new MoveVertexCommand(vertexEdit, addFeature, vertexId, new Coordinate(30, 40));
     undoRedo.execute(cmd);

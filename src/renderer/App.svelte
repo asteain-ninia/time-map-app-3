@@ -30,6 +30,7 @@
     startDrag,
     startInsertDrag,
     updateDragPreview,
+    createWrappedDragCoordinate,
     hasMoved,
     type DragState,
   } from '@infrastructure/rendering/vertexDragManager';
@@ -356,7 +357,7 @@
         update.vertexId,
         existing
           ? existing.withCoordinate(update.coordinate)
-          : new Vertex(update.vertexId, update.coordinate.normalize())
+          : new Vertex(update.vertexId, update.coordinate.clampLatitude())
       );
     }
     return validationVertices;
@@ -671,7 +672,7 @@
       mutableVertices.set(
         vertexId,
         vertex.withCoordinate(
-          new Coordinate(baseCoordinate.x + dx, baseCoordinate.y + dy).normalize()
+          new Coordinate(baseCoordinate.x + dx, baseCoordinate.y + dy).clampLatitude()
         )
       );
     }
@@ -683,7 +684,7 @@
       mutableSharedGroups.set(
         groupId,
         group.withRepresentativeCoordinate(
-          new Coordinate(baseCoordinate.x + dx, baseCoordinate.y + dy).normalize()
+          new Coordinate(baseCoordinate.x + dx, baseCoordinate.y + dy).clampLatitude()
         )
       );
     }
@@ -1400,7 +1401,7 @@
   }
 
   /** 頂点ハンドルのmousedown — 頂点選択＋ドラッグ開始 */
-  function onVertexMouseDown(vertexId: string, e: MouseEvent): void {
+  function onVertexMouseDown(vertexId: string, startCoord: Coordinate, e: MouseEvent): void {
     validationMessage = '';
     selectedFeatureId = null;
     const { nextSelection, shouldStartDrag } = resolveVertexMouseDownState(
@@ -1413,14 +1414,16 @@
       return;
     }
 
-    const vertex = vertices.get(vertexId);
-    if (vertex) {
-      beginVertexDrag(vertexId, vertex.coordinate, nextSelection);
-    }
+    beginVertexDrag(vertexId, startCoord, nextSelection);
   }
 
   /** エッジハンドルのmousedown — 頂点挿入＋ドラッグ開始 */
-  function onEdgeHandleMouseDown(v1: string, v2: string, e: MouseEvent): void {
+  function onEdgeHandleMouseDown(
+    v1: string,
+    v2: string,
+    midpoint: Coordinate,
+    e: MouseEvent
+  ): void {
     if (!selectionFeatureId || !currentTime) return;
     const feature = features.find((f) => f.id === selectionFeatureId);
     if (!feature) return;
@@ -1432,18 +1435,13 @@
     const vtx2 = vertices.get(v2);
     if (!vtx1 || !vtx2) return;
 
-    const midCoord = new Coordinate(
-      (vtx1.x + vtx2.x) / 2,
-      (vtx1.y + vtx2.y) / 2
-    );
-
     let newVertexId: string | null = null;
     try {
       if (anchor.shape.type === 'LineString') {
         const edgeIndex = anchor.shape.vertexIds.indexOf(v1);
         if (edgeIndex >= 0) {
           newVertexId = vertexEdit.insertVertexOnLine(
-            selectionFeatureId, currentTime, edgeIndex, midCoord
+            selectionFeatureId, currentTime, edgeIndex, midpoint
           );
         }
       } else if (anchor.shape.type === 'Polygon') {
@@ -1453,7 +1451,7 @@
             const next = (i + 1) % ids.length;
             if (ids[i] === v1 && ids[next] === v2) {
               newVertexId = vertexEdit.insertVertexOnPolygon(
-                selectionFeatureId, currentTime, ring.id, i, midCoord
+                selectionFeatureId, currentTime, ring.id, i, midpoint
               );
               break;
             }
@@ -1468,7 +1466,7 @@
     if (newVertexId) {
       refreshFeatureData();
       selectedVertexIds = new Set([newVertexId]);
-      beginVertexDrag(newVertexId, midCoord, selectedVertexIds, true);
+      beginVertexDrag(newVertexId, midpoint, selectedVertexIds, true);
     }
   }
 
@@ -1551,7 +1549,11 @@
   ): void {
     // 頂点ドラッグ
     if (dragState) {
-      const newCoord = new Coordinate(geo.lon, geo.lat);
+      const newCoord = createWrappedDragCoordinate(
+        dragState.previewCoord.x,
+        geo.lon,
+        geo.lat
+      );
       dragState = updateDragPreview(dragState, newCoord);
       if (dragMovesMultipleVertices) {
         applyMultiVertexDragPreview(newCoord);

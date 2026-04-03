@@ -39,7 +39,7 @@ export class VertexEditUseCase {
     if (!vertex) {
       throw new VertexEditError(`Vertex "${vertexId}" not found`);
     }
-    const updated = vertex.withCoordinate(newCoordinate.normalize());
+    const updated = vertex.withCoordinate(newCoordinate.clampLatitude());
     vertices.set(vertexId, updated);
   }
 

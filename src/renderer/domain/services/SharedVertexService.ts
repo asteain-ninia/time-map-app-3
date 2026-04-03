@@ -455,17 +455,17 @@ export function moveSharedVertices(
     return { updatedVertices: [], updatedGroup: new SharedVertexGroup(groupId, [], newCoordinate) };
   }
 
-  const normalizedCoord = newCoordinate.normalize();
+  const clampedCoordinate = newCoordinate.clampLatitude();
   const updatedVertices: [string, Vertex][] = [];
 
   for (const vid of group.vertexIds) {
     const vertex = vertices.get(vid);
     if (vertex) {
-      updatedVertices.push([vid, vertex.withCoordinate(normalizedCoord)]);
+      updatedVertices.push([vid, vertex.withCoordinate(clampedCoordinate)]);
     }
   }
 
-  const updatedGroup = group.withRepresentativeCoordinate(normalizedCoord);
+  const updatedGroup = group.withRepresentativeCoordinate(clampedCoordinate);
   return { updatedVertices, updatedGroup };
 }
 

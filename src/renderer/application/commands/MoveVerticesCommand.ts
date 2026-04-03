@@ -43,7 +43,7 @@ export class MoveVerticesCommand implements UndoableCommand {
       const movedCoordinate = new Coordinate(
         vertex.x + this.deltaX,
         vertex.y + this.deltaY
-      ).normalize();
+      ).clampLatitude();
       validationVertices.set(
         vertexId,
         vertex.withCoordinate(movedCoordinate)
@@ -67,7 +67,7 @@ export class MoveVerticesCommand implements UndoableCommand {
     for (const [vertexId, coordinate] of this.oldCoordinates) {
       this.vertexEditUseCase.moveVertex(
         vertexId,
-        new Coordinate(coordinate.x + this.deltaX, coordinate.y + this.deltaY).normalize()
+        new Coordinate(coordinate.x + this.deltaX, coordinate.y + this.deltaY).clampLatitude()
       );
     }
 
@@ -89,7 +89,7 @@ export class MoveVerticesCommand implements UndoableCommand {
           new Coordinate(
             group.representativeCoordinate.x + this.deltaX,
             group.representativeCoordinate.y + this.deltaY
-          ).normalize()
+          ).clampLatitude()
         )
       );
     }

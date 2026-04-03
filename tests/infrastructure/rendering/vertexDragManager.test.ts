@@ -4,6 +4,7 @@ import {
   startDrag,
   startInsertDrag,
   updateDragPreview,
+  createWrappedDragCoordinate,
   hasMoved,
 } from '@infrastructure/rendering/vertexDragManager';
 
@@ -44,6 +45,13 @@ describe('vertexDragManager', () => {
       const updated = updateDragPreview(state, new Coordinate(15, 25));
       expect(state.previewCoord).toBe(origin);
       expect(updated.previewCoord.x).toBe(15);
+    });
+  });
+
+  describe('createWrappedDragCoordinate', () => {
+    it('東西端またぎでも基準周回に追従した経度を返す', () => {
+      const coord = createWrappedDragCoordinate(179, -179, 20);
+      expect(coord).toEqual(new Coordinate(181, 20));
     });
   });
 

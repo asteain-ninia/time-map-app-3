@@ -2,6 +2,7 @@
   import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
+  import { Coordinate } from '@domain/value-objects/Coordinate';
   import type { SnapIndicator } from '@infrastructure/rendering/snapIndicatorUtils';
   import {
     geoToSvgX,
@@ -34,8 +35,13 @@
     snapIndicators?: readonly SnapIndicator[];
     visibleVertexIds?: ReadonlySet<string>;
     showEdgeHandles?: boolean;
-    onVertexMouseDown?: (vertexId: string, e: MouseEvent) => void;
-    onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
+    onVertexMouseDown?: (vertexId: string, startCoord: Coordinate, e: MouseEvent) => void;
+    onEdgeHandleMouseDown?: (
+      vertexId1: string,
+      vertexId2: string,
+      midpoint: Coordinate,
+      e: MouseEvent
+    ) => void;
   } = $props();
 
   /** 形状のアンラップ済み頂点位置 */
@@ -79,7 +85,12 @@
       style="cursor: copy;"
       onmousedown={(e) => {
         e.stopPropagation();
-        onEdgeHandleMouseDown?.(edge.v1, edge.v2, e);
+        onEdgeHandleMouseDown?.(
+          edge.v1,
+          edge.v2,
+          new Coordinate((edge.x1 + edge.x2) / 2, (edge.y1 + edge.y2) / 2),
+          e
+        );
       }}
     />
   {/each}
@@ -101,7 +112,7 @@
     style="cursor: move;"
     onmousedown={(e) => {
       e.stopPropagation();
-      onVertexMouseDown?.(vertex.vertexId, e);
+      onVertexMouseDown?.(vertex.vertexId, new Coordinate(vertex.x, vertex.y), e);
     }}
   />
 {/each}

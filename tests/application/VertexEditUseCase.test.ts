@@ -32,14 +32,14 @@ describe('VertexEditUseCase', () => {
       expect(vertex.y).toBe(40);
     });
 
-    it('座標が正規化される', () => {
+    it('経度を保持したまま緯度だけを範囲内に収める', () => {
       addFeature.addPoint(new Coordinate(10, 20), layerId, time);
       const vertexId = [...addFeature.getVertices().keys()][0];
 
       vertexEdit.moveVertex(vertexId, new Coordinate(200, 100));
 
       const vertex = addFeature.getVertices().get(vertexId)!;
-      expect(vertex.x).toBe(-160); // 200 - 360
+      expect(vertex.x).toBe(200);
       expect(vertex.y).toBe(90);   // clamped
     });
 

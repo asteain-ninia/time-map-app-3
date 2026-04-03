@@ -6,6 +6,7 @@
  */
 
 import { Coordinate } from '@domain/value-objects/Coordinate';
+import { wrapLongitudeNearReference } from './featureRenderingUtils';
 
 /** ドラッグ状態 */
 export interface DragState {
@@ -60,6 +61,17 @@ export function updateDragPreview(
     ...state,
     previewCoord: newCoord,
   };
+}
+
+/**
+ * 現在の表示周回に追従するドラッグ座標を生成する
+ */
+export function createWrappedDragCoordinate(
+  referenceLon: number,
+  lon: number,
+  lat: number
+): Coordinate {
+  return new Coordinate(wrapLongitudeNearReference(lon, referenceLon), lat);
 }
 
 /**

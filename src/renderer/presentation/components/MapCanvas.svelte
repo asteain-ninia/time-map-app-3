@@ -113,8 +113,13 @@
     onPanEnd?: () => void;
     onConfirm?: () => void;
     onCancel?: () => void;
-    onVertexMouseDown?: (vertexId: string, e: MouseEvent) => void;
-    onEdgeHandleMouseDown?: (vertexId1: string, vertexId2: string, e: MouseEvent) => void;
+    onVertexMouseDown?: (vertexId: string, startCoord: Coordinate, e: MouseEvent) => void;
+    onEdgeHandleMouseDown?: (
+      vertexId1: string,
+      vertexId2: string,
+      midpoint: Coordinate,
+      e: MouseEvent
+    ) => void;
     onCursorGeoUpdate?: (
       geo: { lon: number; lat: number },
       screenX: number,

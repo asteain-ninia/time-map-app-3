@@ -37,6 +37,26 @@ describe('MoveVerticesCommand', () => {
     expect(addFeature.getVertices().get(vertexIdB)!.coordinate).toEqual(new Coordinate(35, 37));
   });
 
+  it('複数頂点移動でも180度を超える経度を保持する', () => {
+    const pointA = addFeature.addPoint(new Coordinate(170, 20), 'l1', new TimePoint(1000));
+    const pointB = addFeature.addPoint(new Coordinate(175, 40), 'l1', new TimePoint(1000));
+    const vertexIdA = pointA.anchors[0].shape.type === 'Point' ? pointA.anchors[0].shape.vertexId : '';
+    const vertexIdB = pointB.anchors[0].shape.type === 'Point' ? pointB.anchors[0].shape.vertexId : '';
+
+    undoRedo.execute(
+      new MoveVerticesCommand(
+        vertexEdit,
+        addFeature,
+        [vertexIdA, vertexIdB],
+        20,
+        0
+      )
+    );
+
+    expect(addFeature.getVertices().get(vertexIdA)!.x).toBe(190);
+    expect(addFeature.getVertices().get(vertexIdB)!.x).toBe(195);
+  });
+
   it('undoで全頂点を元座標に戻す', () => {
     const pointA = addFeature.addPoint(new Coordinate(10, 20), 'l1', new TimePoint(1000));
     const pointB = addFeature.addPoint(new Coordinate(30, 40), 'l1', new TimePoint(1000));

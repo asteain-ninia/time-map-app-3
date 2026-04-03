@@ -375,13 +375,13 @@ describe('SharedVertexService', () => {
       expect(result.updatedVertices).toEqual([]);
     });
 
-    it('座標は正規化される', () => {
+    it('経度の周回情報を保持したまま共有頂点を移動する', () => {
       const v1 = makeVertex('v1', 0, 0);
       const g1 = makeGroup('g1', ['v1'], 0, 0);
-      const newCoord = new Coordinate(200, 0); // 200度 → -160度に正規化
+      const newCoord = new Coordinate(200, 0);
 
       const result = moveSharedVertices('g1', newCoord, groupsMap(g1), verticesMap(v1));
-      expect(result.updatedVertices[0][1].x).toBe(-160);
+      expect(result.updatedVertices[0][1].x).toBe(200);
     });
   });
 
