@@ -21,7 +21,7 @@ test('ベースマップSVGが表示される', async ({ page }) => {
 
 // §2.1 ベースマップのpointer-events: none — マウスイベントを受け付けない
 test('ベースマップ要素はpointer-events:noneである', async ({ page }) => {
-  const baseGroup = page.locator('.base-map-layer');
+  const baseGroup = page.locator('.wrap-base-map-layer').first();
   if (await baseGroup.count() > 0) {
     const pe = await baseGroup.evaluate(el => getComputedStyle(el).pointerEvents);
     expect(pe).toBe('none');
