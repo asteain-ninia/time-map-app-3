@@ -178,6 +178,7 @@
   let layers = $state<readonly Layer[]>([]);
   let currentTime = $state(navigateTime.getCurrentTime());
   let selectedFeatureId = $state<string | null>(null);
+  let focusedLayerId = $state<string | null>(null);
   let selectedVertexIds = $state<ReadonlySet<string>>(new Set());
   let editInteractionMode = $state<EditInteractionMode>('vertex');
   let dragState = $state<DragState | null>(null);
@@ -227,6 +228,12 @@
       )
     )
   );
+
+  $effect(() => {
+    if (focusedLayerId && !layers.some((layer) => layer.id === focusedLayerId && layer.visible)) {
+      focusedLayerId = null;
+    }
+  });
 
   function openSettings(): void {
     settingsDialogOpen = true;
@@ -1904,6 +1911,7 @@
           {features}
           {vertices}
           {layers}
+          {focusedLayerId}
           settings={projectSettings}
           gridInterval={projectSettings.gridInterval}
           gridColor={projectSettings.gridColor}
@@ -1968,8 +1976,15 @@
         <Sidebar
           selectedFeature={getSelectionFeature()}
           propertySelectionState={getPropertyPanelSelectionState()}
+          {focusedLayerId}
+          settings={projectSettings}
           {currentTime}
+          timelineMin={projectMetadata.sliderMin}
+          timelineMax={projectMetadata.sliderMax}
           {features}
+          onFocusLayerChange={(layerId) => {
+            focusedLayerId = layerId;
+          }}
           {onPropertyChange}
           onFeatureSelect={(id) => {
             selectedFeatureId = id;

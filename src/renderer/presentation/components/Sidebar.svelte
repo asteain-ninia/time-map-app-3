@@ -2,6 +2,7 @@
   import LayerPanel from './LayerPanel.svelte';
   import PropertyPanel from './PropertyPanel.svelte';
   import type { Feature } from '@domain/entities/Feature';
+  import type { WorldSettings } from '@domain/entities/World';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
 
@@ -10,8 +11,13 @@
   let {
     selectedFeature = null as Feature | null,
     propertySelectionState = { kind: 'empty' as const },
+    focusedLayerId = null as string | null,
+    settings = undefined as WorldSettings | undefined,
     currentTime = undefined as TimePoint | undefined,
+    timelineMin = 0,
+    timelineMax = 10000,
     features = [] as readonly Feature[],
+    onFocusLayerChange,
     onPropertyChange,
     onFeatureSelect,
   }: {
@@ -21,8 +27,13 @@
       featureSummaries?: readonly { id: string; name: string }[];
       remainingCount?: number;
     };
+    focusedLayerId?: string | null;
+    settings?: WorldSettings;
     currentTime?: TimePoint;
+    timelineMin?: number;
+    timelineMax?: number;
     features?: readonly Feature[];
+    onFocusLayerChange?: (layerId: string | null) => void;
     onPropertyChange?: (featureId: string, anchorId: string, property: AnchorProperty) => void;
     onFeatureSelect?: (featureId: string) => void;
   } = $props();
@@ -67,12 +78,15 @@
 
   <div class="tab-content">
     {#if activeTab === 'layers'}
-      <LayerPanel />
+      <LayerPanel {focusedLayerId} {onFocusLayerChange} />
     {:else if activeTab === 'properties'}
       <PropertyPanel
         feature={selectedFeature}
         selectionState={propertySelectionState}
+        {settings}
         {currentTime}
+        {timelineMin}
+        {timelineMax}
         {onPropertyChange}
       />
     {:else if activeTab === 'features'}

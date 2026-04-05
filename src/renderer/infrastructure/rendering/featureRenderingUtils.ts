@@ -1,6 +1,11 @@
 import type { Vertex } from '@domain/entities/Vertex';
 import type { FeatureShape } from '@domain/value-objects/FeatureAnchor';
 
+export interface PathCoordinate {
+  readonly x: number;
+  readonly y: number;
+}
+
 /** 経度 → SVG x座標 */
 export function geoToSvgX(lon: number): number {
   return lon + 180;
@@ -94,6 +99,18 @@ export function buildRingPath(
   );
 }
 
+export function buildRingPathFromCoords(coords: readonly PathCoordinate[]): string {
+  if (coords.length < 3) return '';
+
+  return (
+    coords
+      .map((coord, index) =>
+        `${index === 0 ? 'M' : 'L'}${geoToSvgX(coord.x)} ${geoToSvgY(coord.y)}`
+      )
+      .join(' ') + ' Z'
+  );
+}
+
 /** ポリゴンの全リングを結合したSVGパス文字列を生成（fill-rule="evenodd"用） */
 export function buildPolygonPath(
   shape: FeatureShape & { type: 'Polygon' },
@@ -109,6 +126,15 @@ export function buildPolygonPath(
   }
 
   return paths.join(' ');
+}
+
+export function buildPolygonPathFromCoords(
+  rings: readonly (readonly PathCoordinate[])[]
+): string {
+  return rings
+    .map((ring) => buildRingPathFromCoords(ring))
+    .filter((path) => path.length > 0)
+    .join(' ');
 }
 
 /** ラインストリングのSVGポリライン用ポイント文字列を生成 */

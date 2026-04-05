@@ -4,12 +4,14 @@
   import type { Layer } from '@domain/entities/Layer';
   import type { WorldSettings } from '@domain/entities/World';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
+  import type { Coordinate } from '@domain/value-objects/Coordinate';
   import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
   import LabelRenderer from '@presentation/components/LabelRenderer.svelte';
   import {
     geoToSvgX,
     geoToSvgY,
     buildPolygonPath,
+    buildPolygonPathFromCoords,
     buildLinePoints,
   } from '@infrastructure/rendering/featureRenderingUtils';
   import {
@@ -18,11 +20,13 @@
     resolvePointStyle,
     resolveStyle,
   } from '@infrastructure/StyleResolver';
+  import { deriveParentShape } from '@domain/services/LayerService';
 
   let {
     features,
     vertices,
     layers,
+    focusedLayerId = null,
     currentTime,
     settings = undefined as WorldSettings | undefined,
     zoom,
@@ -33,6 +37,7 @@
     features: readonly Feature[];
     vertices: ReadonlyMap<string, Vertex>;
     layers: readonly Layer[];
+    focusedLayerId?: string | null;
     currentTime: TimePoint;
     settings?: WorldSettings;
     zoom: number;
@@ -49,6 +54,13 @@
   let visibleLayers = $derived(
     layers.filter((l) => l.visible).toSorted((a, b) => a.order - b.order)
   );
+  let vertexCoordinates = $derived.by(() => {
+    const coords = new Map<string, Coordinate>();
+    for (const [vertexId, vertex] of vertices) {
+      coords.set(vertexId, vertex.coordinate);
+    }
+    return coords;
+  });
 
   /** 指定レイヤーに所属する、現在時刻でアクティブな地物を取得 */
   function getLayerFeatures(
@@ -63,6 +75,21 @@
     }
     return result;
   }
+
+  function getPolygonPath(feature: Feature, anchor: FeatureAnchor): string {
+    if (anchor.shape.type !== 'Polygon') {
+      return '';
+    }
+
+    if (anchor.placement.childIds.length === 0) {
+      return buildPolygonPath(anchor.shape, vertices);
+    }
+
+    const derived = deriveParentShape(feature, features, vertexCoordinates(), currentTime);
+    return derived.isEmpty
+      ? buildPolygonPath(anchor.shape, vertices)
+      : buildPolygonPathFromCoords(derived.rings);
+  }
 </script>
 
 {#each visibleLayers as layer (layer.id)}
@@ -76,7 +103,7 @@
     vertices,
     settings
   )}
-  <g opacity={layer.opacity}>
+  <g opacity={layer.opacity * (focusedLayerId && layer.id !== focusedLayerId ? 0.22 : 1)}>
     {#each layerFeatures as { feature, anchor, featureIndex } (feature.id)}
       {@const isSelected = feature.id === selectedFeatureId}
       {@const isContext = feature.id === contextFeatureId && !isSelected}
@@ -167,7 +194,7 @@
           1,
           polygonAutoColors.get(feature.id)
         )}
-        {@const d = buildPolygonPath(anchor.shape, vertices)}
+        {@const d = getPolygonPath(feature, anchor)}
         {#if d}
           {#if isContext}
             <path
