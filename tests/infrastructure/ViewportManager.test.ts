@@ -164,6 +164,21 @@ describe('ViewportManager', () => {
     });
   });
 
+  describe('center longitude', () => {
+    it('中心経度を取得・設定できる', () => {
+      expect(vm.getCenterLongitude()).toBe(0);
+      vm.setCenterLongitude(150);
+      expect(vm.getCenterLongitude()).toBe(150);
+    });
+
+    it('中心経度を相対シフトできる', () => {
+      vm.shiftCenterLongitude(20);
+      expect(vm.getCenterLongitude()).toBe(20);
+      vm.shiftCenterLongitude(-30);
+      expect(vm.getCenterLongitude()).toBe(-10);
+    });
+  });
+
   describe('setZoomLimits', () => {
     it('新しい上限を設定できる', () => {
       vm.setZoomLimits(1, 5);

@@ -1,16 +1,26 @@
 <script lang="ts">
   import type { Feature } from '@domain/entities/Feature';
+  import type { WorldSettings } from '@domain/entities/World';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
   import {
     DEFAULT_PALETTE_NAME,
     getAvailablePaletteNames,
   } from '@infrastructure/StyleResolver';
+  import {
+    buildAnchorTimelineSegments,
+    formatAnchorRange,
+    getCurrentTimePercent,
+    sortAnchorsByStart,
+  } from './propertyPanelHistoryUtils';
 
   let {
     feature = null as Feature | null,
     selectionState = { kind: 'empty' as const },
+    settings = undefined as WorldSettings | undefined,
     currentTime = undefined as TimePoint | undefined,
+    timelineMin = 0,
+    timelineMax = 10000,
     onPropertyChange,
   }: {
     feature?: Feature | null;
@@ -19,7 +29,10 @@
       featureSummaries?: readonly { id: string; name: string }[];
       remainingCount?: number;
     };
+    settings?: WorldSettings;
     currentTime?: TimePoint;
+    timelineMin?: number;
+    timelineMax?: number;
     onPropertyChange?: (featureId: string, anchorId: string, property: AnchorProperty) => void;
   } = $props();
 
@@ -37,7 +50,15 @@
   let editSelectedFillColor = $state('#00ccff');
   let editAutoColor = $state(false);
   let editPalette = $state(DEFAULT_PALETTE_NAME);
-  const availablePalettes = getAvailablePaletteNames();
+  let historyViewMode = $state<'bar' | 'list'>('bar');
+  let availablePalettes = $derived(getAvailablePaletteNames(settings?.customPalettes ?? []));
+  let sortedAnchors = $derived(feature ? sortAnchorsByStart(feature.anchors) : []);
+  let timelineSegments = $derived(
+    buildAnchorTimelineSegments(sortedAnchors, timelineMin, timelineMax)
+  );
+  let currentTimePercent = $derived(
+    currentTime ? getCurrentTimePercent(currentTime, timelineMin, timelineMax) : null
+  );
 
   /** featureまたはanchor変更時にフォームを同期 */
   $effect(() => {
@@ -51,6 +72,12 @@
       editSelectedFillColor = anchor.property.style?.selectedFillColor ?? '#00ccff';
       editAutoColor = anchor.property.style?.autoColor ?? false;
       editPalette = anchor.property.style?.palette ?? DEFAULT_PALETTE_NAME;
+    }
+  });
+
+  $effect(() => {
+    if (!availablePalettes.includes(editPalette)) {
+      editPalette = settings?.defaultPalette ?? DEFAULT_PALETTE_NAME;
     }
   });
 
@@ -242,18 +269,70 @@
       </div>
     {/if}
 
-    <div class="section-header">アンカー一覧 ({feature.anchors.length}件)</div>
-
-    <div class="anchor-list">
-      {#each feature.anchors as a, i}
-        <div class="anchor-item" class:active={a.id === anchor.id}>
-          <span class="anchor-index">{i + 1}</span>
-          <span class="anchor-range">
-            {a.timeRange.start.toString()} — {a.timeRange.end?.toString() ?? '∞'}
-          </span>
-        </div>
-      {/each}
+    <div class="section-header history-header">
+      <span>アンカー表示 ({feature.anchors.length}件)</span>
+      <div class="history-toggle" role="tablist" aria-label="アンカー表示形式">
+        <button
+          class="history-toggle-btn"
+          class:active={historyViewMode === 'bar'}
+          type="button"
+          onclick={() => historyViewMode = 'bar'}
+        >
+          時間バー
+        </button>
+        <button
+          class="history-toggle-btn"
+          class:active={historyViewMode === 'list'}
+          type="button"
+          onclick={() => historyViewMode = 'list'}
+        >
+          リスト
+        </button>
+      </div>
     </div>
+
+    {#if historyViewMode === 'bar'}
+      <div class="timeline-scale">
+        <span>{timelineMin}</span>
+        <span>{timelineMax}</span>
+      </div>
+
+      <div class="anchor-timeline">
+        {#if currentTimePercent !== null}
+          <div class="current-time-indicator" style:left={`${currentTimePercent}%`}></div>
+        {/if}
+
+        {#each sortedAnchors as a, i}
+          {@const segment = timelineSegments[i]}
+          <div class="anchor-timeline-row" class:active={a.id === anchor.id}>
+            <div class="anchor-timeline-meta">
+              <span class="anchor-index">{i + 1}</span>
+              <span class="anchor-range">{formatAnchorRange(a)}</span>
+            </div>
+            <div class="anchor-track">
+              {#if segment}
+                <div
+                  class="anchor-segment"
+                  class:active={a.id === anchor.id}
+                  style:left={`${segment.leftPercent}%`}
+                  style:width={`${segment.widthPercent}%`}
+                  title={formatAnchorRange(a)}
+                ></div>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <div class="anchor-list">
+        {#each sortedAnchors as a, i}
+          <div class="anchor-item" class:active={a.id === anchor.id}>
+            <span class="anchor-index">{i + 1}</span>
+            <span class="anchor-range">{formatAnchorRange(a)}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -290,6 +369,13 @@
 
   .section-header:first-child {
     margin-top: 0;
+  }
+
+  .history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
 
   .field {
@@ -394,6 +480,91 @@
   .anchor-list {
     max-height: 120px;
     overflow-y: auto;
+  }
+
+  .history-toggle {
+    display: inline-flex;
+    gap: 4px;
+  }
+
+  .history-toggle-btn {
+    padding: 2px 6px;
+    border: 1px solid #3c3c3c;
+    border-radius: 999px;
+    background: #252526;
+    color: #aaa;
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  .history-toggle-btn.active {
+    background: #094771;
+    border-color: #007acc;
+    color: #fff;
+  }
+
+  .timeline-scale {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    color: #777;
+    font-size: 10px;
+  }
+
+  .anchor-timeline {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 0;
+  }
+
+  .current-time-indicator {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(0, 204, 255, 0.65);
+    pointer-events: none;
+  }
+
+  .anchor-timeline-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .anchor-timeline-row.active .anchor-range {
+    color: #fff;
+  }
+
+  .anchor-timeline-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .anchor-track {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    background: #252526;
+    overflow: hidden;
+  }
+
+  .anchor-segment {
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    border-radius: 999px;
+    background: rgba(74, 144, 217, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .anchor-segment.active {
+    background: rgba(0, 122, 204, 0.9);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   .anchor-item {

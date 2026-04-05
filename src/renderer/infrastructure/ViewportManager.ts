@@ -67,6 +67,21 @@ export class ViewportManager {
     return this.zoom;
   }
 
+  /** 現在の中心経度（生値）を取得 */
+  getCenterLongitude(): number {
+    return this.centerX - 180;
+  }
+
+  /** 中心経度を設定する */
+  setCenterLongitude(lon: number): void {
+    this.centerX = lon + 180;
+  }
+
+  /** 中心経度を相対シフトする */
+  shiftCenterLongitude(delta: number): void {
+    this.centerX += delta;
+  }
+
   /**
    * ズーム（カーソル位置を中心に）
    * @param delta ズーム方向（正でズームイン、負でズームアウト）

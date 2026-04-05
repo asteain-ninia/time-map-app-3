@@ -4,6 +4,8 @@
   import { eventBus } from '@application/EventBus';
   import { Coordinate } from '@domain/value-objects/Coordinate';
   import GridRenderer from './GridRenderer.svelte';
+  import GridLabelsOverlay from './GridLabelsOverlay.svelte';
+  import LongitudeCompass from './LongitudeCompass.svelte';
   import FeatureRenderer from './FeatureRenderer.svelte';
   import DrawingPreview from './DrawingPreview.svelte';
   import VertexHandles from './VertexHandles.svelte';
@@ -269,7 +271,11 @@
 
   let containerEl = $state<HTMLDivElement | null>(null);
   let viewBox = $state(viewport.getViewBox());
+  let viewBoxValues = $state(viewport.getViewBoxValues());
   let zoomLevel = $state(viewport.getZoom());
+  let centerLongitude = $state(wrapLongitudeToPrimaryRange(viewport.getCenterLongitude()));
+  let viewWidthPx = $state(800);
+  let viewHeightPx = $state(600);
   let isPanning = $state(false);
   let lastPanX = $state(0);
   let lastPanY = $state(0);
@@ -282,7 +288,9 @@
   /** viewBoxとwrapOffsetsを一括更新 */
   function syncViewport(): void {
     viewBox = viewport.getViewBox();
+    viewBoxValues = viewport.getViewBoxValues();
     zoomLevel = viewport.getZoom();
+    centerLongitude = wrapLongitudeToPrimaryRange(viewport.getCenterLongitude());
     wrapOffsets = viewport.getWrapOffsets();
   }
 
@@ -324,6 +332,8 @@
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
+        viewWidthPx = width;
+        viewHeightPx = height;
         viewport.setViewSize(width, height);
         syncViewport();
       }
@@ -492,6 +502,16 @@
     const coord = getClickCoordinate(e);
     if (!coord) return;
     onMapDoubleClick?.(coord);
+  }
+
+  function shiftLongitude(delta: number): void {
+    viewport.shiftCenterLongitude(delta);
+    syncViewport();
+  }
+
+  function setCenterLongitude(value: number): void {
+    viewport.setCenterLongitude(value);
+    syncViewport();
   }
 </script>
 
@@ -668,10 +688,26 @@
 
   </svg>
 
+  <GridLabelsOverlay
+    viewBox={viewBoxValues}
+    {viewWidthPx}
+    {viewHeightPx}
+    interval={gridInterval}
+  />
+
   {#if validationMessage}
     <div class="validation-banner" role="status">
       {validationMessage}
     </div>
+  {/if}
+
+  {#if !isDrawing && !isRingDrawing && !isKnifeDrawing}
+    <LongitudeCompass
+      {centerLongitude}
+      zoom={zoomLevel}
+      onShift={shiftLongitude}
+      onSetCenterLongitude={setCenterLongitude}
+    />
   {/if}
 
   <!-- 描画中の確定/キャンセルボタン（§2.3.2: 確定ボタンの押下で形状を確定） -->
