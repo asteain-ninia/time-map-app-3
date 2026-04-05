@@ -3,12 +3,16 @@ import {
   buildSharedBoundaryAdjacencies,
   createDefaultPolygonStyle,
   getAvailablePaletteNames,
+  getCustomPaletteDefinitions,
   getPalette,
   getAutoColor,
+  parseCustomPalette,
+  parseCustomPaletteColors,
   resolvePolygonAutoColors,
   resolveStyle,
   resolveLineStyle,
   resolvePointStyle,
+  serializeCustomPalette,
 } from '@infrastructure/StyleResolver';
 import type { PolygonStyle } from '@domain/value-objects/FeatureAnchor';
 import type { WorldSettings } from '@domain/entities/World';
@@ -58,6 +62,11 @@ describe('StyleResolver', () => {
     it('未知のパレットはクラシックを返す', () => {
       expect(getPalette('unknown')).toEqual(getPalette('クラシック'));
     });
+
+    it('カスタムパレットを返す', () => {
+      const custom = [serializeCustomPalette('海洋', ['#112233', '#445566'])];
+      expect(getPalette('海洋', custom)).toEqual(['#112233', '#445566']);
+    });
   });
 
   describe('getAvailablePaletteNames', () => {
@@ -65,6 +74,41 @@ describe('StyleResolver', () => {
       expect(getAvailablePaletteNames()).toEqual(
         expect.arrayContaining(['クラシック', 'パステル', 'ハイコントラスト'])
       );
+    });
+
+    it('カスタムパレット名を追加する', () => {
+      expect(getAvailablePaletteNames([
+        serializeCustomPalette('海洋', ['#112233', '#445566']),
+      ])).toEqual(
+        expect.arrayContaining(['クラシック', '海洋'])
+      );
+    });
+  });
+
+  describe('custom palette helpers', () => {
+    it('カスタムパレットをパースできる', () => {
+      expect(parseCustomPalette('海洋::#123,#abcdef')).toEqual({
+        spec: '海洋::#112233,#abcdef',
+        name: '海洋',
+        colors: ['#112233', '#abcdef'],
+      });
+    });
+
+    it('色一覧入力から無効な値を除外する', () => {
+      expect(parseCustomPaletteColors('#123456, red, #abc')).toEqual(['#123456', '#aabbcc']);
+    });
+
+    it('組み込み名と重複するカスタムパレットは除外する', () => {
+      expect(getCustomPaletteDefinitions([
+        serializeCustomPalette('クラシック', ['#112233', '#445566']),
+        serializeCustomPalette('海洋', ['#112233', '#445566']),
+      ])).toEqual([
+        {
+          spec: '海洋::#112233,#445566',
+          name: '海洋',
+          colors: ['#112233', '#445566'],
+        },
+      ]);
     });
   });
 
@@ -78,6 +122,11 @@ describe('StyleResolver', () => {
     it('パレットサイズを超えるとラップする', () => {
       const palette = getPalette('クラシック');
       expect(getAutoColor(palette.length)).toBe(getAutoColor(0));
+    });
+
+    it('カスタムパレットの色を返す', () => {
+      const custom = [serializeCustomPalette('海洋', ['#112233', '#445566'])];
+      expect(getAutoColor(1, '海洋', custom)).toBe('#445566');
     });
   });
 
@@ -168,11 +217,22 @@ describe('StyleResolver', () => {
       const style = createDefaultPolygonStyle(2, {
         defaultAutoColor: true,
         defaultPalette: 'パステル',
+        customPalettes: [],
       });
       expect(style.autoColor).toBe(true);
       expect(style.palette).toBe('パステル');
       expect(style.fillColor).toBe(getAutoColor(2, 'パステル'));
       expect(style.selectedFillColor).toMatch(/^#[0-9a-f]{6}$/);
+    });
+
+    it('カスタムパレットを既定パレットにできる', () => {
+      const style = createDefaultPolygonStyle(1, {
+        defaultAutoColor: true,
+        defaultPalette: '海洋',
+        customPalettes: [serializeCustomPalette('海洋', ['#112233', '#445566'])],
+      });
+      expect(style.palette).toBe('海洋');
+      expect(style.fillColor).toBe('#445566');
     });
   });
 

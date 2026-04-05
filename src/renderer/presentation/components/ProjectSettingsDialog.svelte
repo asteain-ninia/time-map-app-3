@@ -5,7 +5,16 @@
   import {
     DEFAULT_PALETTE_NAME,
     getAvailablePaletteNames,
+    getCustomPaletteDefinitions,
+    parseCustomPaletteColors,
+    serializeCustomPalette,
   } from '@infrastructure/StyleResolver';
+
+  interface CustomPaletteDraft {
+    id: string;
+    name: string;
+    colorsText: string;
+  }
 
   let {
     isOpen = false,
@@ -32,7 +41,7 @@
     onClose?: () => void;
   } = $props();
 
-  const availablePalettes = getAvailablePaletteNames();
+  const builtInPalettes = getAvailablePaletteNames();
 
   // 編集用ローカル状態
   let worldName = $state('');
@@ -55,6 +64,10 @@
   let alwaysVisibleVertexLimit = $state(1000);
   let draftLayers = $state<readonly Layer[]>([]);
   let newLayerName = $state('');
+  let draftCustomPalettes = $state<readonly CustomPaletteDraft[]>([]);
+  let newCustomPaletteName = $state('');
+  let newCustomPaletteColors = $state('#4a90d9, #7ad151, #f4d35e');
+  let customPaletteError = $state('');
 
   /** ダイアログが開いたらフォームを初期化 */
   $effect(() => {
@@ -74,13 +87,125 @@
       labelAreaThreshold = settings.labelAreaThreshold;
       defaultAutoColor = settings.defaultAutoColor;
       defaultPalette = settings.defaultPalette ?? DEFAULT_PALETTE_NAME;
+      draftCustomPalettes = getCustomPaletteDefinitions(settings.customPalettes).map((palette, index) => ({
+        id: `custom-palette-${index}`,
+        name: palette.name,
+        colorsText: palette.colors.join(', '),
+      }));
       snapDistancePx = appConfig.snapDistancePx;
       renderFps = appConfig.renderFps;
       alwaysVisibleVertexLimit = appConfig.alwaysVisibleVertexLimit;
       draftLayers = [...layers];
       newLayerName = '';
+      newCustomPaletteName = '';
+      newCustomPaletteColors = '#4a90d9, #7ad151, #f4d35e';
+      customPaletteError = '';
     }
   });
+
+  function createDraftCustomPaletteId(): string {
+    return `custom-palette-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function buildCustomPaletteSpecs(
+    validateAll: boolean
+  ): readonly string[] | null {
+    const specs: string[] = [];
+    const reservedNames = new Set(builtInPalettes.map((name) => name.toLowerCase()));
+    const seenNames = new Set<string>();
+
+    for (const draft of draftCustomPalettes) {
+      const name = draft.name.trim();
+      const colors = parseCustomPaletteColors(draft.colorsText);
+      const normalizedName = name.toLowerCase();
+      const hasNameConflict = reservedNames.has(normalizedName) || seenNames.has(normalizedName);
+
+      if (!name || colors.length < 2 || hasNameConflict) {
+        if (validateAll) {
+          customPaletteError = !name
+            ? 'カスタムパレット名を入力してください。'
+            : colors.length < 2
+              ? 'カスタムパレットには16進カラーを2色以上入力してください。'
+              : 'カスタムパレット名が重複しています。';
+          return null;
+        }
+        continue;
+      }
+
+      seenNames.add(normalizedName);
+      specs.push(serializeCustomPalette(name, colors));
+    }
+
+    if (validateAll) {
+      customPaletteError = '';
+    }
+    return specs;
+  }
+
+  const availablePalettes = $derived(getAvailablePaletteNames(buildCustomPaletteSpecs(false) ?? []));
+
+  $effect(() => {
+    if (!availablePalettes.includes(defaultPalette)) {
+      defaultPalette = DEFAULT_PALETTE_NAME;
+    }
+  });
+
+  function updateDraftCustomPalette(
+    paletteId: string,
+    patch: Partial<Omit<CustomPaletteDraft, 'id'>>
+  ): void {
+    draftCustomPalettes = draftCustomPalettes.map((palette) =>
+      palette.id === paletteId ? { ...palette, ...patch } : palette
+    );
+    if (customPaletteError) {
+      customPaletteError = '';
+    }
+  }
+
+  function addDraftCustomPalette(): void {
+    const name = newCustomPaletteName.trim();
+    const colors = parseCustomPaletteColors(newCustomPaletteColors);
+    const reservedNames = new Set([
+      ...builtInPalettes.map((palette) => palette.toLowerCase()),
+      ...draftCustomPalettes.map((palette) => palette.name.trim().toLowerCase()),
+    ]);
+
+    if (!name) {
+      customPaletteError = 'カスタムパレット名を入力してください。';
+      return;
+    }
+    if (reservedNames.has(name.toLowerCase())) {
+      customPaletteError = 'カスタムパレット名が重複しています。';
+      return;
+    }
+    if (colors.length < 2) {
+      customPaletteError = 'カスタムパレットには16進カラーを2色以上入力してください。';
+      return;
+    }
+
+    draftCustomPalettes = [
+      ...draftCustomPalettes,
+      {
+        id: createDraftCustomPaletteId(),
+        name,
+        colorsText: colors.join(', '),
+      },
+    ];
+    newCustomPaletteName = '';
+    newCustomPaletteColors = '#4a90d9, #7ad151, #f4d35e';
+    customPaletteError = '';
+  }
+
+  function deleteDraftCustomPalette(paletteId: string): void {
+    draftCustomPalettes = draftCustomPalettes.filter((palette) => palette.id !== paletteId);
+    if (customPaletteError) {
+      customPaletteError = '';
+    }
+  }
+
+  function getCustomPalettePreview(colorsText: string): readonly string[] {
+    return parseCustomPaletteColors(colorsText).slice(0, 8);
+  }
 
   function createDraftLayerId(): string {
     const existingIds = new Set(draftLayers.map((layer) => layer.id));
@@ -124,6 +249,11 @@
   }
 
   function save(): void {
+    const customPalettes = buildCustomPaletteSpecs(true);
+    if (customPalettes === null) {
+      return;
+    }
+
     onSave?.(
       { worldName, worldDescription, sliderMin, sliderMax },
       {
@@ -138,6 +268,7 @@
         labelAreaThreshold,
         defaultAutoColor,
         defaultPalette,
+        customPalettes,
       },
       draftLayers,
       {
@@ -328,6 +459,78 @@
           </select>
         </div>
 
+        <div class="field">
+          <label class="field-label" for="ps-custom-palette-name">カスタムパレット</label>
+          <div class="palette-create-row">
+            <input
+              class="field-input"
+              id="ps-custom-palette-name"
+              type="text"
+              placeholder="パレット名"
+              bind:value={newCustomPaletteName}
+            />
+            <input
+              class="field-input"
+              id="ps-custom-palette-colors"
+              type="text"
+              placeholder="#4a90d9, #7ad151, #f4d35e"
+              bind:value={newCustomPaletteColors}
+              onkeydown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  addDraftCustomPalette();
+                }
+              }}
+            />
+            <button class="btn secondary" type="button" onclick={addDraftCustomPalette}>追加</button>
+          </div>
+        </div>
+
+        {#if customPaletteError}
+          <div class="help-text error-text">{customPaletteError}</div>
+        {/if}
+
+        <div class="palette-list">
+          {#if draftCustomPalettes.length === 0}
+            <div class="palette-empty">カスタムパレットはまだありません</div>
+          {:else}
+            {#each draftCustomPalettes as palette (palette.id)}
+              <div class="palette-row">
+                <input
+                  class="field-input palette-name-input"
+                  type="text"
+                  value={palette.name}
+                  oninput={(event) =>
+                    updateDraftCustomPalette(palette.id, {
+                      name: (event.currentTarget as HTMLInputElement).value,
+                    })}
+                />
+                <input
+                  class="field-input palette-colors-input"
+                  type="text"
+                  value={palette.colorsText}
+                  oninput={(event) =>
+                    updateDraftCustomPalette(palette.id, {
+                      colorsText: (event.currentTarget as HTMLInputElement).value,
+                    })}
+                />
+                <div class="palette-preview" title={palette.colorsText}>
+                  {#each getCustomPalettePreview(palette.colorsText) as color}
+                    <span class="palette-swatch" style:background-color={color}></span>
+                  {/each}
+                </div>
+                <button class="btn danger" type="button" onclick={() => deleteDraftCustomPalette(palette.id)}>
+                  削除
+                </button>
+              </div>
+            {/each}
+          {/if}
+        </div>
+
+        <div class="help-text">
+          <code>#rrggbb</code> 形式の色をカンマ区切りで登録します。組み込みパレット名との重複はできません。
+        </div>
+
         <div class="section">自動保存</div>
 
         <div class="field">
@@ -480,20 +683,24 @@
   }
 
   .layer-create-row,
-  .layer-row {
+  .layer-row,
+  .palette-create-row,
+  .palette-row {
     display: flex;
     gap: 8px;
     align-items: center;
   }
 
-  .layer-list {
+  .layer-list,
+  .palette-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
     margin-top: 8px;
   }
 
-  .layer-row {
+  .layer-row,
+  .palette-row {
     padding: 6px 8px;
     border: 1px solid #3c3c3c;
     border-radius: 4px;
@@ -509,14 +716,42 @@
   }
 
   .layer-empty,
+  .palette-empty,
   .help-text {
     color: #888;
     font-size: 11px;
   }
 
+  .palette-name-input {
+    max-width: 160px;
+  }
+
+  .palette-colors-input {
+    flex: 1;
+  }
+
+  .palette-preview {
+    display: flex;
+    gap: 4px;
+    min-width: 92px;
+    flex-wrap: wrap;
+  }
+
+  .palette-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: #1e1e1e;
+  }
+
   .help-text {
     margin-top: 6px;
     line-height: 1.5;
+  }
+
+  .error-text {
+    color: #ff9a9a;
   }
 
   .dialog-actions {

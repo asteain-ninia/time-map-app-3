@@ -39,6 +39,12 @@ export interface AutoColorStyle {
   readonly selectedFillColor: string;
 }
 
+export interface CustomPaletteDefinition {
+  readonly spec: string;
+  readonly name: string;
+  readonly colors: readonly string[];
+}
+
 export const DEFAULT_PALETTE_NAME = 'クラシック';
 
 /** 組み込みパレット */
@@ -65,8 +71,86 @@ const LEGACY_PALETTE_ALIASES: Record<string, PaletteName> = {
   classic: 'クラシック',
 };
 
-export function getAvailablePaletteNames(): readonly PaletteName[] {
-  return Object.keys(PALETTE_PRESETS) as PaletteName[];
+const CUSTOM_PALETTE_SEPARATOR = '::';
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+function normalizeHexColor(color: string): string | null {
+  const trimmed = color.trim();
+  if (!HEX_COLOR_PATTERN.test(trimmed)) {
+    return null;
+  }
+
+  if (trimmed.length === 4) {
+    return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`.toLowerCase();
+  }
+
+  return trimmed.toLowerCase();
+}
+
+export function parseCustomPaletteColors(input: string): readonly string[] {
+  return input
+    .split(',')
+    .map((color) => normalizeHexColor(color))
+    .filter((color): color is string => color !== null);
+}
+
+export function serializeCustomPalette(name: string, colors: readonly string[]): string {
+  return `${name.trim()}${CUSTOM_PALETTE_SEPARATOR}${colors.join(',')}`;
+}
+
+export function parseCustomPalette(spec: string): CustomPaletteDefinition | null {
+  const separatorIndex = spec.indexOf(CUSTOM_PALETTE_SEPARATOR);
+  if (separatorIndex <= 0) {
+    return null;
+  }
+
+  const name = spec.slice(0, separatorIndex).trim();
+  const colors = parseCustomPaletteColors(
+    spec.slice(separatorIndex + CUSTOM_PALETTE_SEPARATOR.length)
+  );
+  if (!name || colors.length === 0) {
+    return null;
+  }
+
+  return {
+    spec: serializeCustomPalette(name, colors),
+    name,
+    colors,
+  };
+}
+
+export function getCustomPaletteDefinitions(
+  customPaletteSpecs: readonly string[] = []
+): readonly CustomPaletteDefinition[] {
+  const reservedNames = new Set<string>(
+    (Object.keys(PALETTE_PRESETS) as PaletteName[]).map((name) => name.toLowerCase())
+  );
+  const definitions: CustomPaletteDefinition[] = [];
+  const seenNames = new Set<string>();
+
+  for (const spec of customPaletteSpecs) {
+    const parsed = parseCustomPalette(spec);
+    if (!parsed) {
+      continue;
+    }
+
+    const normalizedName = parsed.name.toLowerCase();
+    if (reservedNames.has(normalizedName) || seenNames.has(normalizedName)) {
+      continue;
+    }
+
+    seenNames.add(normalizedName);
+    definitions.push(parsed);
+  }
+
+  return definitions;
+}
+
+export function getAvailablePaletteNames(customPaletteSpecs: readonly string[] = []): readonly string[] {
+  return [
+    ...(Object.keys(PALETTE_PRESETS) as PaletteName[]),
+    ...getCustomPaletteDefinitions(customPaletteSpecs).map((palette) => palette.name),
+  ];
 }
 
 /** デフォルトスタイル */
@@ -81,9 +165,20 @@ const DEFAULT_STYLE: ResolvedStyle = {
 /**
  * パレット名からカラー配列を取得する
  */
-export function getPalette(paletteName: string): readonly string[] {
+export function getPalette(
+  paletteName: string,
+  customPaletteSpecs: readonly string[] = []
+): readonly string[] {
   const normalizedName = LEGACY_PALETTE_ALIASES[paletteName] ?? paletteName;
-  return PALETTE_PRESETS[normalizedName as PaletteName] ?? PALETTE_PRESETS[DEFAULT_PALETTE_NAME];
+  const builtIn = PALETTE_PRESETS[normalizedName as PaletteName];
+  if (builtIn) {
+    return builtIn;
+  }
+
+  const custom = getCustomPaletteDefinitions(customPaletteSpecs).find(
+    (palette) => palette.name === normalizedName
+  );
+  return custom?.colors ?? PALETTE_PRESETS[DEFAULT_PALETTE_NAME];
 }
 
 /**
@@ -96,9 +191,10 @@ export function getPalette(paletteName: string): readonly string[] {
  */
 export function getAutoColor(
   index: number,
-  paletteName: string = DEFAULT_PALETTE_NAME
+  paletteName: string = DEFAULT_PALETTE_NAME,
+  customPaletteSpecs: readonly string[] = []
 ): string {
-  const palette = getPalette(paletteName);
+  const palette = getPalette(paletteName, customPaletteSpecs);
   return palette[index % palette.length];
 }
 
@@ -193,7 +289,7 @@ export function buildSharedBoundaryAdjacencies(
 export function resolvePolygonAutoColors(
   entries: readonly AutoColorFeatureEntry[],
   vertices: ReadonlyMap<string, Vertex>,
-  settings?: Pick<WorldSettings, 'defaultAutoColor' | 'defaultPalette'>
+  settings?: Pick<WorldSettings, 'defaultAutoColor' | 'defaultPalette' | 'customPalettes'>
 ): ReadonlyMap<string, AutoColorStyle> {
   const eligibleEntries = entries.filter((entry) => isPolygonAutoColorEnabled(entry, settings));
   if (eligibleEntries.length === 0) {
@@ -211,7 +307,10 @@ export function resolvePolygonAutoColors(
   for (const entry of eligibleEntries) {
     const colorIndex = coloring.colorMap.get(entry.featureId) ?? 0;
     const paletteName = entry.style?.palette ?? settings?.defaultPalette ?? DEFAULT_PALETTE_NAME;
-    const fillColor = getColorFromPalette(colorIndex, getPalette(paletteName));
+    const fillColor = getColorFromPalette(
+      colorIndex,
+      getPalette(paletteName, settings?.customPalettes)
+    );
     styles.set(entry.featureId, {
       fillColor,
       selectedFillColor: generateSelectedColor(fillColor),
@@ -223,10 +322,10 @@ export function resolvePolygonAutoColors(
 
 export function createDefaultPolygonStyle(
   featureIndex: number,
-  settings?: Pick<WorldSettings, 'defaultAutoColor' | 'defaultPalette'>
+  settings?: Pick<WorldSettings, 'defaultAutoColor' | 'defaultPalette' | 'customPalettes'>
 ): PolygonStyle {
   const palette = settings?.defaultPalette ?? DEFAULT_PALETTE_NAME;
-  const fillColor = getAutoColor(featureIndex, palette);
+  const fillColor = getAutoColor(featureIndex, palette, settings?.customPalettes);
   return {
     fillColor,
     selectedFillColor: generateSelectedColor(fillColor),
@@ -256,7 +355,7 @@ export function resolveStyle(
   if (!style) {
     // スタイル未定義 → デフォルト + 自動配色
     const color = autoColor
-      ? autoColorStyle?.fillColor ?? getAutoColor(featureIndex, palette)
+      ? autoColorStyle?.fillColor ?? getAutoColor(featureIndex, palette, settings?.customPalettes)
       : DEFAULT_STYLE.fillColor;
     return {
       ...DEFAULT_STYLE,
@@ -268,7 +367,8 @@ export function resolveStyle(
 
   // 明示的なスタイルがある場合
   const fillColor = style.autoColor
-    ? autoColorStyle?.fillColor ?? getAutoColor(featureIndex, style.palette || palette)
+    ? autoColorStyle?.fillColor
+      ?? getAutoColor(featureIndex, style.palette || palette, settings?.customPalettes)
     : style.fillColor;
 
   return {
@@ -293,7 +393,7 @@ export function resolveLineStyle(
   const autoColor = settings?.defaultAutoColor ?? true;
   const palette = settings?.defaultPalette ?? DEFAULT_PALETTE_NAME;
   const color = autoColor
-    ? getAutoColor(featureIndex, palette)
+    ? getAutoColor(featureIndex, palette, settings?.customPalettes)
     : '#333333';
 
   return {
@@ -314,7 +414,7 @@ export function resolvePointStyle(
   const autoColor = settings?.defaultAutoColor ?? true;
   const palette = settings?.defaultPalette ?? DEFAULT_PALETTE_NAME;
   const color = autoColor
-    ? getAutoColor(featureIndex, palette)
+    ? getAutoColor(featureIndex, palette, settings?.customPalettes)
     : '#333333';
 
   return {
