@@ -20,6 +20,7 @@
   import type { SurveyMeasurement, SurveyResult } from '@infrastructure/rendering/surveyModeManager';
   import MeasurementOverlay from './MeasurementOverlay.svelte';
   import type { Coordinate as CoordinateType } from '@domain/value-objects/Coordinate';
+  import { wrapLongitudeToPrimaryRange } from '@infrastructure/rendering/featureRenderingUtils';
 
   let {
     features = [] as readonly Feature[],
@@ -738,7 +739,9 @@
     <div class="survey-panel">
       <div class="survey-row">
         <span class="survey-label">A:</span>
-        <span class="survey-value">{surveyPointA.y.toFixed(4)}°, {surveyPointA.x.toFixed(4)}°</span>
+        <span class="survey-value">
+          {surveyPointA.y.toFixed(4)}°, {wrapLongitudeToPrimaryRange(surveyPointA.x).toFixed(4)}°
+        </span>
       </div>
       <div class="survey-hint">終点をクリックして距離を測定</div>
     </div>
@@ -751,7 +754,7 @@
   <!-- カーソル座標表示 -->
   {#if cursorGeo}
     <div class="cursor-info">
-      {cursorGeo.lat.toFixed(2)}°, {cursorGeo.lon.toFixed(2)}°
+      {cursorGeo.lat.toFixed(2)}°, {wrapLongitudeToPrimaryRange(cursorGeo.lon).toFixed(2)}°
     </div>
   {/if}
 </div>

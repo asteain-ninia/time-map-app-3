@@ -167,6 +167,21 @@ describe('hitTest', () => {
       );
       expect(result).toBeNull();
     });
+
+    it('隣接ラップ上の生値経度ポイントにもヒットする', () => {
+      const vertices = makeVertices(['v1', 190, 20]);
+      const feature = makePointFeature('p-wrap', 'v1', 'l1');
+      const result = hitTest(
+        new Coordinate(-170.2, 20.1),
+        [feature],
+        vertices,
+        [layer],
+        time,
+        0.5
+      );
+      expect(result).not.toBeNull();
+      expect(result!.featureId).toBe('p-wrap');
+    });
   });
 
   describe('線情報のヒットテスト', () => {
@@ -199,8 +214,8 @@ describe('hitTest', () => {
       expect(result).toBeNull();
     });
 
-    it('東西端をまたぐ線でも seam 付近のクリックでヒットする', () => {
-      const vertices = makeVertices(['v1', 170, 0], ['v2', -170, 0]);
+    it('東西端をまたぐ線でも生値経度のまま seam 付近でヒットする', () => {
+      const vertices = makeVertices(['v1', 170, 0], ['v2', 190, 0]);
       const feature = makeLineFeature('ln-wrap', ['v1', 'v2'], 'l1');
       const result = hitTest(
         new Coordinate(179, 0.2),
@@ -258,8 +273,8 @@ describe('hitTest', () => {
     it('東西端をまたぐポリゴン内部のクリックでヒットする', () => {
       const vertices = makeVertices(
         ['v1', 170, -10],
-        ['v2', -170, -10],
-        ['v3', -170, 10],
+        ['v2', 190, -10],
+        ['v3', 190, 10],
         ['v4', 170, 10]
       );
       const feature = makePolygonFeature('pg-wrap', ['v1', 'v2', 'v3', 'v4'], 'l1');
@@ -278,13 +293,13 @@ describe('hitTest', () => {
     it('東西端またぎの穴リング内部はヒットしない', () => {
       const vertices = makeVertices(
         ['v1', 170, -10],
-        ['v2', -170, -10],
-        ['v3', -170, 10],
+        ['v2', 190, -10],
+        ['v3', 190, 10],
         ['v4', 170, 10],
-        ['h1', -175, -5],
+        ['h1', 185, -5],
         ['h2', 175, -5],
         ['h3', 175, 5],
-        ['h4', -175, 5]
+        ['h4', 185, 5]
       );
       const shape = {
         type: 'Polygon' as const,
@@ -317,13 +332,13 @@ describe('hitTest', () => {
     it('東西端またぎの穴リング外側はヒットする', () => {
       const vertices = makeVertices(
         ['v1', 170, -10],
-        ['v2', -170, -10],
-        ['v3', -170, 10],
+        ['v2', 190, -10],
+        ['v3', 190, 10],
         ['v4', 170, 10],
-        ['h1', -175, -5],
+        ['h1', 185, -5],
         ['h2', 175, -5],
         ['h3', 175, 5],
-        ['h4', -175, 5]
+        ['h4', 185, 5]
       );
       const shape = {
         type: 'Polygon' as const,
@@ -354,19 +369,17 @@ describe('hitTest', () => {
       expect(result!.featureId).toBe('pg-hole-wrap');
     });
 
-    it('絶対経度のクリックでも長距離ポリゴン複製にヒットする', () => {
+    it('主表示帯のクリックでも隣接ラップ上の生値ポリゴンにヒットする', () => {
       const vertices = makeVertices(
-        ['v1', 170.49578030705425, -26.678650091134855],
-        ['v2', 1.9042029886065848, -23.622609414667522],
-        ['v3', -134.59894722693434, -25.40529980927346],
-        ['v4', 164.28023924371882, -39.412152909748755],
-        ['v5', 22.243345203606623, -57.982864214693194],
-        ['v6', -179.88612405089316, -50.730933795518894]
+        ['v1', 350, -10],
+        ['v2', 370, -10],
+        ['v3', 370, 10],
+        ['v4', 350, 10]
       );
-      const feature = makePolygonFeature('pg-f4', ['v1', 'v2', 'v3', 'v4', 'v5', 'v6'], 'l1');
+      const feature = makePolygonFeature('pg-f4', ['v1', 'v2', 'v3', 'v4'], 'l1');
 
       const result = hitTest(
-        new Coordinate(365, -30),
+        new Coordinate(5, 0),
         [feature],
         vertices,
         [layer],

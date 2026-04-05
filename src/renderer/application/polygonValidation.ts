@@ -25,7 +25,7 @@ export function createTransientPolygonFeature(
   const vertices = new Map<string, Vertex>();
   const vertexIds = coords.map((coord, index) => {
     const vertexId = `${vertexPrefix}-${index}`;
-    vertices.set(vertexId, new Vertex(vertexId, coord.normalize()));
+    vertices.set(vertexId, new Vertex(vertexId, coord.clampLatitude()));
     return vertexId;
   });
 

@@ -1,11 +1,5 @@
 import type { FeatureShape } from '@domain/value-objects/FeatureAnchor';
 import type { Vertex } from '@domain/entities/Vertex';
-import {
-  shiftLongitudeSequenceNearReference,
-  shiftLongitudeSequenceToPrimaryRange,
-  unwrapLongitudeSequence,
-  wrapLongitudeToPrimaryRange,
-} from './featureRenderingUtils';
 
 /**
  * 形状定義から全頂点IDリストをリンググループ毎に取得する
@@ -51,8 +45,7 @@ export interface EdgePosition {
 
 function resolveGroupPositions(
   vertexIds: readonly string[],
-  vertices: ReadonlyMap<string, Vertex>,
-  referenceLon?: number
+  vertices: ReadonlyMap<string, Vertex>
 ): VertexPosition[] {
   const resolved: Array<{ vertexId: string; lon: number; lat: number }> = [];
 
@@ -65,15 +58,9 @@ function resolveGroupPositions(
 
   if (resolved.length === 0) return [];
 
-  const unwrappedLongitudes = unwrapLongitudeSequence(resolved.map((vertex) => vertex.lon));
-  const alignedLongitudes =
-    referenceLon === undefined
-      ? shiftLongitudeSequenceToPrimaryRange(unwrappedLongitudes)
-      : shiftLongitudeSequenceNearReference(unwrappedLongitudes, referenceLon);
-
-  return resolved.map((vertex, index) => ({
+  return resolved.map((vertex) => ({
     vertexId: vertex.vertexId,
-    x: alignedLongitudes[index],
+    x: vertex.lon,
     y: vertex.lat,
   }));
 }
@@ -115,22 +102,14 @@ export function getShapeVertexPositions(
   if (shape.type === 'Point') {
     const vertex = vertices.get(shape.vertexId);
     return vertex
-      ? [{ vertexId: shape.vertexId, x: wrapLongitudeToPrimaryRange(vertex.x), y: vertex.y }]
+      ? [{ vertexId: shape.vertexId, x: vertex.x, y: vertex.y }]
       : [];
   }
 
   const positioned = new Map<string, VertexPosition>();
-  let polygonReferenceLon: number | undefined;
 
   for (const group of getShapeVertexGroups(shape)) {
-    const positions = resolveGroupPositions(
-      group,
-      vertices,
-      shape.type === 'Polygon' ? polygonReferenceLon : undefined
-    );
-    if (shape.type === 'Polygon' && polygonReferenceLon === undefined && positions.length > 0) {
-      polygonReferenceLon = positions[0].x;
-    }
+    const positions = resolveGroupPositions(group, vertices);
 
     for (const position of positions) {
       if (!positioned.has(position.vertexId)) {
@@ -149,17 +128,8 @@ export function getShapeEdgePositions(
   const edges: EdgePosition[] = [];
   if (shape.type === 'Point') return edges;
 
-  let polygonReferenceLon: number | undefined;
-
   for (const group of getShapeVertexGroups(shape)) {
-    const positions = resolveGroupPositions(
-      group,
-      vertices,
-      shape.type === 'Polygon' ? polygonReferenceLon : undefined
-    );
-    if (shape.type === 'Polygon' && polygonReferenceLon === undefined && positions.length > 0) {
-      polygonReferenceLon = positions[0].x;
-    }
+    const positions = resolveGroupPositions(group, vertices);
 
     for (let i = 0; i < positions.length - 1; i++) {
       edges.push({

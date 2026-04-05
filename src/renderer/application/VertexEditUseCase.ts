@@ -250,7 +250,7 @@ export class VertexEditUseCase {
   private createVertex(coordinate: Coordinate): string {
     const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
     const id = `v-edit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const vertex = new Vertex(id, coordinate.normalize());
+    const vertex = new Vertex(id, coordinate.clampLatitude());
     vertices.set(id, vertex);
     return id;
   }

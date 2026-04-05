@@ -237,15 +237,15 @@ describe('StyleResolver', () => {
       expect(colors.get('A')?.selectedFillColor).not.toBe(colors.get('A')?.fillColor);
     });
 
-    it('180度子午線またぎの共有辺も隣接として扱う', () => {
+    it('180度超の生値経度を含む共有辺も隣接として扱う', () => {
       const vertices = makeVertices(
         ['a1', 170, -5],
         ['a2', 180, -5],
         ['a3', 180, 5],
         ['a4', 170, 5],
         ['b1', 180, -5],
-        ['b2', -170, -5],
-        ['b3', -170, 5],
+        ['b2', 190, -5],
+        ['b3', 190, 5],
         ['b4', 180, 5]
       );
 

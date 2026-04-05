@@ -3,7 +3,6 @@ import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import {
   geoToWrappedSvgX,
   geoToSvgY,
-  unwrapLongitudeSequence,
 } from '@infrastructure/rendering/featureRenderingUtils';
 
 export interface LabelPosition {
@@ -56,10 +55,7 @@ export function getFeatureLabelPosition(
   const coordinates = getVertexCoordinates(outerRing.vertexIds, vertices);
   if (coordinates.length === 0) return null;
 
-  const unwrappedLongitudes = unwrapLongitudeSequence(
-    coordinates.map((coordinate) => coordinate.lon)
-  );
-  const longitudeSum = unwrappedLongitudes.reduce((sum, lon) => sum + lon, 0);
+  const longitudeSum = coordinates.reduce((sum, coordinate) => sum + coordinate.lon, 0);
   const latitudeSum = coordinates.reduce((sum, coordinate) => sum + coordinate.lat, 0);
 
   return {
@@ -80,16 +76,12 @@ export function measureFeatureLabelArea(
   const coordinates = getVertexCoordinates(outerRing.vertexIds, vertices);
   if (coordinates.length < 3) return 0;
 
-  const unwrappedLongitudes = unwrapLongitudeSequence(
-    coordinates.map((coordinate) => coordinate.lon)
-  );
-
   let signedArea = 0;
   for (let index = 0; index < coordinates.length; index++) {
     const nextIndex = (index + 1) % coordinates.length;
     signedArea +=
-      unwrappedLongitudes[index] * coordinates[nextIndex].lat -
-      unwrappedLongitudes[nextIndex] * coordinates[index].lat;
+      coordinates[index].lon * coordinates[nextIndex].lat -
+      coordinates[nextIndex].lon * coordinates[index].lat;
   }
 
   return Math.abs(signedArea) / 2;
@@ -104,13 +96,9 @@ export function measureFeatureLabelLength(
   const coordinates = getVertexCoordinates(anchor.shape.vertexIds, vertices);
   if (coordinates.length < 2) return 0;
 
-  const unwrappedLongitudes = unwrapLongitudeSequence(
-    coordinates.map((coordinate) => coordinate.lon)
-  );
-
   let length = 0;
   for (let index = 1; index < coordinates.length; index++) {
-    const dx = unwrappedLongitudes[index] - unwrappedLongitudes[index - 1];
+    const dx = coordinates[index].lon - coordinates[index - 1].lon;
     const dy = coordinates[index].lat - coordinates[index - 1].lat;
     length += Math.hypot(dx, dy);
   }

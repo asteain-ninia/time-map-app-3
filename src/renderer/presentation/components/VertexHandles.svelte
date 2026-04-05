@@ -44,7 +44,7 @@
     ) => void;
   } = $props();
 
-  /** 形状のアンラップ済み頂点位置 */
+  /** 形状の生値頂点位置 */
   let vertexPositions = $derived(() => getShapeVertexPositions(anchor.shape, vertices));
 
   /** 表示対象の頂点位置 */
@@ -55,7 +55,7 @@
     return vertexPositions().filter((vertex) => visibleVertexIds.has(vertex.vertexId));
   });
 
-  /** 形状のアンラップ済みエッジ位置 */
+  /** 形状の生値エッジ位置 */
   let edgePositions = $derived(() => getShapeEdgePositions(anchor.shape, vertices));
 
   /** スナップ表示を選択形状と同じラップへ寄せるための基準経度 */

@@ -353,12 +353,12 @@ describe('AddFeatureUseCase', () => {
     });
   });
 
-  describe('座標正規化', () => {
-    it('経度が正規化される', () => {
+  describe('座標保存', () => {
+    it('経度は生値のまま保持される', () => {
       useCase = new AddFeatureUseCase();
       useCase.addPoint(new Coordinate(200, 0), 'l1', time);
       const vertex = [...useCase.getVertices().values()][0];
-      expect(vertex.x).toBe(-160); // 200 - 360 = -160
+      expect(vertex.x).toBe(200);
     });
 
     it('緯度がクランプされる', () => {

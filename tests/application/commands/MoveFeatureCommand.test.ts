@@ -44,7 +44,7 @@ describe('MoveFeatureCommand', () => {
       expect(vertex.coordinate.y).toBe(20);
     });
 
-    it('横方向ラップをまたぐ移動でも経度を正規化する', () => {
+    it('横方向ラップをまたぐ移動でも生値経度を保持する', () => {
       const feature = addFeature.addPoint(new Coordinate(170, 20), 'l1', time);
       const anchor = feature.getActiveAnchor(time)!;
       const vid = (anchor.shape as { type: 'Point'; vertexId: string }).vertexId;
@@ -55,7 +55,7 @@ describe('MoveFeatureCommand', () => {
       cmd.execute();
 
       const vertex = addFeature.getVertices().get(vid)!;
-      expect(vertex.coordinate.x).toBe(-160);
+      expect(vertex.coordinate.x).toBe(200);
       expect(vertex.coordinate.y).toBe(20);
     });
   });

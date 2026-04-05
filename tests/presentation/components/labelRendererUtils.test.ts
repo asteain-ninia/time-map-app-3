@@ -79,18 +79,33 @@ describe('labelRendererUtils', () => {
       expect(position).toEqual({ x: 190, y: 70 });
     });
 
-    it('180度子午線またぎポリゴンでも主表示帯へ寄せた位置を返す', () => {
+    it('180度子午線またぎポリゴンでも生値経度の重心を主表示帯へ折り返す', () => {
       const position = getFeatureLabelPosition(
         createPolygonAnchor(),
         createVertices({
           v1: { lon: 170, lat: 10 },
-          v2: { lon: -170, lat: 10 },
-          v3: { lon: -170, lat: -10 },
+          v2: { lon: 190, lat: 10 },
+          v3: { lon: 190, lat: -10 },
           v4: { lon: 170, lat: -10 },
         })
       );
 
       expect(position?.x).toBe(360);
+      expect(position?.y).toBe(90);
+    });
+
+    it('180度超の生値経度差も短弧化せず算術平均で重心を求める', () => {
+      const position = getFeatureLabelPosition(
+        createPolygonAnchor(),
+        createVertices({
+          v1: { lon: 170, lat: 10 },
+          v2: { lon: 540, lat: 10 },
+          v3: { lon: 540, lat: -10 },
+          v4: { lon: 170, lat: -10 },
+        })
+      );
+
+      expect(position?.x).toBe(175);
       expect(position?.y).toBe(90);
     });
   });

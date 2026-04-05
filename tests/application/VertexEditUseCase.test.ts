@@ -93,6 +93,25 @@ describe('VertexEditUseCase', () => {
       }
     });
 
+    it('挿入頂点の経度は生値のまま保持し緯度だけクランプする', () => {
+      const line = addFeature.addLine(
+        [new Coordinate(170, 0), new Coordinate(190, 0)],
+        layerId,
+        time
+      );
+
+      const newVertexId = vertexEdit.insertVertexOnLine(
+        line.id,
+        time,
+        0,
+        new Coordinate(200, 100)
+      );
+
+      const vertex = addFeature.getVertices().get(newVertexId)!;
+      expect(vertex.x).toBe(200);
+      expect(vertex.y).toBe(90);
+    });
+
     it('範囲外のエッジインデックスでエラー', () => {
       const line = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
@@ -166,6 +185,29 @@ describe('VertexEditUseCase', () => {
       if (updatedAnchor.shape.type === 'Polygon') {
         expect(updatedAnchor.shape.rings[0].vertexIds).toHaveLength(4);
       }
+    });
+
+    it('ポリゴン挿入頂点も生値経度のまま保持する', () => {
+      const polygon = addFeature.addPolygon(
+        [new Coordinate(170, 0), new Coordinate(190, 0), new Coordinate(190, 10)],
+        layerId,
+        time
+      );
+
+      const anchor = polygon.getActiveAnchor(time)!;
+      const ringId = (anchor.shape as { type: 'Polygon'; rings: { id: string }[] }).rings[0].id;
+
+      const newVertexId = vertexEdit.insertVertexOnPolygon(
+        polygon.id,
+        time,
+        ringId,
+        0,
+        new Coordinate(200, 5)
+      );
+
+      const vertex = addFeature.getVertices().get(newVertexId)!;
+      expect(vertex.x).toBe(200);
+      expect(vertex.y).toBe(5);
     });
 
     it('存在しないリングでエラー', () => {

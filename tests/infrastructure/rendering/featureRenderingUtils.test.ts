@@ -121,14 +121,24 @@ describe('buildRingPath', () => {
     expect(path).toBe('');
   });
 
-  it('東西端をまたぐリングを短い経路で生成する', () => {
+  it('東西端をまたぐリングを生値経度のまま生成する', () => {
     const vertices = makeVertices(
       ['v1', 170, 0],
-      ['v2', -170, 0],
-      ['v3', -170, 10]
+      ['v2', 190, 0],
+      ['v3', 190, 10]
     );
     const path = buildRingPath(['v1', 'v2', 'v3'], vertices);
     expect(path).toBe('M350 90 L370 90 L370 80 Z');
+  });
+
+  it('180度超の生値経度差も短弧化せずそのまま描画する', () => {
+    const vertices = makeVertices(
+      ['v1', 170, 0],
+      ['v2', 540, 0],
+      ['v3', 540, 10]
+    );
+    const path = buildRingPath(['v1', 'v2', 'v3'], vertices);
+    expect(path).toBe('M350 90 L720 90 L720 80 Z');
   });
 });
 
@@ -195,16 +205,16 @@ describe('buildPolygonPath', () => {
     expect(buildPolygonPath(shape, vertices)).toBe('');
   });
 
-  it('東西端またぎの穴リングを外周と同じラップに揃える', () => {
+  it('東西端またぎの穴リングを保存済み生値のまま結合する', () => {
     const vertices = makeVertices(
       ['v1', 170, -10],
-      ['v2', -170, -10],
-      ['v3', -170, 10],
+      ['v2', 190, -10],
+      ['v3', 190, 10],
       ['v4', 170, 10],
-      ['h1', -175, -5],
+      ['h1', 185, -5],
       ['h2', 175, -5],
       ['h3', 175, 5],
-      ['h4', -175, 5]
+      ['h4', 185, 5]
     );
     const shape = {
       type: 'Polygon' as const,
@@ -219,7 +229,7 @@ describe('buildPolygonPath', () => {
     );
   });
 
-  it('全頂点が180度を超えたプレビューでも主表示帯へ寄せて描画する', () => {
+  it('全頂点が180度を超えたリングも生値経度のまま描画する', () => {
     const vertices = makeVertices(
       ['v1', 185, -10],
       ['v2', 205, -10],
@@ -232,7 +242,7 @@ describe('buildPolygonPath', () => {
     };
 
     expect(buildPolygonPath(shape, vertices)).toBe(
-      'M5 100 L25 100 L25 80 L5 80 Z'
+      'M365 100 L385 100 L385 80 L365 80 Z'
     );
   });
 });
@@ -259,15 +269,21 @@ describe('buildLinePoints', () => {
     expect(points).toBe('180,90 190,90');
   });
 
-  it('東西端をまたぐラインを短い経路で生成する', () => {
-    const vertices = makeVertices(['v1', 170, 0], ['v2', -170, 0]);
+  it('東西端をまたぐラインを生値経度のまま生成する', () => {
+    const vertices = makeVertices(['v1', 170, 0], ['v2', 190, 0]);
     const points = buildLinePoints(['v1', 'v2'], vertices);
     expect(points).toBe('350,90 370,90');
   });
 
-  it('全頂点が180度を超えたラインも主表示帯へ寄せて描画する', () => {
+  it('全頂点が180度を超えたラインも生値経度のまま描画する', () => {
     const vertices = makeVertices(['v1', 185, 0], ['v2', 195, 0], ['v3', 205, 10]);
     const points = buildLinePoints(['v1', 'v2', 'v3'], vertices);
-    expect(points).toBe('5,90 15,90 25,80');
+    expect(points).toBe('365,90 375,90 385,80');
+  });
+
+  it('180度超の生値経度差を短弧化しない', () => {
+    const vertices = makeVertices(['v1', 170, 0], ['v2', 540, 0]);
+    const points = buildLinePoints(['v1', 'v2'], vertices);
+    expect(points).toBe('350,90 720,90');
   });
 });

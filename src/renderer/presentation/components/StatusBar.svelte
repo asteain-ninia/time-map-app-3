@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { eventBus } from '@application/EventBus';
+  import { wrapLongitudeToPrimaryRange } from '@infrastructure/rendering/featureRenderingUtils';
 
   let cursorLon = $state<number | null>(null);
   let cursorLat = $state<number | null>(null);
@@ -34,16 +35,20 @@
     const dir = value >= 0 ? posLabel : negLabel;
     return `${deg}°${min}'${sec}" ${dir}`;
   }
+
+  let displayCursorLon = $derived(
+    cursorLon === null ? null : wrapLongitudeToPrimaryRange(cursorLon)
+  );
 </script>
 
 <div class="status-bar">
   <div class="status-section">
-    {#if cursorLon !== null && cursorLat !== null}
+    {#if displayCursorLon !== null && cursorLat !== null}
       <span class="status-item">
-        {formatCoord(cursorLat, 'N', 'S')}, {formatCoord(cursorLon, 'E', 'W')}
+        {formatCoord(cursorLat, 'N', 'S')}, {formatCoord(displayCursorLon, 'E', 'W')}
       </span>
       <span class="status-item">
-        ({cursorLat.toFixed(4)}°, {cursorLon.toFixed(4)}°)
+        ({cursorLat.toFixed(4)}°, {displayCursorLon.toFixed(4)}°)
       </span>
     {:else}
       <span class="status-item status-dim">カーソル座標: --</span>

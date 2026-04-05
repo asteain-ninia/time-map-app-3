@@ -71,8 +71,7 @@ export function shiftLongitudeSequenceToPrimaryRange(longitudes: readonly number
 /** 頂点IDリストからSVGパス文字列を生成（閉じたリング用） */
 export function buildRingPath(
   vertexIds: readonly string[],
-  vertices: ReadonlyMap<string, Vertex>,
-  referenceLon?: number
+  vertices: ReadonlyMap<string, Vertex>
 ): string {
   const coords: Array<{ lon: number; lat: number }> = [];
   for (const id of vertexIds) {
@@ -83,13 +82,8 @@ export function buildRingPath(
   }
   if (coords.length < 3) return '';
 
-  const unwrappedLongitudes = unwrapLongitudeSequence(coords.map((coord) => coord.lon));
-  const alignedLongitudes =
-    referenceLon === undefined
-      ? shiftLongitudeSequenceToPrimaryRange(unwrappedLongitudes)
-      : shiftLongitudeSequenceNearReference(unwrappedLongitudes, referenceLon);
-  const points = coords.map((coord, index) => ({
-    x: geoToSvgX(alignedLongitudes[index]),
+  const points = coords.map((coord) => ({
+    x: geoToSvgX(coord.lon),
     y: geoToSvgY(coord.lat),
   }));
 
@@ -106,19 +100,10 @@ export function buildPolygonPath(
   vertices: ReadonlyMap<string, Vertex>
 ): string {
   const paths: string[] = [];
-  let referenceLon: number | undefined;
 
   for (const ring of shape.rings) {
-    const path = buildRingPath(ring.vertexIds, vertices, referenceLon);
+    const path = buildRingPath(ring.vertexIds, vertices);
     if (!path) continue;
-
-    if (referenceLon === undefined) {
-      const firstVertexId = ring.vertexIds.find((vertexId) => vertices.has(vertexId));
-      const firstVertex = firstVertexId ? vertices.get(firstVertexId) : undefined;
-      if (firstVertex) {
-        referenceLon = wrapLongitudeToPrimaryRange(firstVertex.x);
-      }
-    }
 
     paths.push(path);
   }
@@ -138,10 +123,8 @@ export function buildLinePoints(
       coords.push({ lon: v.x, lat: v.y });
     }
   }
-  const unwrappedLongitudes = unwrapLongitudeSequence(coords.map((coord) => coord.lon));
-  const alignedLongitudes = shiftLongitudeSequenceToPrimaryRange(unwrappedLongitudes);
   const points = coords.map(
-    (coord, index) => `${geoToSvgX(alignedLongitudes[index])},${geoToSvgY(coord.lat)}`
+    (coord) => `${geoToSvgX(coord.lon)},${geoToSvgY(coord.lat)}`
   );
   return points.join(' ');
 }

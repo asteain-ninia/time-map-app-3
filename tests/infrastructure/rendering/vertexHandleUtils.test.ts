@@ -157,24 +157,24 @@ describe('vertexHandleUtils', () => {
   });
 
   describe('getShapeVertexPositions', () => {
-    it('Point: 主表示帯の外へ出た頂点も表示用に折り返す', () => {
+    it('Point: 主表示帯の外へ出た頂点も生値経度のまま返す', () => {
       const shape: FeatureShape = { type: 'Point', vertexId: 'v1' };
       const vertices = makeVertices(['v1', 195, 0]);
 
       expect(getShapeVertexPositions(shape, vertices)).toEqual([
-        { vertexId: 'v1', x: -165, y: 0 },
+        { vertexId: 'v1', x: 195, y: 0 },
       ]);
     });
 
-    it('東西端またぎの頂点を連続した座標へ展開する', () => {
+    it('東西端またぎの頂点も生値経度のまま返す', () => {
       const shape: FeatureShape = {
         type: 'LineString',
         vertexIds: ['v1', 'v2', 'v3'],
       };
       const vertices = makeVertices(
         ['v1', 170, 0],
-        ['v2', -170, 0],
-        ['v3', -160, 5]
+        ['v2', 190, 0],
+        ['v3', 200, 5]
       );
 
       expect(getShapeVertexPositions(shape, vertices)).toEqual([
@@ -184,7 +184,7 @@ describe('vertexHandleUtils', () => {
       ]);
     });
 
-    it('全頂点が180度を超えたラインでも主表示帯へ寄せる', () => {
+    it('全頂点が180度を超えたラインでも生値経度を保持する', () => {
       const shape: FeatureShape = {
         type: 'LineString',
         vertexIds: ['v1', 'v2', 'v3'],
@@ -196,9 +196,9 @@ describe('vertexHandleUtils', () => {
       );
 
       expect(getShapeVertexPositions(shape, vertices)).toEqual([
-        { vertexId: 'v1', x: -175, y: 0 },
-        { vertexId: 'v2', x: -165, y: 0 },
-        { vertexId: 'v3', x: -155, y: 5 },
+        { vertexId: 'v1', x: 185, y: 0 },
+        { vertexId: 'v2', x: 195, y: 0 },
+        { vertexId: 'v3', x: 205, y: 5 },
       ]);
     });
   });
@@ -211,8 +211,8 @@ describe('vertexHandleUtils', () => {
       };
       const vertices = makeVertices(
         ['v1', 170, 0],
-        ['v2', -170, 0],
-        ['v3', -160, 10]
+        ['v2', 190, 0],
+        ['v3', 200, 10]
       );
 
       expect(getShapeEdgePositions(shape, vertices)).toEqual([
@@ -222,7 +222,7 @@ describe('vertexHandleUtils', () => {
       ]);
     });
 
-    it('穴リングも外周と同じラップへ揃える', () => {
+    it('穴リングも生値経度のまま保持する', () => {
       const shape: FeatureShape = {
         type: 'Polygon',
         rings: [
@@ -232,13 +232,13 @@ describe('vertexHandleUtils', () => {
       };
       const vertices = makeVertices(
         ['v1', 170, -10],
-        ['v2', -170, -10],
-        ['v3', -170, 10],
+        ['v2', 190, -10],
+        ['v3', 190, 10],
         ['v4', 170, 10],
-        ['h1', -175, -5],
+        ['h1', 185, -5],
         ['h2', 175, -5],
         ['h3', 175, 5],
-        ['h4', -175, 5]
+        ['h4', 185, 5]
       );
 
       const positions = getShapeVertexPositions(shape, vertices);

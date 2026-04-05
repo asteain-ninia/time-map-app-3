@@ -226,17 +226,15 @@ describe('ViewportManager', () => {
     });
   });
 
-  describe('svgToGeo経度ラップ', () => {
-    it('SVG座標が360を超えると経度がラップされる', () => {
+  describe('svgToGeo生値経度', () => {
+    it('SVG座標が360を超えても経度をラップしない', () => {
       const geo = vm.svgToGeo(600, 90);
-      // 600 - 180 = 420 → 420 - 360 = 60
-      expect(geo.lon).toBe(60);
+      expect(geo.lon).toBe(420);
     });
 
-    it('SVG座標が負の場合も経度がラップされる', () => {
-      const geo = vm.svgToGeo(-180 + 180, 90);
-      // -180 + 180 = 0 → 0 - 180 = -180 → ラップなし
-      expect(geo.lon).toBe(-180);
+    it('SVG座標が負の場合も経度をラップしない', () => {
+      const geo = vm.svgToGeo(-180, 90);
+      expect(geo.lon).toBe(-360);
     });
   });
 });

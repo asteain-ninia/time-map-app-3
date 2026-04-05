@@ -256,13 +256,14 @@ export function toDMS(degrees: number): { d: number; m: number; s: number } {
  * @param lat 緯度（度、y座標）
  */
 export function formatCoordinate(lon: number, lat: number): CoordinateDisplay {
+  const displayLon = wrapLongitudeToPrimaryRange(lon);
   const latDir = lat >= 0 ? 'N' : 'S';
-  const lonDir = lon >= 0 ? 'E' : 'W';
+  const lonDir = displayLon >= 0 ? 'E' : 'W';
 
   const latDMS = toDMS(lat);
-  const lonDMS = toDMS(lon);
+  const lonDMS = toDMS(displayLon);
 
-  const decimal = `${Math.abs(lat).toFixed(4)}° ${latDir}, ${Math.abs(lon).toFixed(4)}° ${lonDir}`;
+  const decimal = `${Math.abs(lat).toFixed(4)}° ${latDir}, ${Math.abs(displayLon).toFixed(4)}° ${lonDir}`;
   const dms = `${latDMS.d}° ${latDMS.m}' ${latDMS.s}" ${latDir}, ${lonDMS.d}° ${lonDMS.m}' ${lonDMS.s}" ${lonDir}`;
 
   return { decimal, dms, lat, lon };
@@ -276,4 +277,11 @@ function toRad(deg: number): number {
 
 function toDeg(rad: number): number {
   return rad * 180 / Math.PI;
+}
+
+function wrapLongitudeToPrimaryRange(lon: number): number {
+  let wrapped = lon;
+  while (wrapped > 180) wrapped -= 360;
+  while (wrapped < -180) wrapped += 360;
+  return wrapped;
 }

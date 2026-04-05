@@ -17,10 +17,7 @@ import {
   getColorFromPalette,
   greedyColoring,
 } from '@domain/services/AutoColorService';
-import {
-  unwrapLongitudeSequence,
-  wrapLongitudeToPrimaryRange,
-} from '@infrastructure/rendering/featureRenderingUtils';
+import { wrapLongitudeToPrimaryRange } from '@infrastructure/rendering/featureRenderingUtils';
 
 /** 解決済みスタイル */
 export interface ResolvedStyle {
@@ -134,10 +131,7 @@ function collectRingCoordinates(
       coords.push({ lon: vertex.x, lat: vertex.y });
     }
   }
-  if (coords.length < 2) return [];
-
-  const longitudes = unwrapLongitudeSequence(coords.map((coord) => coord.lon));
-  return coords.map((coord, index) => ({ lon: longitudes[index], lat: coord.lat }));
+  return coords.length < 2 ? [] : coords;
 }
 
 function isPolygonAutoColorEnabled(

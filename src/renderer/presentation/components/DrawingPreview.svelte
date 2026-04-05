@@ -3,7 +3,6 @@
   import {
     geoToSvgX,
     geoToSvgY,
-    unwrapLongitudeSequence,
     wrapLongitudeNearReference,
   } from '@infrastructure/rendering/featureRenderingUtils';
 
@@ -19,18 +18,17 @@
     isPolygon?: boolean;
   } = $props();
 
-  /** 描画座標を東西端またぎ込みで連続化した地理座標列 */
-  let unwrappedCoords = $derived(() => {
-    const longitudes = unwrapLongitudeSequence(coords.map((coord) => coord.x));
-    return coords.map((coord, index) => ({
-      lon: longitudes[index],
+  /** 描画座標の生値地理座標列 */
+  let pathCoords = $derived(() => {
+    return coords.map((coord) => ({
+      lon: coord.x,
       lat: coord.y,
     }));
   });
 
-  /** 連続化済み座標のSVG座標列 */
+  /** 生値座標のSVG座標列 */
   let svgCoords = $derived(() =>
-    unwrappedCoords().map((coord) => ({
+    pathCoords().map((coord) => ({
       x: geoToSvgX(coord.lon),
       y: geoToSvgY(coord.lat),
     }))
@@ -44,7 +42,7 @@
   /** カーソル位置までの仮線（最後の頂点→カーソル） */
   let cursorLine = $derived(() => {
     if (!cursorGeo || coords.length === 0) return null;
-    const last = unwrappedCoords()[coords.length - 1];
+    const last = pathCoords()[coords.length - 1];
     return {
       x1: geoToSvgX(last.lon),
       y1: geoToSvgY(last.lat),
@@ -56,8 +54,8 @@
   /** クロージング線（最後の頂点→最初の頂点、ポリゴンモード時のみ） */
   let closingLine = $derived(() => {
     if (!isPolygon || coords.length < 2) return null;
-    const first = unwrappedCoords()[0];
-    const last = unwrappedCoords()[coords.length - 1];
+    const first = pathCoords()[0];
+    const last = pathCoords()[coords.length - 1];
     return {
       x1: geoToSvgX(last.lon),
       y1: geoToSvgY(last.lat),

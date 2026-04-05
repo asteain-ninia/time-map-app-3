@@ -183,5 +183,14 @@ describe('SurveyService', () => {
       expect(c.lon).toBe(100);
       expect(c.lat).toBe(50);
     });
+
+    it('表示用の経度だけ主表示帯へ折り返す', () => {
+      const c = formatCoordinate(200, 10);
+      expect(c.lon).toBe(200);
+      expect(c.decimal).toContain('160.0000');
+      expect(c.decimal).toContain('W');
+      expect(c.dms).toContain('160°');
+      expect(c.dms).toContain('W');
+    });
   });
 });

@@ -195,7 +195,7 @@ export class AddFeatureUseCase {
   /** 頂点を生成して登録する */
   private createVertex(coord: Coordinate): Vertex {
     const id = `v-${this.nextVertexNum++}`;
-    const vertex = new Vertex(id, coord.normalize());
+    const vertex = new Vertex(id, coord.clampLatitude());
     this.vertices.set(id, vertex);
     return vertex;
   }

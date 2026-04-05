@@ -2,7 +2,7 @@
  * ビューポート管理
  * SVGのviewBoxを用いた座標変換、ズーム、パン操作を管理する。
  *
- * 座標系: x = 経度（-180〜180）、y = 緯度（-90〜90）
+ * 座標系: x = 経度（生値）、y = 緯度（-90〜90）
  * ただし表示用は上が北のため y を反転する。
  * SVG上の座標: x = 経度 + 180（0〜360）、y = 90 - 緯度（0〜180）
  */
@@ -109,13 +109,9 @@ export class ViewportManager {
     };
   }
 
-  /** SVG座標→地理座標に変換（経度は-180〜180にラップ） */
+  /** SVG座標→地理座標に変換（経度はタイル基準の生値を保持） */
   svgToGeo(svgX: number, svgY: number): { lon: number; lat: number } {
-    let lon = svgX - 180;
-    // 横方向無限スクロール対応: 経度を-180〜180にラップ
-    while (lon > 180) lon -= 360;
-    while (lon < -180) lon += 360;
-    return { lon, lat: 90 - svgY };
+    return { lon: svgX - 180, lat: 90 - svgY };
   }
 
   /** 地理座標→SVG座標に変換 */

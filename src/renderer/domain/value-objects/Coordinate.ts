@@ -1,6 +1,6 @@
 /**
  * 座標値オブジェクト
- * x = 経度（-180.0 〜 180.0）、y = 緯度（-90.0 〜 90.0）
+ * x = 経度（生値）、y = 緯度（-90.0 〜 90.0）
  */
 export class Coordinate {
   readonly x: number;

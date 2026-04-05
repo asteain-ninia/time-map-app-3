@@ -101,7 +101,7 @@
     resolveRingDrawingPlacement,
     validateNewRingPlacement,
   } from '@domain/services/RingEditService';
-  import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
+  import type { AnchorProperty, FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
   import { DEFAULT_SETTINGS, DEFAULT_METADATA, type WorldSettings, type WorldMetadata } from '@domain/entities/World';
   import { Vertex } from '@domain/entities/Vertex';
   import type { AppConfig } from '@infrastructure/ConfigManager';
@@ -112,7 +112,9 @@
     validatePolygonOrThrow,
   } from '@application/polygonValidation';
   import { createDefaultPolygonStyle } from '@infrastructure/StyleResolver';
-  import { wrapLongitudeNearReference } from '@infrastructure/rendering/featureRenderingUtils';
+  import {
+    wrapLongitudeNearReference,
+  } from '@infrastructure/rendering/featureRenderingUtils';
   import {
     createDirtyState,
     markDirty,
@@ -375,6 +377,50 @@
     return { feature, anchor };
   }
 
+  function getAnchorReferenceLongitude(anchor: FeatureAnchor): number | null {
+    switch (anchor.shape.type) {
+      case 'Point': {
+        return addFeature.getVertices().get(anchor.shape.vertexId)?.x ?? null;
+      }
+      case 'LineString': {
+        for (const vertexId of anchor.shape.vertexIds) {
+          const vertex = addFeature.getVertices().get(vertexId);
+          if (vertex) return vertex.x;
+        }
+        return null;
+      }
+      case 'Polygon': {
+        for (const ring of anchor.shape.rings) {
+          for (const vertexId of ring.vertexIds) {
+            const vertex = addFeature.getVertices().get(vertexId);
+            if (vertex) return vertex.x;
+          }
+        }
+        return null;
+      }
+    }
+  }
+
+  function getSelectedPolygonReferenceLongitude(): number | null {
+    if (!selectionFeatureId || !currentTime) return null;
+    const feature = features.find((candidate) => candidate.id === selectionFeatureId);
+    const anchor = feature?.getActiveAnchor(currentTime);
+    return anchor && anchor.shape.type === 'Polygon'
+      ? getAnchorReferenceLongitude(anchor)
+      : null;
+  }
+
+  function alignCoordinateNearReference(
+    coord: Coordinate,
+    currentCoords: readonly Coordinate[],
+    fallbackReferenceLon: number | null = null
+  ): Coordinate {
+    const referenceLon = currentCoords.at(-1)?.x ?? fallbackReferenceLon;
+    return referenceLon === null
+      ? coord
+      : new Coordinate(wrapLongitudeNearReference(coord.x, referenceLon), coord.y);
+  }
+
   function getRingDrawingConstraintMessage(): string {
     const target = getRingDrawingTarget();
     if (!target) return 'ポリゴン地物が選択されていません';
@@ -405,11 +451,17 @@
     const target = getRingDrawingTarget();
     if (!target) return 'ポリゴン地物が選択されていません';
 
+    const alignedCoord = alignCoordinateNearReference(
+      coord,
+      ringDrawingState?.coords ?? [],
+      getAnchorReferenceLongitude(target.anchor)
+    );
+
     if (!ringDrawingState || ringDrawingState.coords.length === 0) {
       const resolution = resolveRingDrawingPlacement(
         target.anchor.shape.rings,
         addFeature.getVertices(),
-        { x: coord.x, y: coord.y }
+        { x: alignedCoord.x, y: alignedCoord.y }
       );
       return resolution.message;
     }
@@ -424,7 +476,7 @@
     }
 
     return isRingDrawingPointAllowed(
-      { x: coord.x, y: coord.y },
+      { x: alignedCoord.x, y: alignedCoord.y },
       resolution.placement,
       target.anchor.shape.rings,
       addFeature.getVertices()
@@ -862,18 +914,28 @@
 
     // ナイフ描画中はクリックで頂点追加
     if (knifeDrawingState) {
-      knifeDrawingState = addKnifeVertex(knifeDrawingState, coord);
+      const alignedCoord = alignCoordinateNearReference(
+        coord,
+        knifeDrawingState.coords,
+        getSelectedPolygonReferenceLongitude()
+      );
+      knifeDrawingState = addKnifeVertex(knifeDrawingState, alignedCoord);
       return;
     }
     // リング描画中はクリックで頂点追加
     if (ringDrawingState) {
-      const ringValidationMessage = validateRingDrawingVertex(coord);
+      const alignedCoord = alignCoordinateNearReference(
+        coord,
+        ringDrawingState.coords,
+        getSelectedPolygonReferenceLongitude()
+      );
+      const ringValidationMessage = validateRingDrawingVertex(alignedCoord);
       if (ringValidationMessage) {
         validationMessage = ringValidationMessage;
         return;
       }
       validationMessage = '';
-      ringDrawingState = addRingVertex(ringDrawingState, coord);
+      ringDrawingState = addRingVertex(ringDrawingState, alignedCoord);
       return;
     }
     if (toolMode === 'measure') {
@@ -887,14 +949,18 @@
       return;
     }
     if (toolMode === 'add') {
-      toolStore.send({ type: 'MAP_CLICK', coord });
+      const alignedCoord = alignCoordinateNearReference(coord, drawingCoords);
+      toolStore.send({ type: 'MAP_CLICK', coord: alignedCoord });
       syncToolState();
       // 点ツール: 即座にポイント追加（Undo対応）
       if (addToolType === 'point') {
         const layerList = manageLayers.getLayers();
         if (layerList.length > 0) {
           undoRedo.execute(new AddFeatureCommand(addFeature, {
-            type: 'point', coord, layerId: layerList[0].id, time: navigateTime.getCurrentTime()
+            type: 'point',
+            coord: alignedCoord,
+            layerId: layerList[0].id,
+            time: navigateTime.getCurrentTime(),
           }));
           refreshFeatureData();
         }
@@ -922,14 +988,15 @@
 
   function onMapDoubleClick(coord: Coordinate): void {
     if (toolMode === 'add' && isDrawing) {
-      const nextCoords = [...drawingCoords, coord];
+      const alignedCoord = alignCoordinateNearReference(coord, drawingCoords);
+      const nextCoords = [...drawingCoords, alignedCoord];
       const pendingValidation = validatePendingPolygon(nextCoords);
       if (pendingValidation) {
         validationMessage = pendingValidation;
         return;
       }
       validationMessage = '';
-      toolStore.send({ type: 'MAP_DOUBLE_CLICK', coord });
+      toolStore.send({ type: 'MAP_DOUBLE_CLICK', coord: alignedCoord });
       syncToolState();
     }
   }
@@ -1032,7 +1099,7 @@
       const newVertexIds: string[] = [];
       for (const coord of ringDrawingState.coords) {
         const id = `v-ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        vertexMap.set(id, new Vertex(id, coord.normalize()));
+        vertexMap.set(id, new Vertex(id, coord.clampLatitude()));
         newVertexIds.push(id);
       }
       const newRingId = `ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1574,7 +1641,7 @@
       );
       const snapDist = screenToWorldSnapDistance(appConfig.snapDistancePx, viewWidthPx, zoom);
       const candidates = findSnapCandidates(
-        geo.lon, geo.lat, currentVertices,
+        newCoord.x, newCoord.y, currentVertices,
         excludedVertexIds,
         snapDist
       ).filter((candidate) =>

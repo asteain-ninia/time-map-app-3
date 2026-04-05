@@ -73,7 +73,7 @@ export class MoveFeatureCommand implements UndoableCommand {
         new Coordinate(
           vertex.coordinate.x + dx,
           vertex.coordinate.y + dy
-        ).normalize()
+        ).clampLatitude()
       ));
     }
 
@@ -104,7 +104,7 @@ export class MoveFeatureCommand implements UndoableCommand {
       const newCoord = new Coordinate(
         vertex.coordinate.x + dx,
         vertex.coordinate.y + dy
-      ).normalize();
+      ).clampLatitude();
       mutableVertices.set(vid, vertex.withCoordinate(newCoord));
     }
   }

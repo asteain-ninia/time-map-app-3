@@ -7,7 +7,7 @@
   import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
   import LabelRenderer from '@presentation/components/LabelRenderer.svelte';
   import {
-    geoToWrappedSvgX,
+    geoToSvgX,
     geoToSvgY,
     buildPolygonPath,
     buildLinePoints,
@@ -88,7 +88,7 @@
           {#if isSelected}
             <circle
               pointer-events="none"
-              cx={geoToWrappedSvgX(vertex.x)}
+              cx={geoToSvgX(vertex.x)}
               cy={geoToSvgY(vertex.y)}
               r={7 / zoom}
               fill="none"
@@ -99,7 +99,7 @@
           {#if isContext}
             <circle
               pointer-events="none"
-              cx={geoToWrappedSvgX(vertex.x)}
+              cx={geoToSvgX(vertex.x)}
               cy={geoToSvgY(vertex.y)}
               r={6 / zoom}
               fill="none"
@@ -111,7 +111,7 @@
           {/if}
           <circle
             data-feature-id={feature.id}
-            cx={geoToWrappedSvgX(vertex.x)}
+            cx={geoToSvgX(vertex.x)}
             cy={geoToSvgY(vertex.y)}
             r={4 / zoom}
             fill={pointStyle.fillColor}
