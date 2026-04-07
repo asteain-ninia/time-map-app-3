@@ -179,6 +179,7 @@
   let currentTime = $state(navigateTime.getCurrentTime());
   let selectedFeatureId = $state<string | null>(null);
   let focusedLayerId = $state<string | null>(null);
+  let isSidebarCollapsed = $state(false);
   let selectedVertexIds = $state<ReadonlySet<string>>(new Set());
   let editInteractionMode = $state<EditInteractionMode>('vertex');
   let dragState = $state<DragState | null>(null);
@@ -1972,7 +1973,7 @@
           {validationMessage}
         />
       </div>
-      <div class="sidebar-area">
+      <div class="sidebar-area" class:collapsed={isSidebarCollapsed}>
         <Sidebar
           selectedFeature={getSelectionFeature()}
           propertySelectionState={getPropertyPanelSelectionState()}
@@ -1982,6 +1983,7 @@
           timelineMin={projectMetadata.sliderMin}
           timelineMax={projectMetadata.sliderMax}
           {features}
+          isCollapsed={isSidebarCollapsed}
           onFocusLayerChange={(layerId) => {
             focusedLayerId = layerId;
           }}
@@ -1989,6 +1991,9 @@
           onFeatureSelect={(id) => {
             selectedFeatureId = id;
             selectedVertexIds = new Set();
+          }}
+          onCollapsedChange={(collapsed) => {
+            isSidebarCollapsed = collapsed;
           }}
         />
       </div>
@@ -2123,6 +2128,15 @@
     background: #252526;
     border-left: 1px solid #3c3c3c;
     overflow-y: auto;
+    transition:
+      width 160ms ease,
+      min-width 160ms ease;
+  }
+
+  .sidebar-area.collapsed {
+    width: 48px;
+    min-width: 48px;
+    overflow: hidden;
   }
 
   .bottom-area {

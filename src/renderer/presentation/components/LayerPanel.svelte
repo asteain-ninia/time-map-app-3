@@ -56,10 +56,6 @@
 </script>
 
 <div class="layer-panel">
-  <div class="layer-header">
-    <span class="layer-title">レイヤー</span>
-  </div>
-
   {#if orderedLayers.length > 0}
     <div class="focus-panel">
       <div class="focus-header">
@@ -135,18 +131,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-  }
-
-  .layer-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .layer-title {
-    font-size: 12px;
-    font-weight: bold;
-    color: #ccc;
   }
 
   .layer-list {

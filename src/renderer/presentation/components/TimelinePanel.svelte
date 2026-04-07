@@ -33,6 +33,10 @@
   let speed = $state<PlaybackSpeed>(1);
   let stepUnit = $state<StepUnit>('year');
   let playIntervalId = $state<ReturnType<typeof setInterval> | null>(null);
+  let isCollapsed = $state(false);
+  let timelineSummary = $derived(
+    `${currentYear}年${currentMonth ? ` ${currentMonth}月` : ''}${currentDay ? ` ${currentDay}日` : ''}`
+  );
 
   function syncDisplayedTime(time: ReturnType<typeof createTimelineTime>): void {
     const next = toTimelineDisplayState(time);
@@ -149,97 +153,177 @@
   }
 </script>
 
-<div class="timeline-panel">
-  <div class="timeline-controls">
-    <!-- 再生/停止ボタン -->
-    <button class="play-button" onclick={togglePlayback} title={isPlaying ? '停止' : '再生'}>
+<div class="timeline-panel" class:collapsed={isCollapsed}>
+  <div class="timeline-header">
+    <span class="timeline-summary">
+      {timelineSummary}
       {#if isPlaying}
-        <svg viewBox="0 0 24 24" width="16" height="16">
-          <rect x="6" y="5" width="4" height="14" fill="currentColor"/>
-          <rect x="14" y="5" width="4" height="14" fill="currentColor"/>
-        </svg>
-      {:else}
-        <svg viewBox="0 0 24 24" width="16" height="16">
-          <path d="M8 5v14l11-7z" fill="currentColor"/>
-        </svg>
+        ・再生中
       {/if}
-    </button>
-
-    <!-- ステップボタン -->
-    <button class="step-button" onclick={stepBack} title="前へ">
-      <svg viewBox="0 0 24 24" width="16" height="16">
-        <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor"/>
+    </span>
+    <button
+      class="timeline-panel-toggle"
+      type="button"
+      title={isCollapsed ? 'タイムラインを開く' : 'タイムラインを折りたたむ'}
+      aria-expanded={!isCollapsed}
+      onclick={() => isCollapsed = !isCollapsed}
+    >
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+        {#if isCollapsed}
+          <path d="M10 7l5 5-5 5z" fill="currentColor" />
+        {:else}
+          <path d="M7 10l5 5 5-5z" fill="currentColor" />
+        {/if}
       </svg>
     </button>
-
-    <!-- スライダー -->
-    <div class="slider-container">
-      <span class="year-label min">{sliderMin}</span>
-      <input
-        type="range"
-        class="timeline-slider"
-        min={sliderMin}
-        max={sliderMax}
-        value={currentYear}
-        oninput={onSliderInput}
-      />
-      <span class="year-label max">{sliderMax}</span>
-    </div>
-
-    <button class="step-button" onclick={stepForward} title="次へ">
-      <svg viewBox="0 0 24 24" width="16" height="16">
-        <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor"/>
-      </svg>
-    </button>
-
-    <!-- 年入力 -->
-    <div class="year-input-group">
-      <label class="year-input-label" for="year-input">年:</label>
-      <input
-        id="year-input"
-        type="number"
-        class="year-input"
-        value={currentYear}
-        min={sliderMin}
-        max={sliderMax}
-        onblur={onYearInputConfirm}
-        onkeydown={onYearInputKeydown}
-      />
-    </div>
-
-    <!-- ステップ単位 -->
-    <select
-      class="step-unit-select"
-      value={stepUnit}
-      onchange={(e) => stepUnit = (e.target as HTMLSelectElement).value as StepUnit}
-    >
-      <option value="year">年</option>
-      <option value="month">月</option>
-      <option value="day">日</option>
-    </select>
-
-    <!-- 速度セレクタ -->
-    <select
-      class="speed-select"
-      value={speed}
-      onchange={onSpeedChange}
-    >
-      {#each AVAILABLE_SPEEDS as s}
-        <option value={s}>{s}x</option>
-      {/each}
-    </select>
   </div>
+
+  {#if !isCollapsed}
+    <div class="timeline-controls">
+      <!-- 再生/停止ボタン -->
+      <button class="play-button" onclick={togglePlayback} title={isPlaying ? '停止' : '再生'}>
+        {#if isPlaying}
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <rect x="6" y="5" width="4" height="14" fill="currentColor"/>
+            <rect x="14" y="5" width="4" height="14" fill="currentColor"/>
+          </svg>
+        {:else}
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path d="M8 5v14l11-7z" fill="currentColor"/>
+          </svg>
+        {/if}
+      </button>
+
+      <!-- ステップボタン -->
+      <button class="step-button" onclick={stepBack} title="前へ">
+        <svg viewBox="0 0 24 24" width="16" height="16">
+          <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor"/>
+        </svg>
+      </button>
+
+      <!-- スライダー -->
+      <div class="slider-container">
+        <span class="year-label min">{sliderMin}</span>
+        <input
+          type="range"
+          class="timeline-slider"
+          min={sliderMin}
+          max={sliderMax}
+          value={currentYear}
+          oninput={onSliderInput}
+        />
+        <span class="year-label max">{sliderMax}</span>
+      </div>
+
+      <button class="step-button" onclick={stepForward} title="次へ">
+        <svg viewBox="0 0 24 24" width="16" height="16">
+          <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor"/>
+        </svg>
+      </button>
+
+      <!-- 年入力 -->
+      <div class="year-input-group">
+        <label class="year-input-label" for="year-input">年:</label>
+        <input
+          id="year-input"
+          type="number"
+          class="year-input"
+          value={currentYear}
+          min={sliderMin}
+          max={sliderMax}
+          onblur={onYearInputConfirm}
+          onkeydown={onYearInputKeydown}
+        />
+      </div>
+
+      <!-- ステップ単位 -->
+      <select
+        class="step-unit-select"
+        value={stepUnit}
+        onchange={(e) => stepUnit = (e.target as HTMLSelectElement).value as StepUnit}
+      >
+        <option value="year">年</option>
+        <option value="month">月</option>
+        <option value="day">日</option>
+      </select>
+
+      <!-- 速度セレクタ -->
+      <select
+        class="speed-select"
+        value={speed}
+        onchange={onSpeedChange}
+      >
+        {#each AVAILABLE_SPEEDS as s}
+          <option value={s}>{s}x</option>
+        {/each}
+      </select>
+    </div>
+  {/if}
 </div>
 
 <style>
   .timeline-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     padding: 8px 16px;
+  }
+
+  .timeline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 28px;
+  }
+
+  .timeline-summary {
+    color: #b8b8b8;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  .timeline-panel-toggle {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #2d2d2d;
+    border: 1px solid #4b4b4b;
+    border-radius: 6px;
+    color: #cfcfcf;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .timeline-panel-toggle:hover {
+    background: #383838;
+  }
+
+  .timeline-panel.collapsed {
+    padding: 4px 12px;
+  }
+
+  .timeline-panel.collapsed .timeline-header {
+    justify-content: center;
+    min-height: 24px;
+  }
+
+  .timeline-panel.collapsed .timeline-summary {
+    flex: 0 1 auto;
+    overflow: visible;
   }
 
   .timeline-controls {
     display: flex;
     align-items: center;
     gap: 6px;
+    flex-wrap: wrap;
   }
 
   .play-button {
