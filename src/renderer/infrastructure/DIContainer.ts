@@ -18,13 +18,23 @@ import { UndoRedoManager } from '@application/UndoRedoManager';
 import { PrepareFeatureAnchorEditUseCase } from '@application/PrepareFeatureAnchorEditUseCase';
 import { ResolveFeatureAnchorConflictsUseCase } from '@application/ResolveFeatureAnchorConflictsUseCase';
 import { CommitFeatureAnchorEditUseCase } from '@application/CommitFeatureAnchorEditUseCase';
+import type { DialogPort } from '@application/SaveLoadUseCase';
+import { SaveLoadUseCase } from '@application/SaveLoadUseCase';
+import {
+  FeatureQueryService,
+  LayerQueryService,
+  TimelineQueryService,
+  ProjectQueryService,
+} from '@application/queries';
+import type { WorldRepository } from '@domain/repositories/WorldRepository';
 import { ConfigManager } from './ConfigManager';
+import {
+  JSONWorldRepository,
+  createElectronFileSystem,
+  type FileSystemPort,
+} from './persistence/JSONWorldRepository';
 
-/**
- * DIコンテナ — 全サービスを初期化し、シングルトンとして提供する
- */
-export class DIContainer {
-  // アプリケーション層
+export interface ApplicationCommands {
   readonly addFeature: AddFeatureUseCase;
   readonly vertexEdit: VertexEditUseCase;
   readonly anchorEdit: UpdateFeatureAnchorUseCase;
@@ -36,32 +46,124 @@ export class DIContainer {
   readonly prepareAnchorEdit: PrepareFeatureAnchorEditUseCase;
   readonly resolveConflicts: ResolveFeatureAnchorConflictsUseCase;
   readonly commitAnchorEdit: CommitFeatureAnchorEditUseCase;
+  readonly saveLoad: SaveLoadUseCase;
+}
 
-  // インフラ層
+export interface ApplicationQueries {
+  readonly features: FeatureQueryService;
+  readonly layers: LayerQueryService;
+  readonly timeline: TimelineQueryService;
+  readonly project: ProjectQueryService;
+}
+
+export interface InfrastructureServices {
   readonly configManager: ConfigManager;
+  readonly repository: WorldRepository;
+}
 
-  constructor() {
-    // インフラ層
-    this.configManager = new ConfigManager();
+export interface DIContainerDependencies {
+  readonly configManager?: ConfigManager;
+  readonly repository?: WorldRepository;
+  readonly dialog?: DialogPort;
+}
 
-    // アプリケーション層 — 依存順に生成
-    this.addFeature = new AddFeatureUseCase();
-    this.vertexEdit = new VertexEditUseCase(this.addFeature);
-    this.anchorEdit = new UpdateFeatureAnchorUseCase(this.addFeature);
-    this.editFeature = new EditFeatureUseCase(
-      this.addFeature, this.vertexEdit, this.anchorEdit
+function createUnavailableFileSystem(): FileSystemPort {
+  return {
+    async readFile(): Promise<string> {
+      throw new Error('Electron file system is unavailable in this environment');
+    },
+    async writeFile(): Promise<void> {
+      throw new Error('Electron file system is unavailable in this environment');
+    },
+  };
+}
+
+function createRepository(): WorldRepository {
+  return new JSONWorldRepository(
+    typeof window === 'undefined' || typeof window.api === 'undefined'
+      ? createUnavailableFileSystem()
+      : createElectronFileSystem()
+  );
+}
+
+function createDialog(): DialogPort {
+  if (typeof window === 'undefined' || typeof window.api === 'undefined') {
+    return {
+      showOpenDialog: async () => null,
+      showSaveDialog: async () => null,
+    };
+  }
+
+  return {
+    showOpenDialog: () => window.api.showOpenDialog(),
+    showSaveDialog: () => window.api.showSaveDialog(),
+  };
+}
+
+/**
+ * DIコンテナ — 全サービスを初期化し、シングルトンとして提供する
+ */
+export class DIContainer {
+  readonly commands: ApplicationCommands;
+  readonly queries: ApplicationQueries;
+  readonly infrastructure: InfrastructureServices;
+
+  constructor(dependencies: DIContainerDependencies = {}) {
+    const configManager = dependencies.configManager ?? new ConfigManager();
+    const repository = dependencies.repository ?? createRepository();
+    const dialog = dependencies.dialog ?? createDialog();
+
+    const addFeature = new AddFeatureUseCase();
+    const vertexEdit = new VertexEditUseCase(addFeature);
+    const anchorEdit = new UpdateFeatureAnchorUseCase(addFeature);
+    const editFeature = new EditFeatureUseCase(
+      addFeature, vertexEdit, anchorEdit
     );
-    this.deleteFeature = new DeleteFeatureUseCase(this.addFeature);
-    this.navigateTime = new NavigateTimeUseCase();
-    this.manageLayers = new ManageLayersUseCase();
-    this.undoRedo = new UndoRedoManager();
-    this.prepareAnchorEdit = new PrepareFeatureAnchorEditUseCase(this.addFeature);
-    this.resolveConflicts = new ResolveFeatureAnchorConflictsUseCase(
-      this.addFeature, this.prepareAnchorEdit
+    const deleteFeature = new DeleteFeatureUseCase(addFeature);
+    const navigateTime = new NavigateTimeUseCase();
+    const manageLayers = new ManageLayersUseCase();
+    const undoRedo = new UndoRedoManager();
+    const prepareAnchorEdit = new PrepareFeatureAnchorEditUseCase(addFeature);
+    const resolveConflicts = new ResolveFeatureAnchorConflictsUseCase(
+      addFeature, prepareAnchorEdit
     );
-    this.commitAnchorEdit = new CommitFeatureAnchorEditUseCase(
-      this.addFeature, this.prepareAnchorEdit
+    const commitAnchorEdit = new CommitFeatureAnchorEditUseCase(
+      addFeature, prepareAnchorEdit
     );
+    const saveLoad = new SaveLoadUseCase(
+      repository,
+      dialog,
+      addFeature,
+      manageLayers,
+      navigateTime
+    );
+
+    this.commands = {
+      addFeature,
+      vertexEdit,
+      anchorEdit,
+      editFeature,
+      deleteFeature,
+      navigateTime,
+      manageLayers,
+      undoRedo,
+      prepareAnchorEdit,
+      resolveConflicts,
+      commitAnchorEdit,
+      saveLoad,
+    };
+
+    this.queries = {
+      features: new FeatureQueryService(addFeature),
+      layers: new LayerQueryService(manageLayers),
+      timeline: new TimelineQueryService(navigateTime),
+      project: new ProjectQueryService(saveLoad, configManager),
+    };
+
+    this.infrastructure = {
+      configManager,
+      repository,
+    };
   }
 }
 

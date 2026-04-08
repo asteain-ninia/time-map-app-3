@@ -46,3 +46,9 @@ export type {
 export { AddFeatureCommand, type AddFeatureParams } from './commands/AddFeatureCommand';
 export { MoveVertexCommand } from './commands/MoveVertexCommand';
 export { MoveFeatureCommand, type MoveFeatureParams } from './commands/MoveFeatureCommand';
+export {
+  FeatureQueryService,
+  LayerQueryService,
+  TimelineQueryService,
+  ProjectQueryService,
+} from './queries';

@@ -14,7 +14,7 @@
   import TimelinePanel from '@presentation/components/TimelinePanel.svelte';
   import StatusBar from '@presentation/components/StatusBar.svelte';
   import { createToolStore } from '@presentation/state/toolStore';
-  import { addFeature, anchorEdit, configManager, deleteFeature, manageLayers, navigateTime, saveLoad, undoRedo, vertexEdit } from '@presentation/state/appState';
+  import { getContainer } from '@infrastructure/DIContainer';
   import { AddFeatureCommand } from '@application/commands/AddFeatureCommand';
   import { DeleteFeatureCommand } from '@application/commands/DeleteFeatureCommand';
   import { MoveVertexCommand } from '@application/commands/MoveVertexCommand';
@@ -133,14 +133,37 @@
     resolveVertexSelectionContext,
   } from '@infrastructure/rendering/vertexSelectionContext';
 
+  const container = getContainer();
+  const {
+    commands: {
+      addFeature,
+      anchorEdit,
+      deleteFeature,
+      manageLayers,
+      navigateTime,
+      saveLoad,
+      undoRedo,
+      vertexEdit,
+    },
+    queries: {
+      features: featureQueries,
+      layers: layerQueries,
+      timeline: timelineQueries,
+      project: projectQueries,
+    },
+    infrastructure: {
+      configManager,
+    },
+  } = container;
+
   // --- ツール状態 ---
 
   const toolStore = createToolStore((addToolType, coords) => {
     // 描画確定時のコールバック — UndoRedoManager経由で実行
-    const layers = manageLayers.getLayers();
+    const layers = layerQueries.getLayers();
     if (layers.length === 0) return;
     const layerId = layers[0].id;
-    const time = navigateTime.getCurrentTime();
+    const time = timelineQueries.getCurrentTime();
     const polygonIndexInLayer = features.filter((feature) => {
       const anchor = feature.getActiveAnchor(time);
       return anchor?.shape.type === 'Polygon' && anchor.placement.layerId === layerId;
@@ -176,7 +199,7 @@
   let features = $state<readonly Feature[]>([]);
   let vertices = $state<ReadonlyMap<string, Vertex>>(new Map());
   let layers = $state<readonly Layer[]>([]);
-  let currentTime = $state(navigateTime.getCurrentTime());
+  let currentTime = $state(timelineQueries.getCurrentTime());
   let selectedFeatureId = $state<string | null>(null);
   let focusedLayerId = $state<string | null>(null);
   let isSidebarCollapsed = $state(false);
@@ -198,7 +221,7 @@
   let settingsDialogOpen = $state(false);
   let projectSettings = $state<WorldSettings>({ ...DEFAULT_SETTINGS });
   let projectMetadata = $state<WorldMetadata>({ ...DEFAULT_METADATA });
-  let appConfig = $state<AppConfig>(configManager.getAppConfig());
+  let appConfig = $state<AppConfig>(projectQueries.getAppConfig());
   let autoBackupIntervalMs = $derived(
     Number.isFinite(projectSettings.autoSaveInterval) &&
       projectSettings.autoSaveInterval > 0
@@ -245,7 +268,7 @@
       return;
     }
     configManager.loadAppConfig(localStorage);
-    appConfig = configManager.getAppConfig();
+    appConfig = projectQueries.getAppConfig();
   }
 
   function saveAppConfig(): void {
@@ -328,7 +351,7 @@
     projectMetadata = nextProjectMetadata;
     saveLoad.setMetadata(nextProjectMetadata);
     configManager.updateAppConfig(appConfigPatch);
-    appConfig = configManager.getAppConfig();
+    appConfig = projectQueries.getAppConfig();
     saveAppConfig();
     if (hasProjectChange) {
       markAsDirty();
@@ -496,7 +519,7 @@
   function validatePendingPolygon(coords: readonly Coordinate[]): string | null {
     if (addToolType !== 'polygon' || !currentTime) return null;
 
-    const layerList = manageLayers.getLayers();
+    const layerList = layerQueries.getLayers();
     if (layerList.length === 0) return null;
 
     try {
@@ -606,9 +629,9 @@
 
   /** 地物データを更新する */
   function refreshFeatureData(): void {
-    features = addFeature.getFeatures();
-    vertices = new Map(addFeature.getVertices());
-    sharedGroups = new Map(addFeature.getSharedVertexGroups());
+    features = featureQueries.getFeatures();
+    vertices = featureQueries.getVertices();
+    sharedGroups = featureQueries.getSharedVertexGroups();
   }
 
   function resetVertexDragContext(): void {
@@ -797,11 +820,11 @@
 
   /** レイヤーデータを更新する */
   function refreshLayerData(): void {
-    layers = manageLayers.getLayers();
+    layers = layerQueries.getLayers();
   }
 
   // --- 初期レイヤー（デフォルト1つ） ---
-  if (manageLayers.getLayers().length === 0) {
+  if (layerQueries.getLayers().length === 0) {
     manageLayers.addLayer('default', 'レイヤー1');
   }
   refreshLayerData();
@@ -830,7 +853,7 @@
     surveyMeasurements = [];
     dirtyState = resetDirty();
     // メタデータ・設定を復元
-    const loaded = saveLoad.getMetadata();
+    const loaded = projectQueries.getMetadata();
     projectSettings = normalizeWorldSettings(loaded.settings);
     projectMetadata = { ...loaded, settings: projectSettings };
     lastBackupTime = Date.now();
@@ -962,13 +985,13 @@
       syncToolState();
       // 点ツール: 即座にポイント追加（Undo対応）
       if (addToolType === 'point') {
-        const layerList = manageLayers.getLayers();
+        const layerList = layerQueries.getLayers();
         if (layerList.length > 0) {
           undoRedo.execute(new AddFeatureCommand(addFeature, {
             type: 'point',
             coord: alignedCoord,
             layerId: layerList[0].id,
-            time: navigateTime.getCurrentTime(),
+            time: timelineQueries.getCurrentTime(),
           }));
           refreshFeatureData();
         }
@@ -1850,7 +1873,7 @@
     surveyState = resetSurvey(surveyState);
     surveyMeasurements = [];
     dirtyState = resetDirty();
-    const resetMetadata = saveLoad.getMetadata();
+    const resetMetadata = projectQueries.getMetadata();
     projectSettings = normalizeWorldSettings(resetMetadata.settings);
     projectMetadata = { ...resetMetadata, settings: projectSettings };
     lastBackupTime = Date.now();

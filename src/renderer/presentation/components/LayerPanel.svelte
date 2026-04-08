@@ -1,8 +1,13 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { manageLayers } from '@presentation/state/appState';
+  import { getContainer } from '@infrastructure/DIContainer';
   import { eventBus } from '@application/EventBus';
   import type { Layer } from '@domain/entities/Layer';
+
+  const {
+    commands: { manageLayers },
+    queries: { layers: layerQueries },
+  } = getContainer();
 
   let {
     focusedLayerId = null as string | null,
@@ -13,7 +18,7 @@
   } = $props();
 
   /** リアクティブなレイヤー一覧 */
-  let layers = $state<readonly Layer[]>(manageLayers.getLayers());
+  let layers = $state<readonly Layer[]>(layerQueries.getLayers());
   let orderedLayers = $derived([...layers].toSorted((left, right) => left.order - right.order));
   let focusedLayer = $derived(
     focusedLayerId ? orderedLayers.find((layer) => layer.id === focusedLayerId) ?? null : null
@@ -25,14 +30,14 @@
   /** 表示/非表示切替 */
   function toggleVisibility(layerId: string): void {
     manageLayers.toggleVisibility(layerId);
-    layers = manageLayers.getLayers();
+    layers = layerQueries.getLayers();
   }
 
   /** 透明度変更 */
   function onOpacityChange(layerId: string, e: Event): void {
     const value = parseFloat((e.target as HTMLInputElement).value);
     manageLayers.setOpacity(layerId, value);
-    layers = manageLayers.getLayers();
+    layers = layerQueries.getLayers();
   }
 
   function setFocusedLayer(layerId: string | null): void {
@@ -47,7 +52,7 @@
 
   /** 外部からのレイヤー更新イベントに追従 */
   const unsubLayersChanged = eventBus.on('layers:changed', () => {
-    layers = manageLayers.getLayers();
+    layers = layerQueries.getLayers();
   });
 
   onDestroy(() => {

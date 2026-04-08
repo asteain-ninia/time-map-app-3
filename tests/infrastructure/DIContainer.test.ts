@@ -11,18 +11,24 @@ describe('DIContainer', () => {
   it('全サービスが初期化される', () => {
     const container = new DIContainer();
 
-    expect(container.addFeature).toBeDefined();
-    expect(container.vertexEdit).toBeDefined();
-    expect(container.anchorEdit).toBeDefined();
-    expect(container.editFeature).toBeDefined();
-    expect(container.deleteFeature).toBeDefined();
-    expect(container.navigateTime).toBeDefined();
-    expect(container.manageLayers).toBeDefined();
-    expect(container.undoRedo).toBeDefined();
-    expect(container.prepareAnchorEdit).toBeDefined();
-    expect(container.resolveConflicts).toBeDefined();
-    expect(container.commitAnchorEdit).toBeDefined();
-    expect(container.configManager).toBeDefined();
+    expect(container.commands.addFeature).toBeDefined();
+    expect(container.commands.vertexEdit).toBeDefined();
+    expect(container.commands.anchorEdit).toBeDefined();
+    expect(container.commands.editFeature).toBeDefined();
+    expect(container.commands.deleteFeature).toBeDefined();
+    expect(container.commands.navigateTime).toBeDefined();
+    expect(container.commands.manageLayers).toBeDefined();
+    expect(container.commands.undoRedo).toBeDefined();
+    expect(container.commands.prepareAnchorEdit).toBeDefined();
+    expect(container.commands.resolveConflicts).toBeDefined();
+    expect(container.commands.commitAnchorEdit).toBeDefined();
+    expect(container.commands.saveLoad).toBeDefined();
+    expect(container.queries.features).toBeDefined();
+    expect(container.queries.layers).toBeDefined();
+    expect(container.queries.timeline).toBeDefined();
+    expect(container.queries.project).toBeDefined();
+    expect(container.infrastructure.configManager).toBeDefined();
+    expect(container.infrastructure.repository).toBeDefined();
   });
 
   it('getContainerがシングルトンを返す', () => {
@@ -41,12 +47,13 @@ describe('DIContainer', () => {
   it('サービス間の依存関係が正しい', () => {
     const container = new DIContainer();
     // editFeatureがvertexEditと同じaddFeatureを共有していることを確認
-    const feature = container.addFeature.addPoint(
+    const feature = container.commands.addFeature.addPoint(
       new Coordinate(10, 20),
       'l1',
       new TimePoint(2000)
     );
     // editFeatureからも同じ地物が取得できる
-    expect(container.editFeature.getFeatureById(feature.id)).toBeDefined();
+    expect(container.commands.editFeature.getFeatureById(feature.id)).toBeDefined();
+    expect(container.queries.features.getFeatureById(feature.id)).toBeDefined();
   });
 });

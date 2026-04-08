@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { navigateTime } from '@presentation/state/appState';
+  import { getContainer } from '@infrastructure/DIContainer';
   import { eventBus } from '@application/EventBus';
   import {
     AVAILABLE_SPEEDS,
@@ -18,6 +18,11 @@
     toTimelineDisplayState,
   } from './timelinePanelUtils';
 
+  const {
+    commands: { navigateTime },
+    queries: { timeline: timelineQueries },
+  } = getContainer();
+
   let {
     sliderMin = 0,
     sliderMax = 10000,
@@ -26,9 +31,9 @@
     sliderMax?: number;
   } = $props();
 
-  let currentYear = $state(navigateTime.getCurrentTime().year);
-  let currentMonth = $state(navigateTime.getCurrentTime().month ?? 1);
-  let currentDay = $state(navigateTime.getCurrentTime().day ?? 1);
+  let currentYear = $state(timelineQueries.getCurrentTime().year);
+  let currentMonth = $state(timelineQueries.getCurrentTime().month ?? 1);
+  let currentDay = $state(timelineQueries.getCurrentTime().day ?? 1);
   let isPlaying = $state(false);
   let speed = $state<PlaybackSpeed>(1);
   let stepUnit = $state<StepUnit>('year');
