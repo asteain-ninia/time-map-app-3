@@ -21,10 +21,14 @@
 </script>
 
 {#if isOpen}
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-  <div class="modal-overlay" onclick={() => onCancel?.()}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+  <div class="modal-overlay">
+    <button
+      type="button"
+      class="modal-backdrop"
+      aria-label="分割確認を閉じる"
+      onclick={() => onCancel?.()}
+    ></button>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-label="分割の確認">
       <h3 class="modal-title">分割の確認</h3>
 
       <p class="modal-desc">
@@ -63,10 +67,7 @@
 <style>
   .modal-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     background: rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
@@ -74,7 +75,16 @@
     z-index: 1000;
   }
 
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: transparent;
+    padding: 0;
+  }
+
   .modal-content {
+    position: relative;
     background: #2d2d2d;
     border: 1px solid #555;
     border-radius: 8px;

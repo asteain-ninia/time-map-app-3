@@ -282,10 +282,14 @@
 </script>
 
 {#if isOpen}
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-  <div class="modal-overlay" onclick={() => onClose?.()}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <div class="dialog" onclick={(e) => e.stopPropagation()}>
+  <div class="modal-overlay">
+    <button
+      type="button"
+      class="modal-backdrop"
+      aria-label="プロジェクト設定を閉じる"
+      onclick={() => onClose?.()}
+    ></button>
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="プロジェクト設定">
       <h3 class="dialog-title">プロジェクト設定</h3>
 
       <div class="dialog-body">
@@ -550,10 +554,7 @@
 <style>
   .modal-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     background: rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
@@ -561,7 +562,16 @@
     z-index: 1000;
   }
 
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: transparent;
+    padding: 0;
+  }
+
   .dialog {
+    position: relative;
     background: #2d2d2d;
     border: 1px solid #555;
     border-radius: 8px;

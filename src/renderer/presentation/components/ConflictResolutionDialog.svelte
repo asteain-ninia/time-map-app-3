@@ -54,9 +54,8 @@
 </script>
 
 {#if isOpen}
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay">
-    <div class="dialog">
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="競合解決">
       <h3 class="dialog-title">競合解決</h3>
 
       <div class="dialog-body">
@@ -64,8 +63,8 @@
         <div class="conflict-list">
           <div class="list-header">競合一覧 ({conflicts.length}件)</div>
           {#each conflicts as conflict, i}
-            <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-            <div
+            <button
+              type="button"
               class="conflict-item"
               class:active={i === currentIndex}
               class:resolved={isResolved(i)}
@@ -78,7 +77,7 @@
               {#if isResolved(i)}
                 <span class="resolved-badge">済</span>
               {/if}
-            </div>
+            </button>
           {/each}
         </div>
 
@@ -170,10 +169,7 @@
 <style>
   .modal-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     background: rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
@@ -223,6 +219,9 @@
   }
 
   .conflict-item {
+    width: 100%;
+    border: none;
+    background: transparent;
     padding: 6px 8px;
     font-size: 11px;
     color: #ccc;
@@ -230,6 +229,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    text-align: left;
   }
 
   .conflict-item:hover {

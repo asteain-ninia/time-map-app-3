@@ -37,26 +37,33 @@
 </script>
 
 {#if isOpen}
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-  <div class="context-overlay" onclick={() => onClose?.()}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+  <div class="context-root">
+    <button
+      type="button"
+      class="context-overlay"
+      aria-label="コンテキストメニューを閉じる"
+      onclick={() => onClose?.()}
+    ></button>
     <div
       class="context-menu"
+      role="menu"
       style="left: {x}px; top: {y}px;"
       onclick={(e) => e.stopPropagation()}
     >
       {#each items as item}
         {#if 'separator' in item && item.separator}
-          <div class="separator"></div>
+          <div class="separator" role="separator" aria-orientation="horizontal"></div>
         {:else}
-          <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-          <div
+          <button
+            type="button"
             class="menu-item"
             class:disabled={item.disabled}
+            disabled={item.disabled}
+            role="menuitem"
             onclick={() => handleClick(item)}
           >
             {item.label}
-          </div>
+          </button>
         {/if}
       {/each}
     </div>
@@ -64,13 +71,18 @@
 {/if}
 
 <style>
+  .context-root {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+  }
+
   .context-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 2000;
+    inset: 0;
+    border: none;
+    background: transparent;
+    padding: 0;
   }
 
   .context-menu {
@@ -84,9 +96,14 @@
   }
 
   .menu-item {
+    display: block;
+    width: 100%;
+    border: none;
+    background: transparent;
     padding: 5px 16px;
     font-size: 12px;
     color: #e0e0e0;
+    text-align: left;
     cursor: pointer;
     white-space: nowrap;
   }

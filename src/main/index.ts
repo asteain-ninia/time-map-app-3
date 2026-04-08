@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { access, mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
+import { registerIpcHandlers } from './ipcHandlers';
 
 const MIN_WIDTH = 800;
 const MIN_HEIGHT = 600;
@@ -35,78 +36,13 @@ function createWindow(): void {
   }
 }
 
-/** JSONファイル用フィルタ（要件定義書 §2.5.1: 拡張子は .json） */
-const JSON_FILTERS = [{ name: 'JSON ファイル', extensions: ['json'] }];
-
-/** IPC ハンドラの登録 */
-function registerIpcHandlers(): void {
-  ipcMain.handle('file:read', async (_event, filePath: string): Promise<string> => {
-    return readFile(filePath, 'utf-8');
-  });
-
-  ipcMain.handle('file:write', async (_event, filePath: string, data: string): Promise<void> => {
-    await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(filePath, data, 'utf-8');
-  });
-
-  ipcMain.handle('file:exists', async (_event, filePath: string): Promise<boolean> => {
-    try {
-      await access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-
-  ipcMain.handle('file:list', async (_event, dirPath: string): Promise<readonly string[]> => {
-    try {
-      const entries = await readdir(dirPath, { withFileTypes: true });
-      return entries
-        .filter((entry) => entry.isFile())
-        .map((entry) => entry.name);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return [];
-      }
-      throw error;
-    }
-  });
-
-  ipcMain.handle('file:delete', async (_event, filePath: string): Promise<void> => {
-    try {
-      await unlink(filePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
-    }
-  });
-
-  ipcMain.handle('file:autoBackupRoot', async (): Promise<string> => {
-    const appRootPath = app.isPackaged
-      ? dirname(app.getPath('exe'))
-      : app.getAppPath();
-    return join(appRootPath, 'savebackup');
-  });
-
-  ipcMain.handle('dialog:open', async (): Promise<string | null> => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      filters: JSON_FILTERS,
-      properties: ['openFile'],
-    });
-    return canceled ? null : filePaths[0] ?? null;
-  });
-
-  ipcMain.handle('dialog:save', async (): Promise<string | null> => {
-    const { canceled, filePath } = await dialog.showSaveDialog({
-      filters: JSON_FILTERS,
-    });
-    return canceled ? null : filePath ?? null;
-  });
-}
-
 app.whenReady().then(() => {
-  registerIpcHandlers();
+  registerIpcHandlers({
+    ipcMain,
+    app,
+    dialog,
+    fs: { access, mkdir, readdir, readFile, unlink, writeFile },
+  });
   createWindow();
 
   app.on('activate', () => {

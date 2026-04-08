@@ -45,87 +45,110 @@
 
 <svelte:window onkeydown={onKeyDown} />
 
-<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 {#if openMenu}
-  <div class="menu-backdrop" onclick={closeMenu}></div>
+  <button
+    type="button"
+    class="menu-backdrop"
+    aria-label="メニューを閉じる"
+    onclick={closeMenu}
+  ></button>
 {/if}
 
-<div class="menu-bar">
+<div class="menu-bar" role="menubar" aria-label="アプリメニュー">
   <div class="menu-item-wrapper">
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <span class="menu-trigger" onclick={() => toggleMenu('file')}>ファイル</span>
+    <button
+      type="button"
+      class="menu-trigger"
+      aria-haspopup="true"
+      aria-expanded={openMenu === 'file'}
+      onclick={() => toggleMenu('file')}
+    >
+      ファイル
+    </button>
     {#if openMenu === 'file'}
-      <div class="menu-dropdown">
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-        <div class="menu-action" onclick={() => doAction(onNewProject)}>
+      <div class="menu-dropdown" role="menu" aria-label="ファイル">
+        <button type="button" class="menu-action" onclick={() => doAction(onNewProject)}>
           <span>新規プロジェクト</span>
-        </div>
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-        <div class="menu-action" onclick={() => doAction(onOpen)}>
+        </button>
+        <button type="button" class="menu-action" onclick={() => doAction(onOpen)}>
           <span>開く</span>
           <span class="shortcut">Ctrl+O</span>
-        </div>
+        </button>
         <div class="menu-separator"></div>
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-        <div class="menu-action" onclick={() => doAction(onSave)}>
+        <button type="button" class="menu-action" onclick={() => doAction(onSave)}>
           <span>保存</span>
           <span class="shortcut">Ctrl+S</span>
-        </div>
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-        <div class="menu-action" onclick={() => doAction(onSaveAs)}>
+        </button>
+        <button type="button" class="menu-action" onclick={() => doAction(onSaveAs)}>
           <span>名前を付けて保存</span>
-        </div>
+        </button>
       </div>
     {/if}
   </div>
 
   <div class="menu-item-wrapper">
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <span class="menu-trigger" onclick={() => toggleMenu('edit')}>編集</span>
+    <button
+      type="button"
+      class="menu-trigger"
+      aria-haspopup="true"
+      aria-expanded={openMenu === 'edit'}
+      onclick={() => toggleMenu('edit')}
+    >
+      編集
+    </button>
     {#if openMenu === 'edit'}
-      <div class="menu-dropdown">
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-        <div class="menu-action" onclick={() => doAction(onUndo)}>
+      <div class="menu-dropdown" role="menu" aria-label="編集">
+        <button type="button" class="menu-action" onclick={() => doAction(onUndo)}>
           <span>元に戻す</span>
           <span class="shortcut">Ctrl+Z</span>
-        </div>
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-        <div class="menu-action" onclick={() => doAction(onRedo)}>
+        </button>
+        <button type="button" class="menu-action" onclick={() => doAction(onRedo)}>
           <span>やり直し</span>
           <span class="shortcut">Ctrl+Y</span>
-        </div>
+        </button>
         <div class="menu-separator"></div>
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-        <div class="menu-action" onclick={() => doAction(onSelectAll)}>
+        <button type="button" class="menu-action" onclick={() => doAction(onSelectAll)}>
           <span>全選択</span>
           <span class="shortcut">Ctrl+A</span>
-        </div>
+        </button>
       </div>
     {/if}
   </div>
 
   <div class="menu-item-wrapper">
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <span class="menu-trigger" onclick={() => toggleMenu('tools')}>ツール</span>
+    <button
+      type="button"
+      class="menu-trigger"
+      aria-haspopup="true"
+      aria-expanded={openMenu === 'tools'}
+      onclick={() => toggleMenu('tools')}
+    >
+      ツール
+    </button>
     {#if openMenu === 'tools'}
-      <div class="menu-dropdown">
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-        <div class="menu-action" onclick={() => doAction(onSettings)}>
+      <div class="menu-dropdown" role="menu" aria-label="ツール">
+        <button type="button" class="menu-action" onclick={() => doAction(onSettings)}>
           <span>プロジェクト設定</span>
-        </div>
+        </button>
       </div>
     {/if}
   </div>
 
   <div class="menu-item-wrapper">
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <span class="menu-trigger" onclick={() => toggleMenu('help')}>ヘルプ</span>
+    <button
+      type="button"
+      class="menu-trigger"
+      aria-haspopup="true"
+      aria-expanded={openMenu === 'help'}
+      onclick={() => toggleMenu('help')}
+    >
+      ヘルプ
+    </button>
     {#if openMenu === 'help'}
-      <div class="menu-dropdown">
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-        <div class="menu-action disabled">
+      <div class="menu-dropdown" role="menu" aria-label="ヘルプ">
+        <button type="button" class="menu-action" disabled>
           <span>バージョン情報</span>
-        </div>
+        </button>
       </div>
     {/if}
   </div>
@@ -154,8 +177,11 @@
   }
 
   .menu-trigger {
+    border: none;
+    background: transparent;
     padding: 2px 8px;
     color: #ccc;
+    font: inherit;
     cursor: pointer;
     border-radius: 3px;
   }
@@ -179,18 +205,23 @@
 
   .menu-action {
     display: flex;
+    width: 100%;
+    border: none;
+    background: transparent;
     justify-content: space-between;
     align-items: center;
     padding: 5px 16px;
     color: #e0e0e0;
+    font: inherit;
+    text-align: left;
     cursor: pointer;
   }
 
-  .menu-action:hover:not(.disabled) {
+  .menu-action:hover:not(:disabled) {
     background: #094771;
   }
 
-  .menu-action.disabled {
+  .menu-action:disabled {
     color: #666;
     cursor: default;
   }
