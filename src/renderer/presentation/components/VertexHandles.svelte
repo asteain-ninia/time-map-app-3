@@ -103,6 +103,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <circle
     class="vertex-handle"
+    class:selected={isSelected}
     cx={geoToSvgX(vertex.x)}
     cy={geoToSvgY(vertex.y)}
     r={(isSelected ? VERTEX_RADIUS + 1 : VERTEX_RADIUS) / zoom}

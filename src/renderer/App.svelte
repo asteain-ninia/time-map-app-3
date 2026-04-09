@@ -132,6 +132,15 @@
     collectFeatureIdsForSelectedVertices,
     resolveVertexSelectionContext,
   } from '@infrastructure/rendering/vertexSelectionContext';
+  import {
+    hasProjectSettingsChanged,
+    normalizeWorldSettings,
+  } from '@presentation/app/appProjectSettings';
+  import {
+    buildPropertyPanelSelectionState,
+    collectAnchorVertexIds,
+    getFeatureById,
+  } from '@presentation/app/appSelection';
 
   const container = getContainer();
   const {
@@ -278,63 +287,6 @@
     configManager.saveAppConfig(localStorage);
   }
 
-  function normalizeWorldSettings(settings: WorldSettings): WorldSettings {
-    const safeZoomMin = Number.isFinite(settings.zoomMin) ? settings.zoomMin : DEFAULT_SETTINGS.zoomMin;
-    const safeZoomMax = Number.isFinite(settings.zoomMax) ? settings.zoomMax : DEFAULT_SETTINGS.zoomMax;
-    const zoomMin = Math.max(0.1, Math.min(safeZoomMin, safeZoomMax));
-    const zoomMax = Math.max(zoomMin, Math.max(safeZoomMin, safeZoomMax));
-
-    return {
-      ...settings,
-      zoomMin,
-      zoomMax,
-      gridOpacity: Math.max(0, Math.min(1, settings.gridOpacity)),
-      labelAreaThreshold: Math.max(0, settings.labelAreaThreshold),
-      autoSaveInterval: Math.max(1, Math.round(settings.autoSaveInterval)),
-    };
-  }
-
-  function areLayersEqual(left: readonly Layer[], right: readonly Layer[]): boolean {
-    if (left.length !== right.length) {
-      return false;
-    }
-
-    return left.every((layer, index) => {
-      const other = right[index];
-      return other !== undefined &&
-        layer.id === other.id &&
-        layer.name === other.name &&
-        layer.order === other.order &&
-        layer.visible === other.visible &&
-        layer.opacity === other.opacity;
-    });
-  }
-
-  function hasProjectSettingsChanged(
-    nextMetadata: WorldMetadata,
-    nextSettings: WorldSettings,
-    nextLayers: readonly Layer[]
-  ): boolean {
-    return projectMetadata.worldName !== nextMetadata.worldName ||
-      projectMetadata.worldDescription !== nextMetadata.worldDescription ||
-      projectMetadata.sliderMin !== nextMetadata.sliderMin ||
-      projectMetadata.sliderMax !== nextMetadata.sliderMax ||
-      projectSettings.zoomMin !== nextSettings.zoomMin ||
-      projectSettings.zoomMax !== nextSettings.zoomMax ||
-      projectSettings.gridInterval !== nextSettings.gridInterval ||
-      projectSettings.gridColor !== nextSettings.gridColor ||
-      projectSettings.gridOpacity !== nextSettings.gridOpacity ||
-      projectSettings.autoSaveInterval !== nextSettings.autoSaveInterval ||
-      projectSettings.equatorLength !== nextSettings.equatorLength ||
-      projectSettings.oblateness !== nextSettings.oblateness ||
-      projectSettings.labelAreaThreshold !== nextSettings.labelAreaThreshold ||
-      projectSettings.defaultAutoColor !== nextSettings.defaultAutoColor ||
-      projectSettings.defaultPalette !== nextSettings.defaultPalette ||
-      projectSettings.customPalettes.length !== nextSettings.customPalettes.length ||
-      projectSettings.customPalettes.some((palette, index) => palette !== nextSettings.customPalettes[index]) ||
-      !areLayersEqual(layers, nextLayers);
-  }
-
   function onSettingsSave(
     metaPatch: Partial<WorldMetadata>,
     settingsPatch: Partial<WorldSettings>,
@@ -343,7 +295,14 @@
   ): void {
     const nextProjectSettings = normalizeWorldSettings({ ...projectSettings, ...settingsPatch });
     const nextProjectMetadata = { ...projectMetadata, ...metaPatch, settings: nextProjectSettings };
-    const hasProjectChange = hasProjectSettingsChanged(nextProjectMetadata, nextProjectSettings, nextLayers);
+    const hasProjectChange = hasProjectSettingsChanged(
+      projectMetadata,
+      projectSettings,
+      layers,
+      nextProjectMetadata,
+      nextProjectSettings,
+      nextLayers
+    );
 
     manageLayers.restore(nextLayers);
     refreshLayerData();
@@ -773,18 +732,8 @@
     }
   }
 
-  function getFeatureById(featureId: string | null): Feature | null {
-    if (!featureId) return null;
-    return features.find((candidate) => candidate.id === featureId) ?? null;
-  }
-
   function getSelectionFeature(): Feature | null {
-    return getFeatureById(selectionFeatureId);
-  }
-
-  function getSelectionFeatureName(featureId: string): string {
-    const feature = getFeatureById(featureId);
-    return feature?.getActiveAnchor(currentTime)?.property.name ?? featureId;
+    return getFeatureById(features, selectionFeatureId);
   }
 
   function getPropertyPanelSelectionState(): {
@@ -792,30 +741,12 @@
     featureSummaries?: readonly { id: string; name: string }[];
     remainingCount?: number;
   } {
-    if (selectedFeatureId || vertexSelectionContext.kind === 'single') {
-      return { kind: 'empty' };
-    }
-
-    if (vertexSelectionContext.kind === 'multiple') {
-      const featureSummaries = vertexSelectionContext.featureIds
-        .slice(0, 5)
-        .map((featureId) => ({
-          id: featureId,
-          name: getSelectionFeatureName(featureId),
-        }));
-
-      return {
-        kind: 'multiple',
-        featureSummaries,
-        remainingCount: Math.max(vertexSelectionContext.featureIds.length - featureSummaries.length, 0),
-      };
-    }
-
-    if (vertexSelectionContext.kind === 'unknown') {
-      return { kind: 'unknown' };
-    }
-
-    return { kind: 'empty' };
+    return buildPropertyPanelSelectionState(
+      features,
+      selectedFeatureId,
+      vertexSelectionContext,
+      currentTime
+    );
   }
 
   /** レイヤーデータを更新する */
@@ -1780,6 +1711,30 @@
     contextMenuOpen = false;
   }
 
+  function isTextInputTarget(target: EventTarget | null): boolean {
+    const element = target instanceof HTMLElement ? target : null;
+    const tag = element?.tagName;
+    return tag === 'INPUT' ||
+      tag === 'TEXTAREA' ||
+      tag === 'SELECT' ||
+      element?.isContentEditable === true;
+  }
+
+  function onSelectAllVertices(): void {
+    if (toolMode !== 'view' && toolMode !== 'edit') {
+      return;
+    }
+
+    const feature = getSelectionFeature();
+    const anchor = currentTime ? feature?.getActiveAnchor(currentTime) : null;
+    if (!feature || !anchor) {
+      return;
+    }
+
+    selectedFeatureId = feature.id;
+    selectedVertexIds = new Set(collectAnchorVertexIds(anchor));
+  }
+
   /** キーボードイベント */
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
@@ -1843,9 +1798,15 @@
       if (confirmUnsavedChanges()) saveLoad.open();
     }
 
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A')) {
+      if (!isTextInputTarget(e.target)) {
+        e.preventDefault();
+        onSelectAllVertices();
+      }
+    }
+
     // §2.7.3: ツールモード切替（入力フォーカス時は無効）
-    const tag = (e.target as HTMLElement)?.tagName;
-    if (!e.ctrlKey && !e.altKey && !e.shiftKey && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+    if (!e.ctrlKey && !e.altKey && !e.shiftKey && !isTextInputTarget(e.target)) {
       if (e.key === 'v' || e.key === 'V') { onModeChange('view'); }
       else if (e.key === 'a' || e.key === 'A') { onModeChange('add'); }
       else if (e.key === 'e' || e.key === 'E') { onModeChange('edit'); }
@@ -1905,10 +1866,15 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeyDown} oncontextmenu={onContextMenu} onbeforeunload={onBeforeUnload} />
+<svelte:window
+  onkeydown={onKeyDown}
+  oncontextmenu={onContextMenu}
+  onbeforeunload={onBeforeUnload}
+  ondrop={onDrop}
+  ondragover={onDragOver}
+/>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="app-layout" ondrop={onDrop} ondragover={onDragOver}>
+<div class="app-layout">
   <MenuBar
     onNewProject={newProject}
     onOpen={() => { if (confirmUnsavedChanges()) saveLoad.open(); }}
@@ -1916,6 +1882,7 @@
     onSaveAs={() => saveLoad.saveAs()}
     onUndo={() => { undoRedo.undo(); refreshFeatureData(); refreshLayerData(); }}
     onRedo={() => { undoRedo.redo(); refreshFeatureData(); refreshLayerData(); }}
+    onSelectAll={onSelectAllVertices}
     onSettings={openSettings}
   />
   <div class="content-area">

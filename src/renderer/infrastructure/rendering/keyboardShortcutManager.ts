@@ -32,7 +32,7 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
   // 編集操作
   { label: 'Ctrl+Z', description: '元に戻す', category: 'edit', ctrl: true, key: 'z' },
   { label: 'Ctrl+Y', description: 'やり直し', category: 'edit', ctrl: true, key: 'y' },
-  { label: 'Ctrl+A', description: '全選択', category: 'edit', ctrl: true, key: 'a' },
+  { label: 'Ctrl+A', description: '全頂点選択', category: 'edit', ctrl: true, key: 'a' },
   { label: 'Delete', description: '削除', category: 'edit', key: 'Delete' },
 
   // ツール切り替え

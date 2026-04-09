@@ -3,26 +3,25 @@
   import { ViewportManager } from '@infrastructure/ViewportManager';
   import { eventBus } from '@application/EventBus';
   import { Coordinate } from '@domain/value-objects/Coordinate';
-  import GridRenderer from './GridRenderer.svelte';
-  import GridLabelsOverlay from './GridLabelsOverlay.svelte';
-  import LongitudeCompass from './LongitudeCompass.svelte';
-  import FeatureRenderer from './FeatureRenderer.svelte';
-  import DrawingPreview from './DrawingPreview.svelte';
-  import VertexHandles from './VertexHandles.svelte';
-  import EditToolbar from './EditToolbar.svelte';
   import type { Feature } from '@domain/entities/Feature';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { Layer } from '@domain/entities/Layer';
   import type { WorldSettings } from '@domain/entities/World';
   import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
-  import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
   import type { SnapIndicator } from '@infrastructure/rendering/snapIndicatorUtils';
   import type { SurveyMeasurement, SurveyResult } from '@infrastructure/rendering/surveyModeManager';
-  import MeasurementOverlay from './MeasurementOverlay.svelte';
-  import type { Coordinate as CoordinateType } from '@domain/value-objects/Coordinate';
   import { wrapLongitudeToPrimaryRange } from '@infrastructure/rendering/featureRenderingUtils';
+  import MapCanvasHud from './mapCanvas/MapCanvasHud.svelte';
+  import MapCanvasSvgLayers from './mapCanvas/MapCanvasSvgLayers.svelte';
+  import {
+    getAnchorVertexCount,
+    normalizeRenderFps,
+    normalizeVertexMarkerDisplayLimit,
+    normalizeZoomLimits,
+    type MapCanvasVertexHandleEntry,
+  } from './mapCanvasUtils';
 
   let {
     features = [] as readonly Feature[],
@@ -82,8 +81,8 @@
     onStartMerge,
     onClearMerge,
     surveyMeasurements = [] as readonly SurveyMeasurement[],
-    surveyPointA = null as CoordinateType | null,
-    surveyPointB = null as CoordinateType | null,
+    surveyPointA = null as Coordinate | null,
+    surveyPointB = null as Coordinate | null,
     surveyResult = null as SurveyResult | null,
     boxSelectBox = null as { minX: number; minY: number; maxX: number; maxY: number } | null,
     validationMessage = '',
@@ -162,8 +161,8 @@
     onStartMerge?: () => void;
     onClearMerge?: () => void;
     surveyMeasurements?: readonly SurveyMeasurement[];
-    surveyPointA?: CoordinateType | null;
-    surveyPointB?: CoordinateType | null;
+    surveyPointA?: Coordinate | null;
+    surveyPointB?: Coordinate | null;
     surveyResult?: SurveyResult | null;
     boxSelectBox?: { minX: number; minY: number; maxX: number; maxY: number } | null;
     validationMessage?: string;
@@ -192,11 +191,7 @@
   /** 頂点ハンドル描画対象 */
   let vertexHandleEntries = $derived(() => {
     if (!currentTime) {
-      return [] as Array<{
-        featureId: string;
-        anchor: FeatureAnchor;
-        showEdgeHandles: boolean;
-      }>;
+      return [] as MapCanvasVertexHandleEntry[];
     }
 
     if (selectedFeatureId && selectionAnchor()) {
@@ -211,11 +206,7 @@
       return [];
     }
 
-    const entries: Array<{
-      featureId: string;
-      anchor: FeatureAnchor;
-      showEdgeHandles: boolean;
-    }> = [];
+    const entries: MapCanvasVertexHandleEntry[] = [];
 
     for (const feature of features) {
       const anchor = feature.getActiveAnchor(currentTime);
@@ -232,31 +223,6 @@
 
     return entries;
   });
-
-  function getAnchorVertexCount(anchor: FeatureAnchor): number {
-    switch (anchor.shape.type) {
-      case 'Point':
-        return 1;
-      case 'LineString':
-        return anchor.shape.vertexIds.length;
-      case 'Polygon':
-        return anchor.shape.rings.reduce((sum, ring) => sum + ring.vertexIds.length, 0);
-    }
-  }
-
-  function normalizeRenderFps(fps: number): number {
-    if (!Number.isFinite(fps)) {
-      return 60;
-    }
-    return Math.max(1, Math.min(60, Math.round(fps)));
-  }
-
-  function normalizeVertexMarkerDisplayLimit(limit: number): number {
-    if (!Number.isFinite(limit)) {
-      return 1000;
-    }
-    return Math.max(1, Math.round(limit));
-  }
 
   let totalVertexHandleCount = $derived(
     vertexHandleEntries().reduce((sum, entry) => sum + getAnchorVertexCount(entry.anchor), 0)
@@ -305,14 +271,6 @@
         if (match) baseMapContent = match[1];
       });
   });
-
-  function normalizeZoomLimits(min: number, max: number): { min: number; max: number } {
-    const safeMin = Number.isFinite(min) ? min : 1;
-    const safeMax = Number.isFinite(max) ? max : 50;
-    const lower = Math.max(0.1, Math.min(safeMin, safeMax));
-    const upper = Math.max(lower, Math.max(safeMin, safeMax));
-    return { min: lower, max: upper };
-  }
 
   $effect(() => {
     const limits = normalizeZoomLimits(zoomMin, zoomMax);
@@ -535,267 +493,85 @@
     onclick={onClick}
     ondblclick={onDblClick}
   >
-    <!-- §2.1: 横方向無限スクロール — レイヤーごとに全タイルを描画し、隣タイルの背景が地物を上書きしないようにする -->
-    <g class="wrap-background-layer" pointer-events="none">
-      {#each wrapOffsets as offset}
-        <g class="wrap-background-tile" transform="translate({offset}, 0)">
-          <rect x="0" y="0" width="360" height="180" fill="#1a1a2e" />
-        </g>
-      {/each}
-    </g>
-
-    <g class="wrap-base-map-layer" pointer-events="none" style="user-select: none;">
-      {#each wrapOffsets as offset}
-        <g class="base-map-layer" transform="translate({offset}, 0)">
-          <g transform="scale({360 / 4243.4}, {180 / 2121.7})">
-            {@html baseMapContent}
-          </g>
-        </g>
-      {/each}
-    </g>
-
-    {#if currentTime}
-      <g class="wrap-feature-layer">
-        {#each wrapOffsets as offset}
-          <g class="wrap-feature-tile" transform="translate({offset}, 0)">
-            <FeatureRenderer
-              {features}
-              {vertices}
-              {layers}
-              {focusedLayerId}
-              {currentTime}
-              {settings}
-              zoom={zoomLevel}
-              {labelAreaThreshold}
-              {selectedFeatureId}
-              contextFeatureId={vertexSelectionContextFeatureId}
-            />
-          </g>
-        {/each}
-      </g>
-    {/if}
-
-    <g class="wrap-grid-layer">
-      {#each wrapOffsets as offset}
-        <g class="wrap-grid-tile" transform="translate({offset}, 0)">
-          <GridRenderer
-            zoom={zoomLevel}
-            interval={gridInterval}
-            color={gridColor}
-            opacity={gridOpacity}
-            isPrimaryWrap={offset === 0}
-          />
-        </g>
-      {/each}
-    </g>
-
-    <g class="wrap-edit-overlay-layer">
-      {#each wrapOffsets as offset}
-        <g class="wrap-edit-overlay-tile" transform="translate({offset}, 0)">
-          <!-- 頂点ハンドル・エッジハンドル -->
-          {#if !isDrawing && showVertexHandles}
-            {#each vertexHandleEntries() as entry (entry.featureId)}
-              <VertexHandles
-                anchor={entry.anchor}
-                {vertices}
-                zoom={zoomLevel}
-                {selectedVertexIds}
-                {sharedGroups}
-                {snapIndicators}
-                showEdgeHandles={!suppressPassiveVertexHandles && entry.showEdgeHandles}
-                visibleVertexIds={suppressPassiveVertexHandles ? selectedVertexIds : undefined}
-                {onVertexMouseDown}
-                {onEdgeHandleMouseDown}
-              />
-            {/each}
-          {/if}
-
-          <!-- 描画プレビュー -->
-          {#if isDrawing && drawingCoords.length > 0}
-            <DrawingPreview
-              coords={drawingCoords}
-              zoom={zoomLevel}
-              cursorGeo={cursorGeo}
-              isPolygon={addToolType === 'polygon'}
-            />
-          {/if}
-
-          <!-- リング描画プレビュー（穴/飛び地追加中） -->
-          {#if isRingDrawing && ringDrawingCoords.length > 0}
-            <DrawingPreview
-              coords={ringDrawingCoords}
-              zoom={zoomLevel}
-              cursorGeo={cursorGeo}
-              isPolygon={true}
-            />
-          {/if}
-
-          <!-- ナイフツール描画プレビュー（分断線） -->
-          {#if isKnifeDrawing && knifeDrawingCoords.length > 0}
-            <DrawingPreview
-              coords={knifeDrawingCoords}
-              zoom={zoomLevel}
-              cursorGeo={cursorGeo}
-              isPolygon={false}
-            />
-          {/if}
-        </g>
-      {/each}
-    </g>
-
-    <g class="wrap-measurement-layer">
-      {#each wrapOffsets as offset}
-        <g class="wrap-measurement-tile" transform="translate({offset}, 0)">
-          <!-- 完了済み測量オーバーレイ -->
-          {#each surveyMeasurements as measurement}
-            <MeasurementOverlay
-              pointA={measurement.pointA}
-              pointB={measurement.pointB}
-              result={measurement.result}
-              zoom={zoomLevel}
-              isPrimaryWrap={offset === 0}
-            />
-          {/each}
-
-          <!-- 測量中オーバーレイ -->
-          {#if toolMode === 'measure' && surveyPointA && !surveyPointB}
-            <MeasurementOverlay
-              pointA={surveyPointA}
-              pointB={null}
-              result={null}
-              zoom={zoomLevel}
-              isPrimaryWrap={offset === 0}
-            />
-          {/if}
-        </g>
-      {/each}
-    </g>
-
-    <!-- 矩形選択オーバーレイ -->
-    {#if boxSelectBox}
-      <rect
-        x={boxSelectBox.minX}
-        y={90 - boxSelectBox.maxY}
-        width={boxSelectBox.maxX - boxSelectBox.minX}
-        height={boxSelectBox.maxY - boxSelectBox.minY}
-        fill="rgba(0, 122, 204, 0.15)"
-        stroke="#007acc"
-        stroke-width={1 / zoomLevel}
-        stroke-dasharray="{3 / zoomLevel} {2 / zoomLevel}"
-        pointer-events="none"
-      />
-    {/if}
-
+    <MapCanvasSvgLayers
+      {wrapOffsets}
+      {baseMapContent}
+      {currentTime}
+      {features}
+      {vertices}
+      {layers}
+      {focusedLayerId}
+      {settings}
+      {gridInterval}
+      {gridColor}
+      {gridOpacity}
+      {zoomLevel}
+      {labelAreaThreshold}
+      {selectedFeatureId}
+      {vertexSelectionContextFeatureId}
+      {isDrawing}
+      {showVertexHandles}
+      vertexHandleEntries={vertexHandleEntries()}
+      {selectedVertexIds}
+      {sharedGroups}
+      {snapIndicators}
+      suppressPassiveVertexHandles={suppressPassiveVertexHandles}
+      {drawingCoords}
+      {addToolType}
+      {cursorGeo}
+      {isRingDrawing}
+      {ringDrawingCoords}
+      {isKnifeDrawing}
+      {knifeDrawingCoords}
+      {toolMode}
+      {surveyMeasurements}
+      {surveyPointA}
+      {surveyPointB}
+      {boxSelectBox}
+      {onVertexMouseDown}
+      {onEdgeHandleMouseDown}
+    />
   </svg>
 
-  <GridLabelsOverlay
+  <MapCanvasHud
     viewBox={viewBoxValues}
     {viewWidthPx}
     {viewHeightPx}
-    interval={gridInterval}
+    {gridInterval}
+    {validationMessage}
+    {isDrawing}
+    drawingCanConfirm={canConfirm}
+    {drawingCoords}
+    {onConfirm}
+    {onCancel}
+    {isRingDrawing}
+    {isKnifeDrawing}
+    {centerLongitude}
+    {zoomLevel}
+    onShiftLongitude={shiftLongitude}
+    onSetCenterLongitude={setCenterLongitude}
+    selectionAnchor={selectionAnchor()}
+    {toolMode}
+    {isFeatureMoveMode}
+    {ringDrawingCanConfirm}
+    {knifeCanConfirm}
+    {onToggleFeatureMove}
+    {onAddRing}
+    {onConfirmRing}
+    {onCancelRing}
+    {onDeleteVertex}
+    {onStartKnife}
+    {onConfirmKnife}
+    {onCancelKnife}
+    {mergeTargetCount}
+    {onAddMergeTarget}
+    {onStartMerge}
+    {onClearMerge}
+    {surveyResult}
+    {surveyPointA}
+    {surveyPointB}
+    {cursorGeo}
   />
-
-  {#if validationMessage}
-    <div class="validation-banner" role="status">
-      {validationMessage}
-    </div>
-  {/if}
-
-  {#if !isDrawing && !isRingDrawing && !isKnifeDrawing}
-    <LongitudeCompass
-      {centerLongitude}
-      zoom={zoomLevel}
-      onShift={shiftLongitude}
-      onSetCenterLongitude={setCenterLongitude}
-    />
-  {/if}
-
-  <!-- 描画中の確定/キャンセルボタン（§2.3.2: 確定ボタンの押下で形状を確定） -->
-  {#if isDrawing}
-    <div class="drawing-toolbar">
-      <button
-        class="drawing-btn confirm"
-        disabled={!canConfirm}
-        onclick={() => onConfirm?.()}
-      >
-        確定 ({drawingCoords.length}点)
-      </button>
-      <button
-        class="drawing-btn cancel"
-        onclick={() => onCancel?.()}
-      >
-        キャンセル
-      </button>
-    </div>
-  {/if}
-
-  <!-- 編集ツールバー（選択地物がある場合、描画中でない場合） -->
-  {#if selectionAnchor() && !isDrawing && (toolMode === 'edit' || toolMode === 'view')}
-    <EditToolbar
-      featureType={selectionAnchor()?.shape.type ?? null}
-      {isRingDrawing}
-      {isKnifeDrawing}
-      {isFeatureMoveMode}
-      canConfirm={ringDrawingCanConfirm}
-      canConfirmKnife={knifeCanConfirm}
-      {onToggleFeatureMove}
-      {onAddRing}
-      {onConfirmRing}
-      {onCancelRing}
-      {onDeleteVertex}
-      {onStartKnife}
-      {onConfirmKnife}
-      {onCancelKnife}
-      {mergeTargetCount}
-      {onAddMergeTarget}
-      {onStartMerge}
-      {onClearMerge}
-    />
-  {/if}
-
-  <!-- 測量情報パネル -->
-  {#if toolMode === 'measure' && surveyResult}
-    <div class="survey-panel">
-      <div class="survey-row">
-        <span class="survey-label">A:</span>
-        <span class="survey-value">{surveyResult.displayA.dms}</span>
-      </div>
-      <div class="survey-row">
-        <span class="survey-label">B:</span>
-        <span class="survey-value">{surveyResult.displayB.dms}</span>
-      </div>
-      <div class="survey-divider"></div>
-      <div class="survey-row">
-        <span class="survey-label">大円距離:</span>
-        <span class="survey-value">{surveyResult.distance.greatCircleKm < 100 ? surveyResult.distance.greatCircleKm.toFixed(1) : Math.round(surveyResult.distance.greatCircleKm).toLocaleString()} km</span>
-      </div>
-      <div class="survey-row">
-        <span class="survey-label">図法距離:</span>
-        <span class="survey-value">{surveyResult.distance.equirectangularKm < 100 ? surveyResult.distance.equirectangularKm.toFixed(1) : Math.round(surveyResult.distance.equirectangularKm).toLocaleString()} km</span>
-      </div>
-    </div>
-  {:else if toolMode === 'measure' && surveyPointA && !surveyPointB}
-    <div class="survey-panel">
-      <div class="survey-row">
-        <span class="survey-label">A:</span>
-        <span class="survey-value">
-          {surveyPointA.y.toFixed(4)}°, {wrapLongitudeToPrimaryRange(surveyPointA.x).toFixed(4)}°
-        </span>
-      </div>
-      <div class="survey-hint">終点をクリックして距離を測定</div>
-    </div>
-  {:else if toolMode === 'measure'}
-    <div class="survey-panel">
-      <div class="survey-hint">始点をクリックして測量開始</div>
-    </div>
-  {/if}
-
-  <!-- カーソル座標表示 -->
-  {#if cursorGeo}
-    <div class="cursor-info">
-      {cursorGeo.lat.toFixed(2)}°, {wrapLongitudeToPrimaryRange(cursorGeo.lon).toFixed(2)}°
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -810,127 +586,5 @@
     width: 100%;
     height: 100%;
     display: block;
-  }
-
-  .cursor-info {
-    position: absolute;
-    bottom: 4px;
-    left: 4px;
-    padding: 2px 6px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #ccc;
-    font-size: 11px;
-    border-radius: 3px;
-    pointer-events: none;
-  }
-
-  .validation-banner {
-    position: absolute;
-    top: 56px;
-    left: 50%;
-    transform: translateX(-50%);
-    max-width: min(80vw, 520px);
-    padding: 8px 12px;
-    border: 1px solid rgba(255, 120, 120, 0.45);
-    border-radius: 8px;
-    background: rgba(96, 22, 22, 0.92);
-    color: #ffdede;
-    font-size: 12px;
-    line-height: 1.4;
-    text-align: center;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
-    pointer-events: none;
-  }
-
-  .drawing-toolbar {
-    position: absolute;
-    top: 8px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 8px;
-    padding: 6px 12px;
-    background: rgba(0, 0, 0, 0.8);
-    border-radius: 6px;
-    border: 1px solid #555;
-  }
-
-  .drawing-btn {
-    padding: 4px 12px;
-    border-radius: 4px;
-    border: 1px solid #555;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .drawing-btn.confirm {
-    background: #094771;
-    color: #fff;
-    border-color: #007acc;
-  }
-
-  .drawing-btn.confirm:disabled {
-    background: #333;
-    color: #666;
-    border-color: #444;
-    cursor: not-allowed;
-  }
-
-  .drawing-btn.confirm:not(:disabled):hover {
-    background: #0b5a8e;
-  }
-
-  .drawing-btn.cancel {
-    background: #3c3c3c;
-    color: #ccc;
-  }
-
-  .drawing-btn.cancel:hover {
-    background: #4c4c4c;
-  }
-
-  .survey-panel {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    padding: 8px 12px;
-    background: rgba(0, 0, 0, 0.85);
-    border-radius: 6px;
-    border: 1px solid #555;
-    font-size: 11px;
-    color: #e0e0e0;
-    min-width: 200px;
-    pointer-events: none;
-  }
-
-  .survey-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    margin: 2px 0;
-  }
-
-  .survey-label {
-    color: #aaa;
-    flex-shrink: 0;
-  }
-
-  .survey-value {
-    color: #ffd93d;
-    font-family: monospace;
-    text-align: right;
-  }
-
-  .survey-divider {
-    height: 1px;
-    background: #444;
-    margin: 4px 0;
-  }
-
-  .survey-hint {
-    color: #888;
-    font-style: italic;
-    text-align: center;
-    margin: 2px 0;
   }
 </style>

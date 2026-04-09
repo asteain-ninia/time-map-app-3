@@ -108,7 +108,7 @@
         </button>
         <div class="menu-separator"></div>
         <button type="button" class="menu-action" onclick={() => doAction(onSelectAll)}>
-          <span>全選択</span>
+          <span>全頂点選択</span>
           <span class="shortcut">Ctrl+A</span>
         </button>
       </div>
