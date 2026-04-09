@@ -70,14 +70,21 @@ describe('ConfigManager', () => {
       expect(config.snapDistancePx).toBe(50);
       expect(config.renderFps).toBe(60);
       expect(config.alwaysVisibleVertexLimit).toBe(1000);
+      expect(config.logLevel).toBe('info');
     });
 
     it('アプリ設定を更新できる', () => {
       const cm = new ConfigManager();
-      cm.updateAppConfig({ autoSaveEnabled: false, snapDistancePx: 24, renderFps: 30 });
+      cm.updateAppConfig({
+        autoSaveEnabled: false,
+        snapDistancePx: 24,
+        renderFps: 30,
+        logLevel: 'debug',
+      });
       expect(cm.getAppConfig().autoSaveEnabled).toBe(false);
       expect(cm.getAppConfig().snapDistancePx).toBe(24);
       expect(cm.getAppConfig().renderFps).toBe(30);
+      expect(cm.getAppConfig().logLevel).toBe('debug');
     });
 
     it('アプリ設定値を要件範囲に正規化する', () => {
@@ -92,6 +99,7 @@ describe('ConfigManager', () => {
       expect(config.snapDistancePx).toBe(1);
       expect(config.renderFps).toBe(60);
       expect(config.alwaysVisibleVertexLimit).toBe(1);
+      expect(config.logLevel).toBe('info');
     });
 
     it('最近使ったファイルを追加できる', () => {
@@ -130,6 +138,7 @@ describe('ConfigManager', () => {
         snapDistancePx: 18,
         renderFps: 24,
         alwaysVisibleVertexLimit: 321,
+        logLevel: 'warn',
       });
       cm.saveAppConfig(storage);
 
@@ -139,6 +148,7 @@ describe('ConfigManager', () => {
       expect(restored.getAppConfig().snapDistancePx).toBe(18);
       expect(restored.getAppConfig().renderFps).toBe(24);
       expect(restored.getAppConfig().alwaysVisibleVertexLimit).toBe(321);
+      expect(restored.getAppConfig().logLevel).toBe('warn');
     });
 
     it('壊れた保存データを読んでも既定値へフォールバックする', () => {

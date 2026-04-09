@@ -5,6 +5,7 @@ import { JSON_FILTERS, createIpcHandlers, registerIpcHandlers } from '../../src/
 function createDeps() {
   const fs = {
     access: vi.fn<(_: string) => Promise<void>>(),
+    appendFile: vi.fn<(_: string, __: string, ___: BufferEncoding) => Promise<void>>(),
     mkdir: vi.fn<(_: string, __: { recursive: boolean }) => Promise<void>>(),
     readdir: vi.fn<(_: string, __: { withFileTypes: true }) => Promise<readonly { isFile(): boolean; name: string }[]>>(),
     readFile: vi.fn<(_: string, __: BufferEncoding) => Promise<string>>(),
@@ -34,10 +35,12 @@ describe('ipcHandlers', () => {
     expect(channels).toEqual([
       'file:read',
       'file:write',
+      'file:append',
       'file:exists',
       'file:list',
       'file:delete',
       'file:autoBackupRoot',
+      'file:logRoot',
       'dialog:open',
       'dialog:save',
     ]);
@@ -54,6 +57,19 @@ describe('ipcHandlers', () => {
 
     expect(deps.fs.mkdir).toHaveBeenCalledWith(dirname(filePath), { recursive: true });
     expect(deps.fs.writeFile).toHaveBeenCalledWith(filePath, '{"version":"1.0.0"}', 'utf-8');
+  });
+
+  it('file:append が親ディレクトリを作成して追記する', async () => {
+    const deps = createDeps();
+    deps.fs.mkdir.mockResolvedValue();
+    deps.fs.appendFile.mockResolvedValue();
+    const handlers = createIpcHandlers(deps);
+    const filePath = 'E:/workspace/logs/time-map-app.log';
+
+    await handlers['file:append']({}, filePath, '{"message":"ok"}\n');
+
+    expect(deps.fs.mkdir).toHaveBeenCalledWith(dirname(filePath), { recursive: true });
+    expect(deps.fs.appendFile).toHaveBeenCalledWith(filePath, '{"message":"ok"}\n', 'utf-8');
   });
 
   it('file:list がファイル名だけを返し、ENOENT は空配列にする', async () => {
@@ -74,14 +90,16 @@ describe('ipcHandlers', () => {
     await expect(handlers['file:list']({}, 'E:/workspace/missing')).resolves.toEqual([]);
   });
 
-  it('file:autoBackupRoot が開発時とパッケージ時で正しい保存先を返す', async () => {
+  it('file:autoBackupRoot と file:logRoot が開発時とパッケージ時で正しい保存先を返す', async () => {
     const deps = createDeps();
     const handlers = createIpcHandlers(deps);
 
     await expect(handlers['file:autoBackupRoot']({})).resolves.toBe(join('E:/app', 'savebackup'));
+    await expect(handlers['file:logRoot']({})).resolves.toBe(join('E:/app', 'logs'));
 
     deps.app.isPackaged = true;
     await expect(handlers['file:autoBackupRoot']({})).resolves.toBe(join('E:/dist', 'savebackup'));
+    await expect(handlers['file:logRoot']({})).resolves.toBe(join('E:/dist', 'logs'));
   });
 
   it('dialog ハンドラが JSON フィルタと戻り値を正しく扱う', async () => {

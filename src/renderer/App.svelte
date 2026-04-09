@@ -168,8 +168,11 @@
     },
     infrastructure: {
       configManager,
+      logger: rootLogger,
     },
   } = container;
+  const appLogger = rootLogger.child('App');
+  const autoBackupLogger = appLogger.child('AutoBackup');
 
   // --- ツール状態 ---
 
@@ -284,6 +287,7 @@
     }
     configManager.loadAppConfig(localStorage);
     appConfig = projectQueries.getAppConfig();
+    rootLogger.setMinLevel(appConfig.logLevel);
   }
 
   function saveAppConfig(): void {
@@ -317,6 +321,7 @@
     saveLoad.setMetadata(nextProjectMetadata);
     configManager.updateAppConfig(appConfigPatch);
     appConfig = projectQueries.getAppConfig();
+    rootLogger.setMinLevel(appConfig.logLevel);
     saveAppConfig();
     if (hasProjectChange) {
       markAsDirty();
@@ -333,6 +338,51 @@
   /** 変更を記録する（各編集操作後に呼ぶ） */
   function markAsDirty(): void {
     dirtyState = markDirty(dirtyState);
+  }
+
+  function showOperationError(actionLabel: string): void {
+    if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+      window.alert(`${actionLabel}に失敗しました。詳細はログを確認してください。`);
+    }
+  }
+
+  function runFileOperation(
+    actionLabel: string,
+    action: () => Promise<boolean>,
+    extraData: Record<string, unknown> = {}
+  ): Promise<boolean> {
+    return Promise.resolve(
+      appLogger.measure(actionLabel, action, {
+        currentFilePath: saveLoad.getCurrentFilePath(),
+        ...extraData,
+      })
+    ).catch(() => {
+      showOperationError(actionLabel);
+      return false;
+    });
+  }
+
+  function saveProject(): Promise<boolean> {
+    return runFileOperation('プロジェクト保存', () => saveLoad.save());
+  }
+
+  function saveProjectAs(): Promise<boolean> {
+    return runFileOperation('名前を付けて保存', () => saveLoad.saveAs());
+  }
+
+  function openProject(): Promise<boolean> {
+    if (!confirmUnsavedChanges()) {
+      return Promise.resolve(false);
+    }
+    return runFileOperation('プロジェクト読込', () => saveLoad.open());
+  }
+
+  function loadProjectFromPath(filePath: string): Promise<boolean> {
+    return runFileOperation(
+      'プロジェクト読込',
+      () => saveLoad.loadFromPath(filePath),
+      { filePath }
+    );
   }
 
   // --- 自動バックアップ ---
@@ -357,7 +407,10 @@
         );
         lastBackupTime = Date.now();
       } catch (err) {
-        console.warn('Auto-backup failed:', err);
+        autoBackupLogger.warn('自動バックアップに失敗', {
+          filePath,
+          error: err,
+        });
       }
     }, 60_000); // チェック間隔は1分（実際のバックアップはshouldBackupで制御）
   }
@@ -637,6 +690,27 @@
     markAsDirty();
   });
 
+  function onUnhandledRendererError(event: ErrorEvent): void {
+    appLogger.error('Unhandled renderer error', {
+      message: event.message,
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+      error: event.error,
+    });
+  }
+
+  function onUnhandledRendererRejection(event: PromiseRejectionEvent): void {
+    appLogger.error('Unhandled renderer promise rejection', {
+      reason: event.reason,
+    });
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('error', onUnhandledRendererError);
+    window.addEventListener('unhandledrejection', onUnhandledRendererRejection);
+  }
+
   onDestroy(() => {
     unsubFeatureAdded();
     unsubTimeChanged();
@@ -648,6 +722,10 @@
     unsubUndoRedo();
     toolStore.stop();
     if (backupIntervalId) clearInterval(backupIntervalId);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('error', onUnhandledRendererError);
+      window.removeEventListener('unhandledrejection', onUnhandledRendererRejection);
+    }
   });
 
   // --- コールバック ---
@@ -1646,14 +1724,14 @@
     // §2.5: Ctrl+Shift+S で名前を付けて保存、Ctrl+S で保存、Ctrl+O で開く
     if (e.ctrlKey && e.shiftKey && e.key === 'S') {
       e.preventDefault();
-      saveLoad.saveAs();
+      void saveProjectAs();
     } else if (e.ctrlKey && e.key === 's') {
       e.preventDefault();
-      saveLoad.save();
+      void saveProject();
     }
     if (e.ctrlKey && e.key === 'o') {
       e.preventDefault();
-      if (confirmUnsavedChanges()) saveLoad.open();
+      void openProject();
     }
 
     if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A')) {
@@ -1715,7 +1793,7 @@
     // Electronのfile.pathでファイルパスを取得
     const filePath = (file as File & { path?: string }).path;
     if (filePath) {
-      saveLoad.loadFromPath(filePath);
+      void loadProjectFromPath(filePath);
     }
   }
 
@@ -1735,9 +1813,9 @@
 <div class="app-layout">
   <MenuBar
     onNewProject={newProject}
-    onOpen={() => { if (confirmUnsavedChanges()) saveLoad.open(); }}
-    onSave={() => saveLoad.save()}
-    onSaveAs={() => saveLoad.saveAs()}
+    onOpen={() => { void openProject(); }}
+    onSave={() => { void saveProject(); }}
+    onSaveAs={() => { void saveProjectAs(); }}
     onUndo={() => { undoRedo.undo(); refreshFeatureData(); refreshLayerData(); }}
     onRedo={() => { undoRedo.redo(); refreshFeatureData(); refreshLayerData(); }}
     onSelectAll={onSelectAllVertices}

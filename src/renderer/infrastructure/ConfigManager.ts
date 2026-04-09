@@ -10,6 +10,7 @@
 
 import type { WorldSettings, WorldMetadata } from '@domain/entities/World';
 import { DEFAULT_SETTINGS, DEFAULT_METADATA } from '@domain/entities/World';
+import { isLogLevel, type LogLevel } from './Logger';
 
 /** アプリケーションレベルの設定（プロジェクト横断） */
 export interface AppConfig {
@@ -21,6 +22,7 @@ export interface AppConfig {
   readonly snapDistancePx: number;
   readonly renderFps: number;
   readonly alwaysVisibleVertexLimit: number;
+  readonly logLevel: LogLevel;
 }
 
 export interface AppConfigStorage {
@@ -39,6 +41,7 @@ const DEFAULT_APP_CONFIG: AppConfig = {
   snapDistancePx: 50,
   renderFps: 60,
   alwaysVisibleVertexLimit: 1000,
+  logLevel: 'info',
 };
 
 function normalizePositiveInteger(
@@ -75,6 +78,9 @@ function normalizeAppConfig(appConfig: Partial<AppConfig>): AppConfig {
       DEFAULT_APP_CONFIG.alwaysVisibleVertexLimit,
       1
     ),
+    logLevel: isLogLevel(appConfig.logLevel)
+      ? appConfig.logLevel
+      : DEFAULT_APP_CONFIG.logLevel,
   };
 }
 

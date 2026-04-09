@@ -29,6 +29,7 @@ describe('DIContainer', () => {
     expect(container.queries.project).toBeDefined();
     expect(container.infrastructure.configManager).toBeDefined();
     expect(container.infrastructure.repository).toBeDefined();
+    expect(container.infrastructure.logger).toBeDefined();
   });
 
   it('getContainerがシングルトンを返す', () => {

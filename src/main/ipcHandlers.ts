@@ -31,6 +31,7 @@ interface DirEntryLike {
 
 interface FsLike {
   access(path: string): Promise<void>;
+  appendFile(path: string, data: string, encoding: BufferEncoding): Promise<void>;
   mkdir(path: string, options: { recursive: boolean }): Promise<void>;
   readdir(path: string, options: { withFileTypes: true }): Promise<readonly DirEntryLike[]>;
   readFile(path: string, encoding: BufferEncoding): Promise<string>;
@@ -55,6 +56,11 @@ function createIpcHandlers({
     'file:write': async (_event, filePath: string, data: string): Promise<void> => {
       await fs.mkdir(dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, data, 'utf-8');
+    },
+
+    'file:append': async (_event, filePath: string, data: string): Promise<void> => {
+      await fs.mkdir(dirname(filePath), { recursive: true });
+      await fs.appendFile(filePath, data, 'utf-8');
     },
 
     'file:exists': async (_event, filePath: string): Promise<boolean> => {
@@ -95,6 +101,13 @@ function createIpcHandlers({
         ? dirname(app.getPath('exe'))
         : app.getAppPath();
       return join(appRootPath, 'savebackup');
+    },
+
+    'file:logRoot': async (): Promise<string> => {
+      const appRootPath = app.isPackaged
+        ? dirname(app.getPath('exe'))
+        : app.getAppPath();
+      return join(appRootPath, 'logs');
     },
 
     'dialog:open': async (): Promise<string | null> => {

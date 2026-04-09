@@ -29,6 +29,12 @@ import {
 import type { WorldRepository } from '@domain/repositories/WorldRepository';
 import { ConfigManager } from './ConfigManager';
 import {
+  Logger,
+  PersistentLogSink,
+  createConsoleLogSink,
+  type PersistentLogPort,
+} from './Logger';
+import {
   JSONWorldRepository,
   createElectronFileSystem,
   type FileSystemPort,
@@ -59,6 +65,7 @@ export interface ApplicationQueries {
 export interface InfrastructureServices {
   readonly configManager: ConfigManager;
   readonly repository: WorldRepository;
+  readonly logger: Logger;
 }
 
 export interface DIContainerDependencies {
@@ -100,6 +107,38 @@ function createDialog(): DialogPort {
   };
 }
 
+function createPersistentLogPort(): PersistentLogPort | null {
+  if (typeof window === 'undefined' || typeof window.api === 'undefined') {
+    return null;
+  }
+
+  if (
+    typeof window.api.appendFile !== 'function' ||
+    typeof window.api.getLogRootPath !== 'function'
+  ) {
+    return null;
+  }
+
+  return {
+    appendFile: (filePath: string, data: string) => window.api.appendFile(filePath, data),
+    getLogRootPath: () => window.api.getLogRootPath(),
+  };
+}
+
+function createLogger(configManager: ConfigManager): Logger {
+  const sinks = [createConsoleLogSink()];
+  const persistentLogPort = createPersistentLogPort();
+  if (persistentLogPort) {
+    sinks.push(new PersistentLogSink(persistentLogPort));
+  }
+
+  return new Logger({
+    context: ['Renderer'],
+    minLevel: configManager.getAppConfig().logLevel,
+    sinks,
+  });
+}
+
 /**
  * DIコンテナ — 全サービスを初期化し、シングルトンとして提供する
  */
@@ -112,6 +151,7 @@ export class DIContainer {
     const configManager = dependencies.configManager ?? new ConfigManager();
     const repository = dependencies.repository ?? createRepository();
     const dialog = dependencies.dialog ?? createDialog();
+    const logger = createLogger(configManager);
 
     const addFeature = new AddFeatureUseCase();
     const vertexEdit = new VertexEditUseCase(addFeature);
@@ -163,6 +203,7 @@ export class DIContainer {
     this.infrastructure = {
       configManager,
       repository,
+      logger,
     };
   }
 }

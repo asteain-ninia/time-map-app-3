@@ -2,6 +2,7 @@
   import type { WorldSettings, WorldMetadata } from '@domain/entities/World';
   import { Layer } from '@domain/entities/Layer';
   import type { AppConfig } from '@infrastructure/ConfigManager';
+  import type { LogLevel } from '@infrastructure/Logger';
   import {
     DEFAULT_PALETTE_NAME,
     getAvailablePaletteNames,
@@ -62,6 +63,7 @@
   let snapDistancePx = $state(50);
   let renderFps = $state(60);
   let alwaysVisibleVertexLimit = $state(1000);
+  let logLevel = $state<LogLevel>('info');
   let draftLayers = $state<readonly Layer[]>([]);
   let newLayerName = $state('');
   let draftCustomPalettes = $state<readonly CustomPaletteDraft[]>([]);
@@ -95,6 +97,7 @@
       snapDistancePx = appConfig.snapDistancePx;
       renderFps = appConfig.renderFps;
       alwaysVisibleVertexLimit = appConfig.alwaysVisibleVertexLimit;
+      logLevel = appConfig.logLevel;
       draftLayers = [...layers];
       newLayerName = '';
       newCustomPaletteName = '';
@@ -275,6 +278,7 @@
         snapDistancePx,
         renderFps,
         alwaysVisibleVertexLimit,
+        logLevel,
       }
     );
     onClose?.();
@@ -390,6 +394,16 @@
         <div class="field">
           <label class="field-label" for="ps-app-vertex-limit">全頂点マーカー表示上限</label>
           <input class="field-input short" id="ps-app-vertex-limit" type="number" min="1" step="1" bind:value={alwaysVisibleVertexLimit} />
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="ps-app-log-level">ログレベル</label>
+          <select class="field-select" id="ps-app-log-level" bind:value={logLevel}>
+            <option value="debug">debug</option>
+            <option value="info">info</option>
+            <option value="warn">warn</option>
+            <option value="error">error</option>
+          </select>
         </div>
 
         <div class="section">惑星パラメータ</div>

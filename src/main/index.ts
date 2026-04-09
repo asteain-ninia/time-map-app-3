@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { join } from 'path';
-import { access, mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
+import { access, appendFile, mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { registerIpcHandlers } from './ipcHandlers';
 
 const MIN_WIDTH = 800;
@@ -41,7 +41,7 @@ app.whenReady().then(() => {
     ipcMain,
     app,
     dialog,
-    fs: { access, mkdir, readdir, readFile, unlink, writeFile },
+    fs: { access, appendFile, mkdir, readdir, readFile, unlink, writeFile },
   });
   createWindow();
 
