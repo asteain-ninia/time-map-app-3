@@ -9,8 +9,10 @@ cd "$(git rev-parse --show-toplevel)"
 # --- ユニットテスト集計（vitest JSON reporter で正確なカウント） ---
 vitest_json=$(npx vitest run --reporter=json 2>/dev/null || true)
 if [ -n "$vitest_json" ]; then
-  unit_total=$(echo "$vitest_json" | grep -oP '"numPassedTests"\s*:\s*\K[0-9]+' | head -1)
-  unit_files=$(echo "$vitest_json" | grep -oP '"numPassedTestSuites"\s*:\s*\K[0-9]+' | head -1)
+  unit_total=$(echo "$vitest_json" | grep -o '"numPassedTests":[0-9]*' | grep -o '[0-9]*$' | head -1)
+  # numPassedTestSuites は describe ブロック数なのでファイル数には使えない
+  # testResults 配列の要素数がファイル数に対応する
+  unit_files=$(echo "$vitest_json" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(d).testResults.length)}catch{console.log('')}})" 2>/dev/null)
   # フォールバック: JSON解析失敗時は grep カウント
   if [ -z "$unit_total" ] || [ -z "$unit_files" ]; then
     unit_total=0
