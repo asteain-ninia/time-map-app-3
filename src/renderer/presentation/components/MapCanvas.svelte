@@ -16,6 +16,7 @@
   import MapCanvasHud from './mapCanvas/MapCanvasHud.svelte';
   import MapCanvasSvgLayers from './mapCanvas/MapCanvasSvgLayers.svelte';
   import {
+    computeRenderWrapOffsets,
     getAnchorVertexCount,
     normalizeRenderFps,
     normalizeVertexMarkerDisplayLimit,
@@ -257,8 +258,29 @@
     viewBoxValues = viewport.getViewBoxValues();
     zoomLevel = viewport.getZoom();
     centerLongitude = wrapLongitudeToPrimaryRange(viewport.getCenterLongitude());
-    wrapOffsets = viewport.getWrapOffsets();
   }
+
+  $effect(() => {
+    const extraCoords = [
+      ...drawingCoords,
+      ...ringDrawingCoords,
+      ...knifeDrawingCoords,
+      ...surveyMeasurements.flatMap((measurement) => [measurement.pointA, measurement.pointB]),
+      ...(surveyPointA ? [surveyPointA] : []),
+      ...(surveyPointB ? [surveyPointB] : []),
+    ];
+
+    wrapOffsets = computeRenderWrapOffsets(
+      viewBoxValues,
+      features,
+      vertices,
+      currentTime,
+      {
+        visibleLayerIds,
+        extraCoords,
+      }
+    );
+  });
 
   /** ベースマップのSVGコンテンツ */
   let baseMapContent = $state('');

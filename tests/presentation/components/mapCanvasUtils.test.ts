@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { Feature } from '@domain/entities/Feature';
+import { Vertex } from '@domain/entities/Vertex';
+import { Coordinate } from '@domain/value-objects/Coordinate';
 import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import { Ring } from '@domain/value-objects/Ring';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import {
+  computeRenderWrapOffsets,
   formatSurveyDistance,
   getAnchorVertexCount,
   normalizeRenderFps,
@@ -46,6 +50,23 @@ function createLineAnchor(): FeatureAnchor {
   );
 }
 
+function createPointFeature(
+  featureId: string,
+  vertexId: string,
+  layerId: string,
+  time: TimePoint
+): Feature {
+  return new Feature(featureId, 'Point', [
+    new FeatureAnchor(
+      `${featureId}-anchor`,
+      { start: time },
+      { name: featureId, description: '' },
+      { type: 'Point', vertexId },
+      { layerId, parentId: null, childIds: [] }
+    ),
+  ]);
+}
+
 describe('mapCanvasUtils', () => {
   it('頂点数を形状種別ごとに集計する', () => {
     expect(getAnchorVertexCount(createPolygonAnchor())).toBe(6);
@@ -86,5 +107,56 @@ describe('mapCanvasUtils', () => {
 
   it('測量距離がちょうど100kmなら整数表示する', () => {
     expect(formatSurveyDistance(100)).toBe('100');
+  });
+
+  it('720度超の地物でも可視コピーに必要なラップタイルを含める', () => {
+    const time = new TimePoint(100);
+    const feature = createPointFeature('f-wrap', 'v-wrap', 'layer-1', time);
+    const vertices = new Map([
+      ['v-wrap', new Vertex('v-wrap', new Coordinate(900, 10))],
+    ]);
+
+    const offsets = computeRenderWrapOffsets(
+      { x: 0, y: 0, width: 360, height: 180 },
+      [feature],
+      vertices,
+      time,
+      { visibleLayerIds: new Set(['layer-1']) }
+    );
+
+    expect(offsets).toContain(-720);
+    expect(offsets).toContain(-1080);
+  });
+
+  it('非表示レイヤーの地物は追加ラップタイル算出に含めない', () => {
+    const time = new TimePoint(100);
+    const feature = createPointFeature('f-hidden', 'v-hidden', 'layer-hidden', time);
+    const vertices = new Map([
+      ['v-hidden', new Vertex('v-hidden', new Coordinate(900, 10))],
+    ]);
+
+    const offsets = computeRenderWrapOffsets(
+      { x: 0, y: 0, width: 360, height: 180 },
+      [feature],
+      vertices,
+      time,
+      { visibleLayerIds: new Set(['layer-visible']) }
+    );
+
+    expect(offsets).not.toContain(-720);
+    expect(offsets).toEqual([-360, 0, 360]);
+  });
+
+  it('描画中の一時座標だけでも追加ラップタイルを算出できる', () => {
+    const offsets = computeRenderWrapOffsets(
+      { x: 0, y: 0, width: 360, height: 180 },
+      [],
+      new Map(),
+      undefined,
+      { extraCoords: [new Coordinate(900, 0)] }
+    );
+
+    expect(offsets).toContain(-720);
+    expect(offsets).toContain(-1080);
   });
 });

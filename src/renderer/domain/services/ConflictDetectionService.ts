@@ -13,7 +13,7 @@ import type { Vertex } from '@domain/entities/Vertex';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import type { RingCoords } from './GeometryService';
-import { polygonIntersection } from './BooleanOperationService';
+import { findOverlappingLongitudeShift } from './BooleanOperationService';
 
 /** 空間的競合 */
 export interface SpatialConflict {
@@ -243,7 +243,7 @@ function territorySetsOverlap(
 ): boolean {
   for (const ringA of ringsA) {
     for (const ringB of ringsB) {
-      if (!polygonIntersection(ringA, ringB).isEmpty) {
+      if (findOverlappingLongitudeShift(ringA, ringB) !== null) {
         return true;
       }
     }

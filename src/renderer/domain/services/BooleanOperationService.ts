@@ -19,6 +19,11 @@ export interface BooleanResult {
   readonly isEmpty: boolean;
 }
 
+interface LongitudeBounds {
+  readonly min: number;
+  readonly max: number;
+}
+
 /**
  * RingCoords をpolygon-clippingのRing形式に変換する
  *
@@ -67,6 +72,85 @@ export function toClipPolygon(rings: readonly RingCoords[]): [number, number][][
  */
 export function fromClipPolygon(clipPolygon: [number, number][][]): RingCoords[] {
   return clipPolygon.map(ring => fromClipRing(ring));
+}
+
+export function shiftRingCoords(
+  rings: readonly RingCoords[],
+  deltaLongitude: number
+): RingCoords[] {
+  return rings.map((ring) =>
+    ring.map((point) => ({ x: point.x + deltaLongitude, y: point.y }))
+  );
+}
+
+export function findOverlappingLongitudeShift(
+  reference: readonly RingCoords[],
+  target: readonly RingCoords[]
+): number | null {
+  for (const shift of buildLongitudeShiftCandidates(reference, target)) {
+    if (!polygonIntersection(reference, shiftRingCoords(target, shift)).isEmpty) {
+      return shift;
+    }
+  }
+  return null;
+}
+
+function buildLongitudeShiftCandidates(
+  reference: readonly RingCoords[],
+  target: readonly RingCoords[]
+): number[] {
+  const referenceBounds = getLongitudeBounds(reference);
+  const targetBounds = getLongitudeBounds(target);
+  if (!referenceBounds || !targetBounds) {
+    return [0];
+  }
+
+  const referenceCenter = (referenceBounds.min + referenceBounds.max) / 2;
+  const targetCenter = (targetBounds.min + targetBounds.max) / 2;
+  const startIndex = Math.ceil((referenceBounds.min - targetBounds.max) / 360);
+  const endIndex = Math.floor((referenceBounds.max - targetBounds.min) / 360);
+
+  if (startIndex > endIndex) {
+    return [Math.round((referenceCenter - targetCenter) / 360) * 360];
+  }
+
+  const candidates: number[] = [];
+  for (let index = startIndex; index <= endIndex; index++) {
+    candidates.push(index * 360);
+  }
+
+  return candidates.toSorted((a, b) => {
+    const shiftedCenterA = targetCenter + a;
+    const shiftedCenterB = targetCenter + b;
+    const distanceA = Math.abs(referenceCenter - shiftedCenterA);
+    const distanceB = Math.abs(referenceCenter - shiftedCenterB);
+    if (distanceA !== distanceB) {
+      return distanceA - distanceB;
+    }
+    return Math.abs(a) - Math.abs(b);
+  });
+}
+
+function getLongitudeBounds(rings: readonly RingCoords[]): LongitudeBounds | null {
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (const ring of rings) {
+    for (const point of ring) {
+      if (point.x < min) {
+        min = point.x;
+      }
+      if (point.x > max) {
+        max = point.x;
+      }
+    }
+  }
+
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return null;
+  }
+
+  return { min, max };
 }
 
 /**

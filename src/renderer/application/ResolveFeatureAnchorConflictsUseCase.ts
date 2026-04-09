@@ -8,18 +8,18 @@
  */
 
 import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
-import type { TimePoint } from '@domain/value-objects/TimePoint';
-import type { Feature } from '@domain/entities/Feature';
-import type { Vertex } from '@domain/entities/Vertex';
+import { Vertex } from '@domain/entities/Vertex';
 import type { AddFeatureUseCase } from './AddFeatureUseCase';
 import type { PrepareFeatureAnchorEditUseCase } from './PrepareFeatureAnchorEditUseCase';
 import {
+  findOverlappingLongitudeShift,
   polygonDifference,
-  fromClipPolygon,
-  toClipPolygon,
+  shiftRingCoords,
 } from '@domain/services/BooleanOperationService';
 import type { RingCoords } from '@domain/services/GeometryService';
+import { Coordinate } from '@domain/value-objects/Coordinate';
 import { Ring } from '@domain/value-objects/Ring';
+import type { FeatureShape } from '@domain/value-objects/FeatureAnchor';
 import type {
   ConflictResolution,
   ResolveResult,
@@ -64,7 +64,7 @@ export class ResolveFeatureAnchorConflictsUseCase {
     }
 
     const resolvedMap = new Map<string, FeatureAnchor[]>();
-    const vertices = this.featureUseCase.getVertices();
+    const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
 
     // 編集対象地物の候補錨はそのまま
     resolvedMap.set(draft.featureId, [...draft.candidateAnchors]);
@@ -78,31 +78,22 @@ export class ResolveFeatureAnchorConflictsUseCase {
       }
 
       const preferredId = resolution.preferFeatureId;
-      const nonPreferredId = preferredId === conflict.featureA.id
-        ? conflict.featureB.id
-        : conflict.featureA.id;
+      const nonPreferredId = preferredId === conflict.featureIdA
+        ? conflict.featureIdB
+        : conflict.featureIdA;
 
-      // 非優先地物の錨を取得
-      const nonPreferred = this.featureUseCase.getFeatureById(nonPreferredId);
-      if (!nonPreferred) continue;
-
-      const preferredFeature = this.featureUseCase.getFeatureById(preferredId)
-        ?? (preferredId === draft.featureId
-          ? { anchors: draft.candidateAnchors, getActiveAnchor: (t: TimePoint) => draft.candidateAnchors.find(a => a.isActiveAt(t)) }
-          : undefined);
-      if (!preferredFeature) continue;
+      const preferredAnchors = this.getResolvedAnchors(preferredId, draft, resolvedMap);
+      const nonPreferredAnchors = this.getResolvedAnchors(nonPreferredId, draft, resolvedMap);
+      if (!preferredAnchors || !nonPreferredAnchors) {
+        continue;
+      }
 
       // 優先地物の形状を取得
-      const preferredAnchor = preferredFeature.getActiveAnchor
-        ? (preferredFeature as Feature).getActiveAnchor(draft.editTime)
-        : undefined;
+      const preferredAnchor = preferredAnchors.find((anchor) => anchor.isActiveAt(draft.editTime));
 
       if (!preferredAnchor || preferredAnchor.shape.type !== 'Polygon') continue;
 
       // 非優先地物の形状を差分演算
-      const nonPreferredAnchors = resolvedMap.get(nonPreferredId)
-        ?? [...nonPreferred.anchors];
-
       const updatedAnchors = nonPreferredAnchors.map(anchor => {
         if (!anchor.isActiveAt(draft.editTime)) return anchor;
         if (anchor.shape.type !== 'Polygon') return anchor;
@@ -113,7 +104,15 @@ export class ResolveFeatureAnchorConflictsUseCase {
 
         if (nonPrefRings.length === 0 || prefRings.length === 0) return anchor;
 
-        const diff = polygonDifference(nonPrefRings, prefRings);
+        const preferredShift = findOverlappingLongitudeShift(nonPrefRings, prefRings);
+        if (preferredShift === null) {
+          return anchor;
+        }
+
+        const diff = polygonDifference(
+          nonPrefRings,
+          shiftRingCoords(prefRings, preferredShift)
+        );
 
         if (diff.isEmpty) {
           // 差分結果が空 → 錨を無効化（存在期間打切り）
@@ -123,28 +122,15 @@ export class ResolveFeatureAnchorConflictsUseCase {
           });
         }
 
-        // 差分結果を新しいリングとして適用
-        // 最初のポリゴンのリング群を使用
-        if (diff.polygons.length > 0) {
-          const newRings = diff.polygons[0].map((ringCoords, idx) => {
-            const existingRing = anchor.shape.type === 'Polygon' && idx < anchor.shape.rings.length
-              ? anchor.shape.rings[idx]
-              : null;
-            return existingRing ?? new Ring(
-              `resolved-ring-${idx}`,
-              existingRing?.vertexIds ?? [],
-              idx === 0 ? 'territory' : 'hole',
-              idx === 0 ? null : `resolved-ring-0`
-            );
-          });
-
-          return anchor.withShape({
-            type: 'Polygon',
-            rings: newRings,
+        const nextShape = this.createResolvedPolygonShape(diff.polygons, vertices);
+        if (nextShape.rings.length === 0) {
+          return anchor.withTimeRange({
+            start: anchor.timeRange.start,
+            end: draft.editTime,
           });
         }
 
-        return anchor;
+        return anchor.withShape(nextShape);
       });
 
       resolvedMap.set(nonPreferredId, updatedAnchors);
@@ -153,6 +139,23 @@ export class ResolveFeatureAnchorConflictsUseCase {
     return {
       resolvedAnchorsByFeature: resolvedMap,
     };
+  }
+
+  private getResolvedAnchors(
+    featureId: string,
+    draft: AnchorEditDraft,
+    resolvedMap: ReadonlyMap<string, readonly FeatureAnchor[]>
+  ): FeatureAnchor[] | undefined {
+    const resolvedAnchors = resolvedMap.get(featureId);
+    if (resolvedAnchors) {
+      return [...resolvedAnchors];
+    }
+    if (featureId === draft.featureId) {
+      return [...draft.candidateAnchors];
+    }
+
+    const feature = this.featureUseCase.getFeatureById(featureId);
+    return feature ? [...feature.anchors] : undefined;
   }
 
   /**
@@ -171,6 +174,85 @@ export class ResolveFeatureAnchorConflictsUseCase {
         })
         .filter((p): p is { x: number; y: number } => p !== null)
     ).filter(r => r.length >= 3);
+  }
+
+  private createResolvedPolygonShape(
+    polygons: readonly RingCoords[][],
+    vertices: Map<string, Vertex>
+  ): FeatureShape & { type: 'Polygon' } {
+    const rings: Ring[] = [];
+
+    for (let polygonIndex = 0; polygonIndex < polygons.length; polygonIndex++) {
+      const polygon = polygons[polygonIndex];
+      if (polygon.length === 0 || polygon[0].length < 3) {
+        continue;
+      }
+
+      const territoryRing = this.createResolvedRing(
+        polygon[0],
+        'territory',
+        null,
+        polygonIndex,
+        0,
+        vertices
+      );
+      rings.push(territoryRing);
+
+      for (let ringIndex = 1; ringIndex < polygon.length; ringIndex++) {
+        if (polygon[ringIndex].length < 3) {
+          continue;
+        }
+        rings.push(
+          this.createResolvedRing(
+            polygon[ringIndex],
+            'hole',
+            territoryRing.id,
+            polygonIndex,
+            ringIndex,
+            vertices
+          )
+        );
+      }
+    }
+
+    return {
+      type: 'Polygon',
+      rings,
+    };
+  }
+
+  private createResolvedRing(
+    ringCoords: RingCoords,
+    ringType: 'territory' | 'hole',
+    parentId: string | null,
+    polygonIndex: number,
+    ringIndex: number,
+    vertices: Map<string, Vertex>
+  ): Ring {
+    const vertexIds = ringCoords.map((coord) => this.createResolvedVertex(coord, vertices));
+    const ringId = this.createResolvedId('ring', polygonIndex, ringIndex);
+    return new Ring(ringId, vertexIds, ringType, parentId);
+  }
+
+  private createResolvedVertex(
+    coord: { x: number; y: number },
+    vertices: Map<string, Vertex>
+  ): string {
+    const vertexId = this.createResolvedId('v');
+    vertices.set(
+      vertexId,
+      new Vertex(vertexId, new Coordinate(coord.x, coord.y).clampLatitude())
+    );
+    return vertexId;
+  }
+
+  private createResolvedId(prefix: string, ...parts: number[]): string {
+    return [
+      `${prefix}-resolve`,
+      ...parts.map((part) => String(part)),
+      Date.now().toString(36),
+      Math.random().toString(36).slice(2, 8),
+    ].join('-');
   }
 }
 

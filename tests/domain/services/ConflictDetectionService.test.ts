@@ -106,6 +106,16 @@ const vertices = new Map<string, Vertex>([
   ['vQ2', makeVertex('vQ2', 10, 8)],
   ['vQ3', makeVertex('vQ3', 10, 10)],
   ['vQ4', makeVertex('vQ4', 8, 10)],
+  // wrapped squareA: (190,0)-(200,10)
+  ['vW1', makeVertex('vW1', 190, 0)],
+  ['vW2', makeVertex('vW2', 200, 0)],
+  ['vW3', makeVertex('vW3', 200, 10)],
+  ['vW4', makeVertex('vW4', 190, 10)],
+  // wrapped squareB: (-175,0)-(-165,10) -> +360 で wrapped squareA と重なる
+  ['vX1', makeVertex('vX1', -175, 0)],
+  ['vX2', makeVertex('vX2', -165, 0)],
+  ['vX3', makeVertex('vX3', -165, 10)],
+  ['vX4', makeVertex('vX4', -175, 10)],
 ]);
 
 // ---- テスト ----
@@ -226,6 +236,18 @@ describe('ConflictDetectionService', () => {
       const ids = result.conflicts.map(c => c.id);
       expect(new Set(ids).size).toBe(ids.length);
     });
+
+    it('180度超に延伸したポリゴンと通常範囲のポリゴンの重なりも検出する', () => {
+      const featureA = makePolygonFeature('f-wrap-a', 'layer-1', ['vW1', 'vW2', 'vW3', 'vW4']);
+      const featureB = makePolygonFeature('f-wrap-b', 'layer-1', ['vX1', 'vX2', 'vX3', 'vX4']);
+
+      const result = detectSpatialConflicts([featureA, featureB], vertices, time100);
+
+      expect(result.hasConflicts).toBe(true);
+      expect(result.conflicts).toHaveLength(1);
+      expect(result.conflicts[0].featureIdA).toBe('f-wrap-a');
+      expect(result.conflicts[0].featureIdB).toBe('f-wrap-b');
+    });
   });
 
   describe('detectConflictsForFeature', () => {
@@ -301,6 +323,22 @@ describe('ConflictDetectionService', () => {
       );
 
       expect(conflicts).toEqual([]);
+    });
+
+    it('180度超に延伸したポリゴンとの競合も対象地物ベースで検出できる', () => {
+      const featureA = makePolygonFeature('f-wrap-a', 'layer-1', ['vW1', 'vW2', 'vW3', 'vW4']);
+      const featureB = makePolygonFeature('f-wrap-b', 'layer-1', ['vX1', 'vX2', 'vX3', 'vX4']);
+
+      const conflicts = detectConflictsForFeature(
+        'f-wrap-a',
+        [featureA, featureB],
+        vertices,
+        time100
+      );
+
+      expect(conflicts).toHaveLength(1);
+      expect(conflicts[0].featureIdA).toBe('f-wrap-a');
+      expect(conflicts[0].featureIdB).toBe('f-wrap-b');
     });
   });
 });
