@@ -1,21 +1,40 @@
 #!/usr/bin/env bash
-# sync-test-counts.sh — テストファイルから実際のテスト数を集計し、
+# sync-test-counts.sh — vitest の実行結果からテスト数を集計し、
 # 現状.md と 実装済み.md の記載を自動更新する。
 # pre-commit フックから呼び出される。
 
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-# --- ユニットテスト集計 ---
-unit_total=0
-unit_files=0
-while IFS= read -r f; do
-  count=$(grep -cE '^\s+it\(' "$f" 2>/dev/null || true)
-  if [ "$count" -gt 0 ]; then
-    unit_total=$((unit_total + count))
-    unit_files=$((unit_files + 1))
+# --- ユニットテスト集計（vitest JSON reporter で正確なカウント） ---
+vitest_json=$(npx vitest run --reporter=json 2>/dev/null || true)
+if [ -n "$vitest_json" ]; then
+  unit_total=$(echo "$vitest_json" | grep -oP '"numPassedTests"\s*:\s*\K[0-9]+' | head -1)
+  unit_files=$(echo "$vitest_json" | grep -oP '"numPassedTestSuites"\s*:\s*\K[0-9]+' | head -1)
+  # フォールバック: JSON解析失敗時は grep カウント
+  if [ -z "$unit_total" ] || [ -z "$unit_files" ]; then
+    unit_total=0
+    unit_files=0
+    while IFS= read -r f; do
+      count=$(grep -cE '^\s+it(\.each)?\(' "$f" 2>/dev/null || true)
+      if [ "$count" -gt 0 ]; then
+        unit_total=$((unit_total + count))
+        unit_files=$((unit_files + 1))
+      fi
+    done < <(find tests -name '*.test.ts' -type f)
   fi
-done < <(find tests -name '*.test.ts' -type f)
+else
+  # vitest 実行失敗時はファイルから概算
+  unit_total=0
+  unit_files=0
+  while IFS= read -r f; do
+    count=$(grep -cE '^\s+it(\.each)?\(' "$f" 2>/dev/null || true)
+    if [ "$count" -gt 0 ]; then
+      unit_total=$((unit_total + count))
+      unit_files=$((unit_files + 1))
+    fi
+  done < <(find tests -name '*.test.ts' -type f)
+fi
 
 # --- E2Eテスト集計 ---
 e2e_total=0
