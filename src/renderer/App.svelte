@@ -97,18 +97,15 @@
   import {
     addHoleRing,
     addExclaveRing,
-    isRingDrawingPointAllowed,
     resolveRingDrawingPlacement,
     validateNewRingPlacement,
   } from '@domain/services/RingEditService';
-  import type { AnchorProperty, FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+  import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
   import { DEFAULT_SETTINGS, DEFAULT_METADATA, type WorldSettings, type WorldMetadata } from '@domain/entities/World';
   import { Vertex } from '@domain/entities/Vertex';
   import type { AppConfig } from '@infrastructure/ConfigManager';
   import { serialize as serializeWorld } from '@infrastructure/persistence/JSONSerializer';
   import {
-    PolygonValidationError,
-    createTransientPolygonFeature,
     validatePolygonOrThrow,
   } from '@application/polygonValidation';
   import { createDefaultPolygonStyle } from '@infrastructure/StyleResolver';
@@ -141,6 +138,15 @@
     collectAnchorVertexIds,
     getFeatureById,
   } from '@presentation/app/appSelection';
+  import {
+    alignCoordinateNearReference,
+    buildValidationVertices,
+    getRingDrawingTarget,
+    getSelectedPolygonReferenceLongitude,
+    getValidationMessage,
+    validatePendingPolygon,
+    validateRingDrawingVertex,
+  } from '@presentation/app/appPolygonEditing';
 
   const container = getContainer();
   const {
@@ -327,184 +333,6 @@
   /** 変更を記録する（各編集操作後に呼ぶ） */
   function markAsDirty(): void {
     dirtyState = markDirty(dirtyState);
-  }
-
-  function getValidationMessage(error: unknown): string {
-    if (error instanceof PolygonValidationError) {
-      return error.message;
-    }
-    if (error instanceof Error) {
-      return error.message;
-    }
-    return '形状を確定できません';
-  }
-
-  function buildValidationVertices(
-    updates: readonly { vertexId: string; coordinate: Coordinate }[]
-  ): Map<string, Vertex> {
-    const validationVertices = new Map(addFeature.getVertices());
-    for (const update of updates) {
-      const existing = validationVertices.get(update.vertexId);
-      validationVertices.set(
-        update.vertexId,
-        existing
-          ? existing.withCoordinate(update.coordinate)
-          : new Vertex(update.vertexId, update.coordinate.clampLatitude())
-      );
-    }
-    return validationVertices;
-  }
-
-  function getRingDrawingTarget() {
-    if (!ringDrawingState || !currentTime) return null;
-
-    const feature = features.find((candidate) => candidate.id === ringDrawingState.featureId);
-    if (!feature) return null;
-
-    const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor || anchor.shape.type !== 'Polygon') return null;
-
-    return { feature, anchor };
-  }
-
-  function getAnchorReferenceLongitude(anchor: FeatureAnchor): number | null {
-    switch (anchor.shape.type) {
-      case 'Point': {
-        return addFeature.getVertices().get(anchor.shape.vertexId)?.x ?? null;
-      }
-      case 'LineString': {
-        for (const vertexId of anchor.shape.vertexIds) {
-          const vertex = addFeature.getVertices().get(vertexId);
-          if (vertex) return vertex.x;
-        }
-        return null;
-      }
-      case 'Polygon': {
-        for (const ring of anchor.shape.rings) {
-          for (const vertexId of ring.vertexIds) {
-            const vertex = addFeature.getVertices().get(vertexId);
-            if (vertex) return vertex.x;
-          }
-        }
-        return null;
-      }
-    }
-  }
-
-  function getSelectedPolygonReferenceLongitude(): number | null {
-    if (!selectionFeatureId || !currentTime) return null;
-    const feature = features.find((candidate) => candidate.id === selectionFeatureId);
-    const anchor = feature?.getActiveAnchor(currentTime);
-    return anchor && anchor.shape.type === 'Polygon'
-      ? getAnchorReferenceLongitude(anchor)
-      : null;
-  }
-
-  function alignCoordinateNearReference(
-    coord: Coordinate,
-    currentCoords: readonly Coordinate[],
-    fallbackReferenceLon: number | null = null
-  ): Coordinate {
-    const referenceLon = currentCoords.at(-1)?.x ?? fallbackReferenceLon;
-    return referenceLon === null
-      ? coord
-      : new Coordinate(wrapLongitudeNearReference(coord.x, referenceLon), coord.y);
-  }
-
-  function getRingDrawingConstraintMessage(): string {
-    const target = getRingDrawingTarget();
-    if (!target) return 'ポリゴン地物が選択されていません';
-    if (!ringDrawingState || ringDrawingState.coords.length === 0) {
-      return '穴/飛び地を開始できません';
-    }
-
-    const resolution = resolveRingDrawingPlacement(
-      target.anchor.shape.rings,
-      addFeature.getVertices(),
-      { x: ringDrawingState.coords[0].x, y: ringDrawingState.coords[0].y }
-    );
-    if (!resolution.placement) {
-      return resolution.message ?? '穴/飛び地を開始できません';
-    }
-
-    switch (resolution.placement.constraint.kind) {
-      case 'territory':
-        return '穴追加中の頂点は開始した領土リングの内部に配置してください';
-      case 'hole':
-        return '飛び地追加中の頂点は開始した穴リングの内部に配置してください';
-      case 'outside':
-        return '飛び地追加中の頂点は選択中ポリゴンの外部に配置してください';
-    }
-  }
-
-  function validateRingDrawingVertex(coord: Coordinate): string | null {
-    const target = getRingDrawingTarget();
-    if (!target) return 'ポリゴン地物が選択されていません';
-
-    const alignedCoord = alignCoordinateNearReference(
-      coord,
-      ringDrawingState?.coords ?? [],
-      getAnchorReferenceLongitude(target.anchor)
-    );
-
-    if (!ringDrawingState || ringDrawingState.coords.length === 0) {
-      const resolution = resolveRingDrawingPlacement(
-        target.anchor.shape.rings,
-        addFeature.getVertices(),
-        { x: alignedCoord.x, y: alignedCoord.y }
-      );
-      return resolution.message;
-    }
-
-    const resolution = resolveRingDrawingPlacement(
-      target.anchor.shape.rings,
-      addFeature.getVertices(),
-      { x: ringDrawingState.coords[0].x, y: ringDrawingState.coords[0].y }
-    );
-    if (!resolution.placement) {
-      return resolution.message ?? '穴/飛び地を開始できません';
-    }
-
-    return isRingDrawingPointAllowed(
-      { x: alignedCoord.x, y: alignedCoord.y },
-      resolution.placement,
-      target.anchor.shape.rings,
-      addFeature.getVertices()
-    )
-      ? null
-      : getRingDrawingConstraintMessage();
-  }
-
-  function validatePendingPolygon(coords: readonly Coordinate[]): string | null {
-    if (addToolType !== 'polygon' || !currentTime) return null;
-
-    const layerList = layerQueries.getLayers();
-    if (layerList.length === 0) return null;
-
-    try {
-      const transient = createTransientPolygonFeature(
-        coords,
-        layerList[0].id,
-        currentTime,
-        'pending-drawing',
-        'pending-drawing-ring',
-        'pending-drawing-v'
-      );
-      const validationVertices = new Map(addFeature.getVertices());
-      for (const [vertexId, vertex] of transient.vertices) {
-        validationVertices.set(vertexId, vertex);
-      }
-      validatePolygonOrThrow(
-        transient.feature,
-        features,
-        validationVertices,
-        currentTime,
-        layerList[0].id
-      );
-      return null;
-    } catch (error) {
-      return getValidationMessage(error);
-    }
   }
 
   // --- 自動バックアップ ---
@@ -879,7 +707,12 @@
       const alignedCoord = alignCoordinateNearReference(
         coord,
         knifeDrawingState.coords,
-        getSelectedPolygonReferenceLongitude()
+        getSelectedPolygonReferenceLongitude(
+          features,
+          selectionFeatureId,
+          currentTime,
+          addFeature.getVertices()
+        )
       );
       knifeDrawingState = addKnifeVertex(knifeDrawingState, alignedCoord);
       return;
@@ -889,9 +722,19 @@
       const alignedCoord = alignCoordinateNearReference(
         coord,
         ringDrawingState.coords,
-        getSelectedPolygonReferenceLongitude()
+        getSelectedPolygonReferenceLongitude(
+          features,
+          selectionFeatureId,
+          currentTime,
+          addFeature.getVertices()
+        )
       );
-      const ringValidationMessage = validateRingDrawingVertex(alignedCoord);
+      const ringValidationMessage = validateRingDrawingVertex(
+        alignedCoord,
+        getRingDrawingTarget(features, ringDrawingState, currentTime),
+        ringDrawingState,
+        addFeature.getVertices()
+      );
       if (ringValidationMessage) {
         validationMessage = ringValidationMessage;
         return;
@@ -952,7 +795,14 @@
     if (toolMode === 'add' && isDrawing) {
       const alignedCoord = alignCoordinateNearReference(coord, drawingCoords);
       const nextCoords = [...drawingCoords, alignedCoord];
-      const pendingValidation = validatePendingPolygon(nextCoords);
+      const pendingValidation = validatePendingPolygon(
+        nextCoords,
+        addToolType,
+        currentTime,
+        layerQueries.getLayers()[0]?.id ?? null,
+        features,
+        addFeature.getVertices()
+      );
       if (pendingValidation) {
         validationMessage = pendingValidation;
         return;
@@ -975,7 +825,14 @@
 
   function onConfirm(): void {
     if (isDrawing) {
-      const pendingValidation = validatePendingPolygon(drawingCoords);
+      const pendingValidation = validatePendingPolygon(
+        drawingCoords,
+        addToolType,
+        currentTime,
+        layerQueries.getLayers()[0]?.id ?? null,
+        features,
+        addFeature.getVertices()
+      );
       if (pendingValidation) {
         validationMessage = pendingValidation;
         return;
@@ -1006,7 +863,7 @@
   function onConfirmRing(): void {
     if (!ringDrawingState || !canConfirmRing(ringDrawingState) || !currentTime) return;
 
-    const target = getRingDrawingTarget();
+    const target = getRingDrawingTarget(features, ringDrawingState, currentTime);
     if (!target) return;
     const { feature, anchor } = target;
 
@@ -1037,6 +894,7 @@
     try {
       const pendingVertexIds = ringDrawingState.coords.map((_, index) => `pending-ring-v-${index}`);
       const validationVertices = buildValidationVertices(
+        addFeature.getVertices(),
         ringDrawingState.coords.map((coord, index) => ({
           vertexId: pendingVertexIds[index],
           coordinate: coord,

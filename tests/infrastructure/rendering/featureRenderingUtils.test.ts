@@ -71,6 +71,15 @@ describe('wrapLongitudeToPrimaryRange', () => {
     expect(wrapLongitudeToPrimaryRange(195)).toBe(-165);
     expect(wrapLongitudeToPrimaryRange(-190)).toBe(170);
   });
+
+  it('ちょうど180度と-180度はそのまま維持する', () => {
+    expect(wrapLongitudeToPrimaryRange(180)).toBe(180);
+    expect(wrapLongitudeToPrimaryRange(-180)).toBe(-180);
+  });
+
+  it('0度はそのまま返す', () => {
+    expect(wrapLongitudeToPrimaryRange(0)).toBe(0);
+  });
 });
 
 describe('unwrapLongitudeSequence', () => {

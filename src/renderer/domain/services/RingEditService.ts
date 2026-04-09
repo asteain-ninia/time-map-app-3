@@ -401,7 +401,7 @@ export function validatePolygonRingHierarchy(
       if (ring.parentId === null) {
         errors.push({
           type: 'not_contained',
-          message: '穴リングには親の領土リングが必要です',
+          message: `穴リングには親の領土リングが必要です (ring: "${ring.id}")`,
         });
         continue;
       }
@@ -410,7 +410,7 @@ export function validatePolygonRingHierarchy(
       if (!parentRing || parentRing.ringType !== 'territory') {
         errors.push({
           type: 'not_contained',
-          message: '穴リングの親は領土リングでなければなりません',
+          message: `穴リングの親は領土リングでなければなりません (ring: "${ring.id}")`,
         });
         continue;
       }
@@ -429,7 +429,9 @@ export function validatePolygonRingHierarchy(
           currentCoords,
           ringCoords.get(parentRing.id)!,
           siblingCoords
-        ).filter((error) => error.type !== 'self_intersecting')
+        )
+          .filter((error) => error.type !== 'self_intersecting')
+          .map((error) => prefixRingValidationError(ring.id, error))
       );
       continue;
     }
@@ -447,6 +449,7 @@ export function validatePolygonRingHierarchy(
       errors.push(
         ...validateRingPlacement(currentCoords, null, siblingCoords)
           .filter((error) => error.type !== 'self_intersecting')
+          .map((error) => prefixRingValidationError(ring.id, error))
       );
       continue;
     }
@@ -455,7 +458,7 @@ export function validatePolygonRingHierarchy(
     if (!parentRing || parentRing.ringType !== 'hole') {
       errors.push({
         type: 'not_contained',
-        message: '飛び地リングの親は穴リングでなければなりません',
+        message: `飛び地リングの親は穴リングでなければなりません (ring: "${ring.id}")`,
       });
       continue;
     }
@@ -474,11 +477,29 @@ export function validatePolygonRingHierarchy(
         currentCoords,
         ringCoords.get(parentRing.id)!,
         siblingCoords
-      ).filter((error) => error.type !== 'self_intersecting')
+      )
+        .filter((error) => error.type !== 'self_intersecting')
+        .map((error) => prefixRingValidationError(ring.id, error))
     );
   }
 
   return errors;
+}
+
+function prefixRingValidationError(
+  ringId: string,
+  error: RingValidationError
+): RingValidationError {
+  switch (error.type) {
+    case 'self_intersecting':
+      return { ...error, message: `リング "${ringId}" が自己交差しています` };
+    case 'not_contained':
+      return { ...error, message: `リング "${ringId}" が親リングの内部に完全に収まっていません` };
+    case 'boundary_crossing':
+      return { ...error, message: `リング "${ringId}" の境界が親リング境界と交差しています` };
+    case 'sibling_overlap':
+      return { ...error, message: `リング "${ringId}" が兄弟リングと重なっています` };
+  }
 }
 
 /**

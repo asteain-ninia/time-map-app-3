@@ -26,6 +26,26 @@ function createFeature(id: string, name: string): Feature {
   ]);
 }
 
+function createPointAnchor(vertexId = 'point-v1'): FeatureAnchor {
+  return new FeatureAnchor(
+    'point-anchor',
+    { start: new TimePoint(100) },
+    { name: '点', description: '' },
+    { type: 'Point', vertexId },
+    { layerId: 'layer-1', parentId: null, childIds: [] }
+  );
+}
+
+function createLineAnchor(vertexIds = ['line-v1', 'line-v2', 'line-v3']): FeatureAnchor {
+  return new FeatureAnchor(
+    'line-anchor',
+    { start: new TimePoint(100) },
+    { name: '線', description: '' },
+    { type: 'LineString', vertexIds },
+    { layerId: 'layer-1', parentId: null, childIds: [] }
+  );
+}
+
 describe('appSelection', () => {
   it('複数所有者の選択状態をプロパティパネル向けに整形する', () => {
     const features = [
@@ -50,6 +70,67 @@ describe('appSelection', () => {
     expect(selectionState.remainingCount).toBe(0);
   });
 
+  it('選択済み地物がある場合は空状態を返す', () => {
+    const selectionState = buildPropertyPanelSelectionState(
+      [createFeature('f1', '第一国')],
+      'f1',
+      { kind: 'multiple', featureIds: ['f1', 'f2'] },
+      new TimePoint(150)
+    );
+
+    expect(selectionState).toEqual({ kind: 'empty' });
+  });
+
+  it('単一所有者の頂点選択では空状態を返す', () => {
+    const selectionState = buildPropertyPanelSelectionState(
+      [createFeature('f1', '第一国')],
+      null,
+      { kind: 'single', featureIds: ['f1'] },
+      new TimePoint(150)
+    );
+
+    expect(selectionState).toEqual({ kind: 'empty' });
+  });
+
+  it('不明な頂点選択コンテキストではunknownを返す', () => {
+    const selectionState = buildPropertyPanelSelectionState(
+      [createFeature('f1', '第一国')],
+      null,
+      { kind: 'unknown', featureIds: [] },
+      new TimePoint(150)
+    );
+
+    expect(selectionState).toEqual({ kind: 'unknown' });
+  });
+
+  it('複数所有者が6件以上ある場合は5件まで表示し残数を返す', () => {
+    const features = [
+      createFeature('f1', '第一国'),
+      createFeature('f2', '第二国'),
+      createFeature('f3', '第三国'),
+      createFeature('f4', '第四国'),
+      createFeature('f5', '第五国'),
+      createFeature('f6', '第六国'),
+    ];
+
+    const selectionState = buildPropertyPanelSelectionState(
+      features,
+      null,
+      { kind: 'multiple', featureIds: ['f1', 'f2', 'f3', 'f4', 'f5', 'f6'] },
+      new TimePoint(150)
+    );
+
+    expect(selectionState.kind).toBe('multiple');
+    expect(selectionState.featureSummaries).toEqual([
+      { id: 'f1', name: '第一国' },
+      { id: 'f2', name: '第二国' },
+      { id: 'f3', name: '第三国' },
+      { id: 'f4', name: '第四国' },
+      { id: 'f5', name: '第五国' },
+    ]);
+    expect(selectionState.remainingCount).toBe(1);
+  });
+
   it('アンカーから全頂点IDを収集する', () => {
     const anchor = createFeature('f1', '第一国').anchors[0];
     expect(collectAnchorVertexIds(anchor)).toEqual([
@@ -59,6 +140,18 @@ describe('appSelection', () => {
       'f1-v4',
       'f1-v5',
       'f1-v6',
+    ]);
+  });
+
+  it('Pointアンカーから単一頂点IDを収集する', () => {
+    expect(collectAnchorVertexIds(createPointAnchor())).toEqual(['point-v1']);
+  });
+
+  it('LineStringアンカーから全頂点IDを収集する', () => {
+    expect(collectAnchorVertexIds(createLineAnchor())).toEqual([
+      'line-v1',
+      'line-v2',
+      'line-v3',
     ]);
   });
 });

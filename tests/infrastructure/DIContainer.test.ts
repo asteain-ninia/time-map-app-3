@@ -56,4 +56,27 @@ describe('DIContainer', () => {
     expect(container.commands.editFeature.getFeatureById(feature.id)).toBeDefined();
     expect(container.queries.features.getFeatureById(feature.id)).toBeDefined();
   });
+
+  it('window.apiがない環境ではリポジトリloadが利用不可エラーになる', async () => {
+    const container = new DIContainer();
+
+    await expect(container.infrastructure.repository.load('missing.json')).rejects.toThrow(
+      'Electron file system is unavailable in this environment'
+    );
+  });
+
+  it('window.apiがない環境ではリポジトリsaveが利用不可エラーになる', async () => {
+    const container = new DIContainer();
+
+    await expect(
+      container.infrastructure.repository.save('missing.json', container.commands.saveLoad.assembleWorld())
+    ).rejects.toThrow('Electron file system is unavailable in this environment');
+  });
+
+  it('window.apiがない環境ではダイアログ経由のopen/saveAsはfalseを返す', async () => {
+    const container = new DIContainer();
+
+    await expect(container.commands.saveLoad.open()).resolves.toBe(false);
+    await expect(container.commands.saveLoad.saveAs()).resolves.toBe(false);
+  });
 });
