@@ -9,6 +9,7 @@
 import type { FeatureAnchor, AnchorProperty, FeatureShape, AnchorPlacement, TimeRange } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { SpatialConflict } from '@domain/services/ConflictDetectionService';
+import type { Vertex } from '@domain/entities/Vertex';
 
 /** 編集モード */
 export type EditMode = 'property_only' | 'shape_and_property';
@@ -50,6 +51,7 @@ export interface ConflictResolution {
 /** Resolve の出力 */
 export interface ResolveResult {
   readonly resolvedAnchorsByFeature: ReadonlyMap<string, readonly FeatureAnchor[]>;
+  readonly createdVertices?: ReadonlyMap<string, Vertex>;
 }
 
 /** Commit の出力 */

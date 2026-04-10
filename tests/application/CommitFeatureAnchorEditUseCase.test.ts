@@ -4,6 +4,7 @@ import { PrepareFeatureAnchorEditUseCase } from '@application/PrepareFeatureAnch
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
+import { Vertex } from '@domain/entities/Vertex';
 
 describe('CommitFeatureAnchorEditUseCase', () => {
   let addFeature: AddFeatureUseCase;
@@ -110,6 +111,21 @@ describe('CommitFeatureAnchorEditUseCase', () => {
       expect(result.updatedFeatureIds).toContain(feature.id);
       const updated = addFeature.getFeatureById(feature.id)!;
       expect(updated.getNameAt(time)).toBe('resolved');
+    });
+
+    it('createdVertices を頂点ストアへ反映してから確定する', () => {
+      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time, 'orig');
+      const prepResult = prepare.prepare(feature.id, 'property_only', time, {});
+      const createdVertices = new Map([
+        ['v-resolve-test', new Vertex('v-resolve-test', new Coordinate(30, 40))],
+      ]);
+
+      commit.commitResolved(prepResult.draftId, {
+        resolvedAnchorsByFeature: new Map([[feature.id, prepResult.candidateAnchors]]),
+        createdVertices,
+      });
+
+      expect(addFeature.getVertices().has('v-resolve-test')).toBe(true);
     });
 
     it('存在しないドラフトIDはエラー', () => {

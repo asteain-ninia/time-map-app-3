@@ -52,7 +52,9 @@
     surveyPointB = null as Coordinate | null,
     boxSelectBox = null as { minX: number; minY: number; maxX: number; maxY: number } | null,
     onVertexMouseDown,
+    onVertexActivate,
     onEdgeHandleMouseDown,
+    onEdgeHandleActivate,
   }: {
     wrapOffsets?: readonly number[];
     baseMapContent?: string;
@@ -89,11 +91,17 @@
     surveyPointB?: Coordinate | null;
     boxSelectBox?: { minX: number; minY: number; maxX: number; maxY: number } | null;
     onVertexMouseDown?: (vertexId: string, startCoord: Coordinate, e: MouseEvent) => void;
+    onVertexActivate?: (vertexId: string, startCoord: Coordinate, isAdditive: boolean) => void;
     onEdgeHandleMouseDown?: (
       vertexId1: string,
       vertexId2: string,
       midpoint: Coordinate,
       e: MouseEvent
+    ) => void;
+    onEdgeHandleActivate?: (
+      vertexId1: string,
+      vertexId2: string,
+      midpoint: Coordinate
     ) => void;
   } = $props();
 </script>
@@ -166,7 +174,9 @@
             showEdgeHandles={!suppressPassiveVertexHandles && entry.showEdgeHandles}
             visibleVertexIds={suppressPassiveVertexHandles ? selectedVertexIds : undefined}
             {onVertexMouseDown}
+            {onVertexActivate}
             {onEdgeHandleMouseDown}
+            {onEdgeHandleActivate}
           />
         {/each}
       {/if}

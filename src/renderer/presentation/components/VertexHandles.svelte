@@ -25,7 +25,9 @@
     visibleVertexIds = undefined as ReadonlySet<string> | undefined,
     showEdgeHandles = true,
     onVertexMouseDown,
+    onVertexActivate,
     onEdgeHandleMouseDown,
+    onEdgeHandleActivate,
   }: {
     anchor: FeatureAnchor;
     vertices: ReadonlyMap<string, Vertex>;
@@ -36,11 +38,17 @@
     visibleVertexIds?: ReadonlySet<string>;
     showEdgeHandles?: boolean;
     onVertexMouseDown?: (vertexId: string, startCoord: Coordinate, e: MouseEvent) => void;
+    onVertexActivate?: (vertexId: string, startCoord: Coordinate, isAdditive: boolean) => void;
     onEdgeHandleMouseDown?: (
       vertexId1: string,
       vertexId2: string,
       midpoint: Coordinate,
       e: MouseEvent
+    ) => void;
+    onEdgeHandleActivate?: (
+      vertexId1: string,
+      vertexId2: string,
+      midpoint: Coordinate
     ) => void;
   } = $props();
 
@@ -65,6 +73,10 @@
   const VERTEX_RADIUS = 5;
   const EDGE_HANDLE_RADIUS = 3.5;
   const SNAP_INDICATOR_RADIUS = 8;
+
+  function isActivationKey(key: string): boolean {
+    return key === 'Enter' || key === ' ';
+  }
 </script>
 
 <!-- エッジハンドル（中点マーカー） -->
@@ -72,9 +84,12 @@
   {#each edgePositions() as edge (edge.v1 + '-' + edge.v2)}
     {@const mx = (geoToSvgX(edge.x1) + geoToSvgX(edge.x2)) / 2}
     {@const my = (geoToSvgY(edge.y1) + geoToSvgY(edge.y2)) / 2}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    {@const midpoint = new Coordinate((edge.x1 + edge.x2) / 2, (edge.y1 + edge.y2) / 2)}
     <rect
       class="edge-handle"
+      role="button"
+      tabindex="0"
+      aria-label="エッジ中点に頂点を追加"
       x={mx - EDGE_HANDLE_RADIUS / zoom}
       y={my - EDGE_HANDLE_RADIUS / zoom}
       width={EDGE_HANDLE_RADIUS * 2 / zoom}
@@ -85,12 +100,15 @@
       style="cursor: copy;"
       onmousedown={(e) => {
         e.stopPropagation();
-        onEdgeHandleMouseDown?.(
-          edge.v1,
-          edge.v2,
-          new Coordinate((edge.x1 + edge.x2) / 2, (edge.y1 + edge.y2) / 2),
-          e
-        );
+        onEdgeHandleMouseDown?.(edge.v1, edge.v2, midpoint, e);
+      }}
+      onkeydown={(e) => {
+        if (!isActivationKey(e.key)) {
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        onEdgeHandleActivate?.(edge.v1, edge.v2, midpoint);
       }}
     />
   {/each}
@@ -100,10 +118,12 @@
 {#each renderedVertexPositions() as vertex (vertex.vertexId)}
   {@const isSelected = selectedVertexIds.has(vertex.vertexId)}
   {@const shared = isVertexShared(vertex.vertexId, sharedGroups)}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <circle
     class="vertex-handle"
     class:selected={isSelected}
+    role="button"
+    tabindex="0"
+    aria-label={isSelected ? '選択中の頂点' : '頂点を選択'}
     cx={geoToSvgX(vertex.x)}
     cy={geoToSvgY(vertex.y)}
     r={(isSelected ? VERTEX_RADIUS + 1 : VERTEX_RADIUS) / zoom}
@@ -114,6 +134,14 @@
     onmousedown={(e) => {
       e.stopPropagation();
       onVertexMouseDown?.(vertex.vertexId, new Coordinate(vertex.x, vertex.y), e);
+    }}
+    onkeydown={(e) => {
+      if (!isActivationKey(e.key)) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      onVertexActivate?.(vertex.vertexId, new Coordinate(vertex.x, vertex.y), e.shiftKey);
     }}
   />
 {/each}

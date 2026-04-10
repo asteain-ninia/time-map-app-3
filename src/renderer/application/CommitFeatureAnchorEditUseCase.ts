@@ -9,6 +9,7 @@
 
 import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import type { Feature } from '@domain/entities/Feature';
+import type { Vertex } from '@domain/entities/Vertex';
 import type { AddFeatureUseCase } from './AddFeatureUseCase';
 import type { PrepareFeatureAnchorEditUseCase } from './PrepareFeatureAnchorEditUseCase';
 import { eventBus } from './EventBus';
@@ -67,6 +68,13 @@ export class CommitFeatureAnchorEditUseCase {
     const draft = this.prepareUseCase.getDraft(draftId);
     if (!draft) {
       throw new CommitError(`ドラフト "${draftId}" が見つかりません`);
+    }
+
+    if (resolveResult.createdVertices && resolveResult.createdVertices.size > 0) {
+      const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
+      for (const [vertexId, vertex] of resolveResult.createdVertices) {
+        vertices.set(vertexId, vertex);
+      }
     }
 
     const result = this.applyAnchors(resolveResult.resolvedAnchorsByFeature);

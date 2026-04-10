@@ -61,7 +61,7 @@ describe('ResolveFeatureAnchorConflictsUseCase', () => {
         ? originalAnchor.shape.rings[0].vertexIds
         : []);
 
-      const bounds = getRingBounds(resolvedAnchor.shape.rings[0], addFeature);
+      const bounds = getRingBounds(resolvedAnchor.shape.rings[0], addFeature, result.createdVertices);
       expect(bounds).toEqual({ minX: 10, maxX: 15, minY: 0, maxY: 10 });
     });
 
@@ -86,7 +86,7 @@ describe('ResolveFeatureAnchorConflictsUseCase', () => {
 
       const territoryBounds = resolvedAnchor.shape.rings
         .filter((ring) => ring.ringType === 'territory')
-        .map((ring) => getRingBounds(ring, addFeature))
+        .map((ring) => getRingBounds(ring, addFeature, result.createdVertices))
         .map(({ minX, maxX }) => ({ minX, maxX }))
         .toSorted((a, b) => a.minX - b.minX);
 
@@ -115,8 +115,38 @@ describe('ResolveFeatureAnchorConflictsUseCase', () => {
         throw new Error('Expected polygon shape');
       }
 
-      const bounds = getRingBounds(resolvedAnchor.shape.rings[0], addFeature);
+      const bounds = getRingBounds(resolvedAnchor.shape.rings[0], addFeature, result.createdVertices);
       expect(bounds).toEqual({ minX: -175, maxX: -170, minY: 0, maxY: 10 });
+    });
+
+    it('resolve段階では新規頂点をストアへ反映せずcreatedVerticesへ返す', () => {
+      const preferred = addFeature.addPolygon(polygon(0, 0, 10, 10), 'l1', time, 'preferred');
+      addFeature.addPolygon(polygon(5, 0, 15, 10), 'l1', time, 'other');
+      const vertexCountBefore = addFeature.getVertices().size;
+
+      const prepared = prepare.prepare(preferred.id, 'property_only', time, {});
+      const result = resolve.resolve(prepared.draftId, [
+        { conflictIndex: 0, preferFeatureId: preferred.id },
+      ]);
+
+      expect(addFeature.getVertices().size).toBe(vertexCountBefore);
+      expect(result.createdVertices).toBeDefined();
+      expect(result.createdVertices!.size).toBeGreaterThan(0);
+      for (const createdVertexId of result.createdVertices!.keys()) {
+        expect(addFeature.getVertices().has(createdVertexId)).toBe(false);
+      }
+    });
+
+    it('同じドラフトを再解決しても生成IDが安定する', () => {
+      const preferred = addFeature.addPolygon(polygon(0, 0, 10, 10), 'l1', time, 'preferred');
+      addFeature.addPolygon(polygon(5, 0, 15, 10), 'l1', time, 'other');
+
+      const prepared = prepare.prepare(preferred.id, 'property_only', time, {});
+      const resolutions = [{ conflictIndex: 0, preferFeatureId: preferred.id }] as const;
+      const first = resolve.resolve(prepared.draftId, resolutions);
+      const second = resolve.resolve(prepared.draftId, resolutions);
+
+      expect([...first.createdVertices!.keys()]).toEqual([...second.createdVertices!.keys()]);
     });
   });
 });
@@ -132,11 +162,12 @@ function polygon(minX: number, minY: number, maxX: number, maxY: number): Coordi
 
 function getRingBounds(
   ring: Ring,
-  addFeature: AddFeatureUseCase
+  addFeature: AddFeatureUseCase,
+  createdVertices?: ReadonlyMap<string, { coordinate: Coordinate }>
 ): { minX: number; maxX: number; minY: number; maxY: number } {
   const vertices = addFeature.getVertices();
   const coords = ring.vertexIds.map((vertexId) => {
-    const vertex = vertices.get(vertexId);
+    const vertex = vertices.get(vertexId) ?? createdVertices?.get(vertexId);
     if (!vertex) {
       throw new Error(`Vertex ${vertexId} not found`);
     }

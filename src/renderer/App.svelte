@@ -1365,16 +1365,86 @@
     suppressNextMapClick = true;
   }
 
-  /** 頂点ハンドルのmousedown — 頂点選択＋ドラッグ開始 */
-  function onVertexMouseDown(vertexId: string, startCoord: Coordinate, e: MouseEvent): void {
+  function updateVertexHandleSelection(
+    vertexId: string,
+    isAdditive: boolean
+  ): { nextSelection: ReadonlySet<string>; shouldStartDrag: boolean } {
     validationMessage = '';
     selectedFeatureId = null;
-    const { nextSelection, shouldStartDrag } = resolveVertexMouseDownState(
-      selectedVertexIds,
-      vertexId,
-      e.shiftKey
-    );
-    selectedVertexIds = nextSelection;
+    const result = resolveVertexMouseDownState(selectedVertexIds, vertexId, isAdditive);
+    selectedVertexIds = result.nextSelection;
+    return result;
+  }
+
+  function insertVertexAtSelectedEdge(
+    v1: string,
+    v2: string,
+    midpoint: Coordinate
+  ): string | null {
+    if (!selectionFeatureId || !currentTime) return null;
+    const feature = features.find((f) => f.id === selectionFeatureId);
+    if (!feature) return null;
+    const anchor = feature.getActiveAnchor(currentTime);
+    if (!anchor) return null;
+
+    const vtx1 = vertices.get(v1);
+    const vtx2 = vertices.get(v2);
+    if (!vtx1 || !vtx2) return null;
+
+    try {
+      if (anchor.shape.type === 'LineString') {
+        const edgeIndex = anchor.shape.vertexIds.indexOf(v1);
+        if (edgeIndex >= 0) {
+          return vertexEdit.insertVertexOnLine(selectionFeatureId, currentTime, edgeIndex, midpoint);
+        }
+        return null;
+      }
+
+      if (anchor.shape.type === 'Polygon') {
+        for (const ring of anchor.shape.rings) {
+          const ids = ring.vertexIds;
+          for (let i = 0; i < ids.length; i++) {
+            const next = (i + 1) % ids.length;
+            if (ids[i] === v1 && ids[next] === v2) {
+              return vertexEdit.insertVertexOnPolygon(selectionFeatureId, currentTime, ring.id, i, midpoint);
+            }
+          }
+        }
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
+  }
+
+  function onVertexActivate(
+    vertexId: string,
+    _startCoord: Coordinate,
+    isAdditive: boolean
+  ): void {
+    updateVertexHandleSelection(vertexId, isAdditive);
+  }
+
+  function onEdgeHandleActivate(
+    v1: string,
+    v2: string,
+    midpoint: Coordinate
+  ): void {
+    validationMessage = '';
+    const newVertexId = insertVertexAtSelectedEdge(v1, v2, midpoint);
+    if (!newVertexId) {
+      return;
+    }
+
+    refreshFeatureData();
+    selectedFeatureId = null;
+    selectedVertexIds = new Set([newVertexId]);
+  }
+
+  /** 頂点ハンドルのmousedown — 頂点選択＋ドラッグ開始 */
+  function onVertexMouseDown(vertexId: string, startCoord: Coordinate, e: MouseEvent): void {
+    const { nextSelection, shouldStartDrag } = updateVertexHandleSelection(vertexId, e.shiftKey);
     if (!shouldStartDrag || editInteractionMode !== 'vertex') {
       return;
     }
@@ -1389,47 +1459,11 @@
     midpoint: Coordinate,
     e: MouseEvent
   ): void {
-    if (!selectionFeatureId || !currentTime) return;
-    const feature = features.find((f) => f.id === selectionFeatureId);
-    if (!feature) return;
-    const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor) return;
-
-    // エッジの中点に頂点を挿入
-    const vtx1 = vertices.get(v1);
-    const vtx2 = vertices.get(v2);
-    if (!vtx1 || !vtx2) return;
-
-    let newVertexId: string | null = null;
-    try {
-      if (anchor.shape.type === 'LineString') {
-        const edgeIndex = anchor.shape.vertexIds.indexOf(v1);
-        if (edgeIndex >= 0) {
-          newVertexId = vertexEdit.insertVertexOnLine(
-            selectionFeatureId, currentTime, edgeIndex, midpoint
-          );
-        }
-      } else if (anchor.shape.type === 'Polygon') {
-        for (const ring of anchor.shape.rings) {
-          const ids = ring.vertexIds;
-          for (let i = 0; i < ids.length; i++) {
-            const next = (i + 1) % ids.length;
-            if (ids[i] === v1 && ids[next] === v2) {
-              newVertexId = vertexEdit.insertVertexOnPolygon(
-                selectionFeatureId, currentTime, ring.id, i, midpoint
-              );
-              break;
-            }
-          }
-          if (newVertexId) break;
-        }
-      }
-    } catch {
-      return;
-    }
-
+    validationMessage = '';
+    const newVertexId = insertVertexAtSelectedEdge(v1, v2, midpoint);
     if (newVertexId) {
       refreshFeatureData();
+      selectedFeatureId = null;
       selectedVertexIds = new Set([newVertexId]);
       beginVertexDrag(newVertexId, midpoint, selectedVertexIds, true);
     }
@@ -1866,7 +1900,9 @@
           {onConfirm}
           {onCancel}
           {onVertexMouseDown}
+          {onVertexActivate}
           {onEdgeHandleMouseDown}
+          {onEdgeHandleActivate}
           {onCursorGeoUpdate}
           onDragEnd={() => { commitDrag(); commitFeatureDrag(); commitBoxSelect(); }}
           showVertexHandles={editInteractionMode !== 'featureMove'}

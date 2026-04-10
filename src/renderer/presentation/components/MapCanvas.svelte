@@ -56,7 +56,9 @@
     onConfirm,
     onCancel,
     onVertexMouseDown,
+    onVertexActivate,
     onEdgeHandleMouseDown,
+    onEdgeHandleActivate,
     onCursorGeoUpdate,
     onDragEnd,
     showVertexHandles = true,
@@ -119,11 +121,17 @@
     onConfirm?: () => void;
     onCancel?: () => void;
     onVertexMouseDown?: (vertexId: string, startCoord: Coordinate, e: MouseEvent) => void;
+    onVertexActivate?: (vertexId: string, startCoord: Coordinate, isAdditive: boolean) => void;
     onEdgeHandleMouseDown?: (
       vertexId1: string,
       vertexId2: string,
       midpoint: Coordinate,
       e: MouseEvent
+    ) => void;
+    onEdgeHandleActivate?: (
+      vertexId1: string,
+      vertexId2: string,
+      midpoint: Coordinate
     ) => void;
     onCursorGeoUpdate?: (
       geo: { lon: number; lat: number },
@@ -251,6 +259,7 @@
   let pendingPointerMove: { clientX: number; clientY: number } | null = null;
   let pointerMoveFrameId: number | null = null;
   let lastPointerMoveAt = 0;
+  const mapKeyboardInstructionsId = 'map-canvas-keyboard-instructions';
 
   /** viewBoxとwrapOffsetsを一括更新 */
   function syncViewport(): void {
@@ -346,6 +355,18 @@
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     viewport.zoomAtCursor(-e.deltaY, x, y);
+    syncViewport();
+    zoomLevel = viewport.getZoom();
+    eventBus.emit('viewport:zoomChanged', { zoom: zoomLevel });
+  }
+
+  function zoomAtViewportCenter(delta: number): void {
+    if (!containerEl) {
+      return;
+    }
+
+    const rect = containerEl.getBoundingClientRect();
+    viewport.zoomAtCursor(delta, rect.width / 2, rect.height / 2);
     syncViewport();
     zoomLevel = viewport.getZoom();
     eventBus.emit('viewport:zoomChanged', { zoom: zoomLevel });
@@ -493,18 +514,75 @@
     viewport.setCenterLongitude(value);
     syncViewport();
   }
+
+  function onKeyDown(e: KeyboardEvent): void {
+    if (e.ctrlKey || e.altKey || e.metaKey) {
+      return;
+    }
+
+    const panStepX = Math.max(24, Math.round(viewWidthPx * 0.08));
+    const panStepY = Math.max(24, Math.round(viewHeightPx * 0.08));
+    let handled = true;
+
+    switch (e.key) {
+      case 'ArrowLeft':
+        viewport.pan(panStepX, 0);
+        syncViewport();
+        break;
+      case 'ArrowRight':
+        viewport.pan(-panStepX, 0);
+        syncViewport();
+        break;
+      case 'ArrowUp':
+        viewport.pan(0, panStepY);
+        syncViewport();
+        break;
+      case 'ArrowDown':
+        viewport.pan(0, -panStepY);
+        syncViewport();
+        break;
+      case '+':
+      case '=':
+      case 'Add':
+        zoomAtViewportCenter(1);
+        break;
+      case '-':
+      case '_':
+      case 'Subtract':
+        zoomAtViewportCenter(-1);
+        break;
+      case '0':
+        viewport.fitToWorld();
+        syncViewport();
+        zoomLevel = viewport.getZoom();
+        eventBus.emit('viewport:zoomChanged', { zoom: zoomLevel });
+        break;
+      default:
+        handled = false;
+        break;
+    }
+
+    if (handled) {
+      e.preventDefault();
+    }
+  }
 </script>
 
 <div
   class="map-container"
   bind:this={containerEl}
-  role="application"
-  aria-label="地図表示"
   style:cursor={cursorStyle}
 >
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+  <p id={mapKeyboardInstructionsId} class="sr-only">
+    地図はフォーカス可能です。矢印キーで移動し、プラスとマイナスで拡大縮小、0で全体表示に戻ります。
+  </p>
   <svg
     class="map-svg"
+    role="application"
+    tabindex="0"
+    aria-label="地図表示"
+    aria-describedby={mapKeyboardInstructionsId}
+    aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight + - 0"
     viewBox={viewBox}
     preserveAspectRatio="xMidYMid meet"
     onwheel={onWheel}
@@ -514,6 +592,7 @@
     onmouseleave={onMouseLeave}
     onclick={onClick}
     ondblclick={onDblClick}
+    onkeydown={onKeyDown}
   >
     <MapCanvasSvgLayers
       {wrapOffsets}
@@ -551,7 +630,9 @@
       {surveyPointB}
       {boxSelectBox}
       {onVertexMouseDown}
+      {onVertexActivate}
       {onEdgeHandleMouseDown}
+      {onEdgeHandleActivate}
     />
   </svg>
 
@@ -608,5 +689,22 @@
     width: 100%;
     height: 100%;
     display: block;
+  }
+
+  .map-svg:focus-visible {
+    outline: 2px solid #00ccff;
+    outline-offset: -2px;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 </style>

@@ -64,7 +64,8 @@ export class ResolveFeatureAnchorConflictsUseCase {
     }
 
     const resolvedMap = new Map<string, FeatureAnchor[]>();
-    const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
+    const workingVertices = new Map(this.featureUseCase.getVertices());
+    const createdVertices = new Map<string, Vertex>();
 
     // 編集対象地物の候補錨はそのまま
     resolvedMap.set(draft.featureId, [...draft.candidateAnchors]);
@@ -99,8 +100,8 @@ export class ResolveFeatureAnchorConflictsUseCase {
         if (anchor.shape.type !== 'Polygon') return anchor;
 
         // 差分: 非優先 - 優先
-        const nonPrefRings = this.resolveRings(anchor, vertices);
-        const prefRings = this.resolveRings(preferredAnchor, vertices);
+        const nonPrefRings = this.resolveRings(anchor, workingVertices);
+        const prefRings = this.resolveRings(preferredAnchor, workingVertices);
 
         if (nonPrefRings.length === 0 || prefRings.length === 0) return anchor;
 
@@ -122,7 +123,13 @@ export class ResolveFeatureAnchorConflictsUseCase {
           });
         }
 
-        const nextShape = this.createResolvedPolygonShape(diff.polygons, vertices);
+        const nextShape = this.createResolvedPolygonShape(
+          diff.polygons,
+          workingVertices,
+          createdVertices,
+          draft.draftId,
+          nonPreferredId
+        );
         if (nextShape.rings.length === 0) {
           return anchor.withTimeRange({
             start: anchor.timeRange.start,
@@ -138,6 +145,7 @@ export class ResolveFeatureAnchorConflictsUseCase {
 
     return {
       resolvedAnchorsByFeature: resolvedMap,
+      createdVertices,
     };
   }
 
@@ -178,7 +186,10 @@ export class ResolveFeatureAnchorConflictsUseCase {
 
   private createResolvedPolygonShape(
     polygons: readonly RingCoords[][],
-    vertices: Map<string, Vertex>
+    vertices: Map<string, Vertex>,
+    createdVertices: Map<string, Vertex>,
+    draftId: string,
+    featureId: string
   ): FeatureShape & { type: 'Polygon' } {
     const rings: Ring[] = [];
 
@@ -194,7 +205,10 @@ export class ResolveFeatureAnchorConflictsUseCase {
         null,
         polygonIndex,
         0,
-        vertices
+        vertices,
+        createdVertices,
+        draftId,
+        featureId
       );
       rings.push(territoryRing);
 
@@ -209,7 +223,10 @@ export class ResolveFeatureAnchorConflictsUseCase {
             territoryRing.id,
             polygonIndex,
             ringIndex,
-            vertices
+            vertices,
+            createdVertices,
+            draftId,
+            featureId
           )
         );
       }
@@ -227,31 +244,55 @@ export class ResolveFeatureAnchorConflictsUseCase {
     parentId: string | null,
     polygonIndex: number,
     ringIndex: number,
-    vertices: Map<string, Vertex>
+    vertices: Map<string, Vertex>,
+    createdVertices: Map<string, Vertex>,
+    draftId: string,
+    featureId: string
   ): Ring {
-    const vertexIds = ringCoords.map((coord) => this.createResolvedVertex(coord, vertices));
-    const ringId = this.createResolvedId('ring', polygonIndex, ringIndex);
+    const vertexIds = ringCoords.map((coord, vertexIndex) =>
+      this.createResolvedVertex(
+        coord,
+        vertices,
+        createdVertices,
+        draftId,
+        featureId,
+        polygonIndex,
+        ringIndex,
+        vertexIndex
+      )
+    );
+    const ringId = this.createResolvedId('ring', draftId, featureId, polygonIndex, ringIndex);
     return new Ring(ringId, vertexIds, ringType, parentId);
   }
 
   private createResolvedVertex(
     coord: { x: number; y: number },
-    vertices: Map<string, Vertex>
+    vertices: Map<string, Vertex>,
+    createdVertices: Map<string, Vertex>,
+    draftId: string,
+    featureId: string,
+    polygonIndex: number,
+    ringIndex: number,
+    vertexIndex: number
   ): string {
-    const vertexId = this.createResolvedId('v');
-    vertices.set(
-      vertexId,
-      new Vertex(vertexId, new Coordinate(coord.x, coord.y).clampLatitude())
+    const vertexId = this.createResolvedId(
+      'v',
+      draftId,
+      featureId,
+      polygonIndex,
+      ringIndex,
+      vertexIndex
     );
+    const vertex = new Vertex(vertexId, new Coordinate(coord.x, coord.y).clampLatitude());
+    vertices.set(vertexId, vertex);
+    createdVertices.set(vertexId, vertex);
     return vertexId;
   }
 
-  private createResolvedId(prefix: string, ...parts: number[]): string {
+  private createResolvedId(prefix: string, ...parts: readonly (string | number)[]): string {
     return [
       `${prefix}-resolve`,
       ...parts.map((part) => String(part)),
-      Date.now().toString(36),
-      Math.random().toString(36).slice(2, 8),
     ].join('-');
   }
 }
