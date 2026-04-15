@@ -153,7 +153,7 @@ describe('ConfigManager', () => {
 
     it('壊れた保存データを読んでも既定値へフォールバックする', () => {
       const storage = createStorage({
-        'time-map-app:app-config': '{invalid json',
+        'gimoza:app-config': '{invalid json',
       });
       const cm = new ConfigManager();
       cm.loadAppConfig(storage);

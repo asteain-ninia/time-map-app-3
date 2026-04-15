@@ -14,8 +14,8 @@ function createDeps() {
   };
   const app = {
     isPackaged: false,
-    getAppPath: vi.fn<() => string>().mockReturnValue('E:/app'),
-    getPath: vi.fn<(_: 'exe') => string>().mockReturnValue('E:/dist/app.exe'),
+    getAppPath: vi.fn<() => string>().mockReturnValue('/mock/app'),
+    getPath: vi.fn<(_: 'exe') => string>().mockReturnValue('/mock/dist/app.exe'),
   };
   const dialog = {
     showOpenDialog: vi.fn(),
@@ -51,7 +51,7 @@ describe('ipcHandlers', () => {
     deps.fs.mkdir.mockResolvedValue();
     deps.fs.writeFile.mockResolvedValue();
     const handlers = createIpcHandlers(deps);
-    const filePath = 'E:/workspace/save/world.json';
+    const filePath = '/mock/save/world.json';
 
     await handlers['file:write']({}, filePath, '{"version":"1.0.0"}');
 
@@ -64,7 +64,7 @@ describe('ipcHandlers', () => {
     deps.fs.mkdir.mockResolvedValue();
     deps.fs.appendFile.mockResolvedValue();
     const handlers = createIpcHandlers(deps);
-    const filePath = 'E:/workspace/logs/time-map-app.log';
+    const filePath = '/mock/logs/gimoza.log';
 
     await handlers['file:append']({}, filePath, '{"message":"ok"}\n');
 
@@ -81,32 +81,32 @@ describe('ipcHandlers', () => {
     ]);
     const handlers = createIpcHandlers(deps);
 
-    await expect(handlers['file:list']({}, 'E:/workspace/savebackup')).resolves.toEqual([
+    await expect(handlers['file:list']({}, '/mock/savebackup')).resolves.toEqual([
       'a.json',
       'b.json',
     ]);
 
     deps.fs.readdir.mockRejectedValueOnce({ code: 'ENOENT' });
-    await expect(handlers['file:list']({}, 'E:/workspace/missing')).resolves.toEqual([]);
+    await expect(handlers['file:list']({}, '/mock/missing')).resolves.toEqual([]);
   });
 
   it('file:autoBackupRoot と file:logRoot が開発時とパッケージ時で正しい保存先を返す', async () => {
     const deps = createDeps();
     const handlers = createIpcHandlers(deps);
 
-    await expect(handlers['file:autoBackupRoot']({})).resolves.toBe(join('E:/app', 'savebackup'));
-    await expect(handlers['file:logRoot']({})).resolves.toBe(join('E:/app', 'logs'));
+    await expect(handlers['file:autoBackupRoot']({})).resolves.toBe(join('/mock/app', 'savebackup'));
+    await expect(handlers['file:logRoot']({})).resolves.toBe(join('/mock/app', 'logs'));
 
     deps.app.isPackaged = true;
-    await expect(handlers['file:autoBackupRoot']({})).resolves.toBe(join('E:/dist', 'savebackup'));
-    await expect(handlers['file:logRoot']({})).resolves.toBe(join('E:/dist', 'logs'));
+    await expect(handlers['file:autoBackupRoot']({})).resolves.toBe(join('/mock/dist', 'savebackup'));
+    await expect(handlers['file:logRoot']({})).resolves.toBe(join('/mock/dist', 'logs'));
   });
 
   it('dialog ハンドラが JSON フィルタと戻り値を正しく扱う', async () => {
     const deps = createDeps();
     deps.dialog.showOpenDialog.mockResolvedValue({
       canceled: false,
-      filePaths: ['E:/workspace/save/world.json'],
+      filePaths: ['/mock/save/world.json'],
     });
     deps.dialog.showSaveDialog.mockResolvedValue({
       canceled: true,
@@ -114,7 +114,7 @@ describe('ipcHandlers', () => {
     });
     const handlers = createIpcHandlers(deps);
 
-    await expect(handlers['dialog:open']({})).resolves.toBe('E:/workspace/save/world.json');
+    await expect(handlers['dialog:open']({})).resolves.toBe('/mock/save/world.json');
     await expect(handlers['dialog:save']({})).resolves.toBeNull();
 
     expect(deps.dialog.showOpenDialog).toHaveBeenCalledWith({

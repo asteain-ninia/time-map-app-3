@@ -7,6 +7,7 @@
   import MergeConfirmModal from '@presentation/components/MergeConfirmModal.svelte';
   import ConflictResolutionDialog from '@presentation/components/ConflictResolutionDialog.svelte';
   import ProjectSettingsDialog from '@presentation/components/ProjectSettingsDialog.svelte';
+  import AboutDialog from '@presentation/components/AboutDialog.svelte';
   import ContextMenu from '@presentation/components/ContextMenu.svelte';
   import type { ContextMenuEntry } from '@presentation/components/ContextMenu.svelte';
   import { buildContextMenuItems, type ContextMenuContext, type ContextMenuActions } from '@infrastructure/rendering/contextMenuBuilder';
@@ -234,6 +235,9 @@
   let showSplitModal = $state(false);
   let mergeTargetIds = $state<string[]>([]);
   let showMergeModal = $state(false);
+
+  // --- バージョン情報 ---
+  let showAboutDialog = $state(false);
 
   // --- プロジェクト設定 ---
   let settingsDialogOpen = $state(false);
@@ -1854,6 +1858,7 @@
     onRedo={() => { undoRedo.redo(); refreshFeatureData(); refreshLayerData(); }}
     onSelectAll={onSelectAllVertices}
     onSettings={openSettings}
+    onAbout={() => { showAboutDialog = true; }}
   />
   <div class="content-area">
   <div class="toolbar-area">
@@ -2024,6 +2029,11 @@
   featureName={knifeDrawingState ? features.find(f => f.id === knifeDrawingState?.featureId)?.getActiveAnchor(currentTime)?.property.name ?? '' : ''}
   onConfirm={onSplitConfirm}
   onCancel={() => { showSplitModal = false; }}
+/>
+
+<AboutDialog
+  isOpen={showAboutDialog}
+  onClose={() => { showAboutDialog = false; }}
 />
 
 <style>

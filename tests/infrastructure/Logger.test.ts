@@ -86,7 +86,7 @@ describe('PersistentLogSink', () => {
   it('ログ出力を 1 行ずつファイルへ追記する', async () => {
     const port = {
       appendFile: vi.fn().mockResolvedValue(undefined),
-      getLogRootPath: vi.fn().mockResolvedValue('E:\\workspace\\logs'),
+      getLogRootPath: vi.fn().mockResolvedValue('/mock/logs'),
     };
     const sink = new PersistentLogSink(port);
     const entry = {
@@ -102,7 +102,7 @@ describe('PersistentLogSink', () => {
 
     expect(port.getLogRootPath).toHaveBeenCalledTimes(1);
     expect(port.appendFile).toHaveBeenCalledWith(
-      'E:\\workspace\\logs\\time-map-app.log',
+      '/mock/logs/gimoza.log',
       `${JSON.stringify(entry)}\n`
     );
   });

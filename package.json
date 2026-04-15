@@ -1,7 +1,7 @@
 {
-  "name": "time-map-app",
+  "name": "gimoza",
   "version": "0.1.0",
-  "description": "地物時空変遷編纂機 - 架空世界の歴史を時間軸に沿って視覚化・追跡するツール",
+  "description": "gimoza — 架空世界の地理と歴史を、時間軸に沿って視覚化・編纂するツール",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

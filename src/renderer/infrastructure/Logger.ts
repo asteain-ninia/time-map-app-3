@@ -165,7 +165,7 @@ export class PersistentLogSink implements LogSink {
 
   constructor(
     private readonly port: PersistentLogPort,
-    private readonly fileName: string = 'time-map-app.log'
+    private readonly fileName: string = 'gimoza.log'
   ) {}
 
   write(entry: LogEntry): void {

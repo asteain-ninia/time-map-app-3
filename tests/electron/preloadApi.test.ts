@@ -5,7 +5,7 @@ describe('createPreloadApi', () => {
   it.each([
     ['readFile', ['save.json'], 'file:read'],
     ['writeFile', ['save.json', '{"ok":true}'], 'file:write'],
-    ['appendFile', ['logs/time-map-app.log', '{"ok":true}'], 'file:append'],
+    ['appendFile', ['logs/gimoza.log', '{"ok":true}'], 'file:append'],
     ['existsFile', ['save.json'], 'file:exists'],
     ['listFiles', ['savebackup'], 'file:list'],
     ['deleteFile', ['save.json'], 'file:delete'],

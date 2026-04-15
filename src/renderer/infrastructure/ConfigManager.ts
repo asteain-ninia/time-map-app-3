@@ -30,7 +30,7 @@ export interface AppConfigStorage {
   setItem(key: string, value: string): void;
 }
 
-const APP_CONFIG_STORAGE_KEY = 'time-map-app:app-config';
+const APP_CONFIG_STORAGE_KEY = 'gimoza:app-config';
 
 const DEFAULT_APP_CONFIG: AppConfig = {
   recentFiles: [],

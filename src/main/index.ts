@@ -13,7 +13,7 @@ function createWindow(): void {
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
     show: false,
-    title: '地物時空変遷編纂機',
+    title: 'gimoza — 時空地歴編纂機',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false

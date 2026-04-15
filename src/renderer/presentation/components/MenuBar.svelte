@@ -8,6 +8,7 @@
     onRedo,
     onSelectAll,
     onSettings,
+    onAbout,
   }: {
     onNewProject?: () => void;
     onOpen?: () => void;
@@ -17,6 +18,7 @@
     onRedo?: () => void;
     onSelectAll?: () => void;
     onSettings?: () => void;
+    onAbout?: () => void;
   } = $props();
 
   /** 現在開いているメニュー */
@@ -146,7 +148,7 @@
     </button>
     {#if openMenu === 'help'}
       <div class="menu-dropdown" role="menu" aria-label="ヘルプ">
-        <button type="button" class="menu-action" disabled>
+        <button type="button" class="menu-action" onclick={() => doAction(onAbout)}>
           <span>バージョン情報</span>
         </button>
       </div>
