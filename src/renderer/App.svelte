@@ -142,9 +142,11 @@
   import {
     alignCoordinateNearReference,
     buildValidationVertices,
+    collectSameLayerPolygonObstacleRings,
     getRingDrawingTarget,
     getSelectedPolygonReferenceLongitude,
     getValidationMessage,
+    resolveEdgeSlideCoordinate,
     validatePendingPolygon,
     validateRingDrawingVertex,
   } from '@presentation/app/appPolygonEditing';
@@ -339,6 +341,12 @@
   let validationMessage = $state('');
   let suppressNextMapClick = $state(false);
 
+  $effect(() => {
+    if (typeof window !== 'undefined') {
+      window.api?.setUnsavedChanges?.(dirtyState.isDirty);
+    }
+  });
+
   /** 変更を記録する（各編集操作後に呼ぶ） */
   function markAsDirty(): void {
     dirtyState = markDirty(dirtyState);
@@ -346,7 +354,10 @@
 
   function showOperationError(actionLabel: string): void {
     if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-      window.alert(`${actionLabel}に失敗しました。詳細はログを確認してください。`);
+      window.alert(
+        `${actionLabel}に失敗しました。\n` +
+        'ファイル形式や保存先を確認してください。解決しない場合は開発者へ報告してください。'
+      );
     }
   }
 
@@ -443,6 +454,11 @@
   let surveyMeasurements = $state<readonly SurveyMeasurement[]>([]);
   let surveyResult = $derived(computeSurveyResult(surveyState));
 
+  function clearSurveyMeasurements(): void {
+    surveyState = resetSurvey(surveyState);
+    surveyMeasurements = [];
+  }
+
   // --- 競合解決 ---
   let conflictDialogOpen = $state(false);
   let conflictList = $state<readonly SpatialConflict[]>([]);
@@ -535,6 +551,39 @@
       }
     }
     return snapshot;
+  }
+
+  function collectOwnerFeatureIdsForVertices(vertexIds: readonly string[]): Set<string> {
+    const ownerFeatureIds = new Set<string>();
+    for (const vertexId of vertexIds) {
+      const owners = visibleVertexOwnerMap.get(vertexId);
+      if (!owners) {
+        continue;
+      }
+      for (const featureId of owners) {
+        ownerFeatureIds.add(featureId);
+      }
+    }
+    return ownerFeatureIds;
+  }
+
+  function resolveVertexDragCoordinate(targetCoord: Coordinate): Coordinate {
+    if (!dragState || dragMovesMultipleVertices) {
+      return targetCoord;
+    }
+
+    const draggedVertexIds = dragMovedVertexIds.length > 0
+      ? dragMovedVertexIds
+      : [dragState.vertexId];
+    const sourceFeatureIds = collectOwnerFeatureIdsForVertices(draggedVertexIds);
+    const obstacleRings = collectSameLayerPolygonObstacleRings(
+      features,
+      currentTime,
+      addFeature.getVertices(),
+      sourceFeatureIds,
+      targetCoord
+    );
+    return resolveEdgeSlideCoordinate(targetCoord, obstacleRings);
   }
 
   function beginVertexDrag(
@@ -665,8 +714,7 @@
     refreshLayerData();
     selectedFeatureId = null;
     selectedVertexIds = new Set();
-    surveyState = resetSurvey(surveyState);
-    surveyMeasurements = [];
+    clearSurveyMeasurements();
     dirtyState = resetDirty();
     // メタデータ・設定を復元
     const loaded = projectQueries.getMetadata();
@@ -727,6 +775,7 @@
     toolStore.stop();
     if (backupIntervalId) clearInterval(backupIntervalId);
     if (typeof window !== 'undefined') {
+      window.api?.setUnsavedChanges?.(false);
       window.removeEventListener('error', onUnhandledRendererError);
       window.removeEventListener('unhandledrejection', onUnhandledRendererRejection);
     }
@@ -1109,6 +1158,7 @@
   /** 結合実行 */
   function onMergeConfirm(mergedName: string): void {
     if (mergeTargetIds.length < 2 || !currentTime) return;
+    const mergedFeatureId = mergeTargetIds[0];
 
     undoRedo.execute(
       new MergeFeatureCommand(addFeature, {
@@ -1121,7 +1171,7 @@
     refreshFeatureData();
     showMergeModal = false;
     mergeTargetIds = [];
-    selectedFeatureId = mergeTargetIds.length > 0 ? mergeTargetIds[0] : null;
+    selectedFeatureId = mergedFeatureId;
   }
 
   function onCancelMerge(): void {
@@ -1552,11 +1602,12 @@
   ): void {
     // 頂点ドラッグ
     if (dragState) {
-      const newCoord = createWrappedDragCoordinate(
+      const rawCoord = createWrappedDragCoordinate(
         dragState.previewCoord.x,
         geo.lon,
         geo.lat
       );
+      const newCoord = resolveVertexDragCoordinate(rawCoord);
       dragState = updateDragPreview(dragState, newCoord);
       if (dragMovesMultipleVertices) {
         applyMultiVertexDragPreview(newCoord);
@@ -1726,8 +1777,7 @@
         toolStore.send({ type: 'KEY_ESCAPE' });
         syncToolState();
       } else if (toolMode === 'measure' && (surveyState.pointA || surveyMeasurements.length > 0)) {
-        surveyState = resetSurvey(surveyState);
-        surveyMeasurements = [];
+        clearSurveyMeasurements();
       } else {
         selectedFeatureId = null;
         selectedVertexIds = new Set();
@@ -1805,8 +1855,7 @@
     refreshLayerData();
     selectedFeatureId = null;
     selectedVertexIds = new Set();
-    surveyState = resetSurvey(surveyState);
-    surveyMeasurements = [];
+    clearSurveyMeasurements();
     dirtyState = resetDirty();
     const resetMetadata = projectQueries.getMetadata();
     projectSettings = normalizeWorldSettings(resetMetadata.settings);
@@ -1814,10 +1863,12 @@
     lastBackupTime = Date.now();
   }
 
-  /** ウィンドウクローズ時の未保存警告 */
+  /** ウィンドウクローズ時の未保存警告（ブラウザ/E2E用。Electron環境ではmain側closeGuardが担当） */
   function onBeforeUnload(e: BeforeUnloadEvent): void {
+    if (window.api) return;
     if (dirtyState.isDirty) {
       e.preventDefault();
+      e.returnValue = '';
     }
   }
 
@@ -1826,7 +1877,8 @@
     e.preventDefault();
     const file = e.dataTransfer?.files[0];
     if (!file) return;
-    if (!file.name.endsWith('.json')) return;
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith('.json') && !lowerName.endsWith('.gimoza')) return;
     if (!confirmUnsavedChanges()) return;
     // Electronのfile.pathでファイルパスを取得
     const filePath = (file as File & { path?: string }).path;
@@ -1936,6 +1988,7 @@
           surveyPointA={surveyState.pointA}
           surveyPointB={surveyState.pointB}
           {surveyResult}
+          onClearSurvey={clearSurveyMeasurements}
           boxSelectBox={boxSelectState && isBoxLargeEnough(boxSelectState) ? getSelectionBox(boxSelectState) : null}
           {validationMessage}
         />

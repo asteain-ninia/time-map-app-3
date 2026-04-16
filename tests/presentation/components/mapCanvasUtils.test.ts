@@ -7,11 +7,13 @@ import { Ring } from '@domain/value-objects/Ring';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import {
   computeRenderWrapOffsets,
+  createBaseMapTransform,
   formatSurveyDistance,
   getAnchorVertexCount,
   normalizeRenderFps,
   normalizeVertexMarkerDisplayLimit,
   normalizeZoomLimits,
+  parseSvgMap,
 } from '@presentation/components/mapCanvasUtils';
 
 function createPolygonAnchor(): FeatureAnchor {
@@ -107,6 +109,27 @@ describe('mapCanvasUtils', () => {
 
   it('測量距離がちょうど100kmなら整数表示する', () => {
     expect(formatSurveyDistance(100)).toBe('100');
+  });
+
+  it('任意SVGのviewBoxからベースマップ情報を抽出する', () => {
+    const parsed = parseSvgMap(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -5 20 10"><script>bad()</script><path d="M0 0" onclick="bad()" /></svg>'
+    );
+
+    expect(parsed?.viewBox).toEqual({ minX: -10, minY: -5, width: 20, height: 10 });
+    expect(parsed?.content).toContain('<path d="M0 0" />');
+    expect(parsed?.content).not.toContain('script');
+  });
+
+  it('viewBoxがないSVGはwidth/heightから補正する', () => {
+    const parsed = parseSvgMap('<svg width="720px" height="360px"><rect /></svg>');
+
+    expect(parsed?.viewBox).toEqual({ minX: 0, minY: 0, width: 720, height: 360 });
+  });
+
+  it('ベースマップを360x180へ正規化するtransformを生成する', () => {
+    expect(createBaseMapTransform({ minX: -10, minY: -5, width: 20, height: 10 }))
+      .toBe('matrix(18 0 0 18 180 90)');
   });
 
   it('720度超の地物でも可視コピーに必要なラップタイルを含める', () => {

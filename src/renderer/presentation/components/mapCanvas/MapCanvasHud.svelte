@@ -49,6 +49,8 @@
     surveyResult = null as SurveyResult | null,
     surveyPointA = null as Coordinate | null,
     surveyPointB = null as Coordinate | null,
+    surveyMeasurementCount = 0,
+    onClearSurvey,
     cursorGeo = null as { lon: number; lat: number } | null,
   }: {
     viewBox: MapCanvasViewBoxValues;
@@ -87,8 +89,14 @@
     surveyResult?: SurveyResult | null;
     surveyPointA?: Coordinate | null;
     surveyPointB?: Coordinate | null;
+    surveyMeasurementCount?: number;
+    onClearSurvey?: () => void;
     cursorGeo?: { lon: number; lat: number } | null;
   } = $props();
+
+  let hasSurveyData = $derived(
+    surveyMeasurementCount > 0 || surveyPointA !== null || surveyPointB !== null || surveyResult !== null
+  );
 </script>
 
 <GridLabelsOverlay
@@ -156,6 +164,18 @@
 
 {#if toolMode === 'measure' && surveyResult}
   <div class="survey-panel">
+    <div class="survey-header">
+      <span>測量</span>
+      <button
+        class="survey-clear"
+        type="button"
+        disabled={!hasSurveyData}
+        title="測量線をクリア"
+        onclick={() => onClearSurvey?.()}
+      >
+        クリア
+      </button>
+    </div>
     <div class="survey-row">
       <span class="survey-label">A:</span>
       <span class="survey-value">{surveyResult.displayA.dms}</span>
@@ -176,6 +196,18 @@
   </div>
 {:else if toolMode === 'measure' && surveyPointA && !surveyPointB}
   <div class="survey-panel">
+    <div class="survey-header">
+      <span>測量</span>
+      <button
+        class="survey-clear"
+        type="button"
+        disabled={!hasSurveyData}
+        title="測量線をクリア"
+        onclick={() => onClearSurvey?.()}
+      >
+        クリア
+      </button>
+    </div>
     <div class="survey-row">
       <span class="survey-label">A:</span>
       <span class="survey-value">
@@ -186,6 +218,18 @@
   </div>
 {:else if toolMode === 'measure'}
   <div class="survey-panel">
+    <div class="survey-header">
+      <span>測量</span>
+      <button
+        class="survey-clear"
+        type="button"
+        disabled={!hasSurveyData}
+        title="測量線をクリア"
+        onclick={() => onClearSurvey?.()}
+      >
+        クリア
+      </button>
+    </div>
     <div class="survey-hint">始点をクリックして測量開始</div>
   </div>
 {/if}
@@ -285,7 +329,36 @@
     font-size: 11px;
     color: #e0e0e0;
     min-width: 200px;
-    pointer-events: none;
+    pointer-events: auto;
+  }
+
+  .survey-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+    color: #aaa;
+    font-size: 11px;
+  }
+
+  .survey-clear {
+    padding: 2px 8px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #343434;
+    color: #ddd;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .survey-clear:disabled {
+    color: #666;
+    cursor: not-allowed;
+  }
+
+  .survey-clear:not(:disabled):hover {
+    background: #444;
   }
 
   .survey-row {

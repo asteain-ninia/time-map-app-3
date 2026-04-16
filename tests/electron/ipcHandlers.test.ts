@@ -1,6 +1,6 @@
 import { dirname, join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
-import { JSON_FILTERS, createIpcHandlers, registerIpcHandlers } from '../../src/main/ipcHandlers';
+import { PROJECT_FILE_FILTERS, createIpcHandlers, registerIpcHandlers } from '../../src/main/ipcHandlers';
 
 function createDeps() {
   const fs = {
@@ -8,9 +8,9 @@ function createDeps() {
     appendFile: vi.fn<(_: string, __: string, ___: BufferEncoding) => Promise<void>>(),
     mkdir: vi.fn<(_: string, __: { recursive: boolean }) => Promise<void>>(),
     readdir: vi.fn<(_: string, __: { withFileTypes: true }) => Promise<readonly { isFile(): boolean; name: string }[]>>(),
-    readFile: vi.fn<(_: string, __: BufferEncoding) => Promise<string>>(),
+    readFile: vi.fn(),
     unlink: vi.fn<(_: string) => Promise<void>>(),
-    writeFile: vi.fn<(_: string, __: string, ___: BufferEncoding) => Promise<void>>(),
+    writeFile: vi.fn(),
   };
   const app = {
     isPackaged: false,
@@ -35,6 +35,8 @@ describe('ipcHandlers', () => {
     expect(channels).toEqual([
       'file:read',
       'file:write',
+      'file:readBinary',
+      'file:writeBinary',
       'file:append',
       'file:exists',
       'file:list',
@@ -70,6 +72,21 @@ describe('ipcHandlers', () => {
 
     expect(deps.fs.mkdir).toHaveBeenCalledWith(dirname(filePath), { recursive: true });
     expect(deps.fs.appendFile).toHaveBeenCalledWith(filePath, '{"message":"ok"}\n', 'utf-8');
+  });
+
+  it('バイナリファイルをbase64で読み書きする', async () => {
+    const deps = createDeps();
+    deps.fs.mkdir.mockResolvedValue();
+    deps.fs.readFile.mockResolvedValue(Buffer.from('zip-data'));
+    deps.fs.writeFile.mockResolvedValue();
+    const handlers = createIpcHandlers(deps);
+    const filePath = '/mock/save/world.gimoza';
+
+    await expect(handlers['file:readBinary']({}, filePath)).resolves.toBe('emlwLWRhdGE=');
+    await handlers['file:writeBinary']({}, filePath, 'emlwLWRhdGE=');
+
+    expect(deps.fs.mkdir).toHaveBeenCalledWith(dirname(filePath), { recursive: true });
+    expect(deps.fs.writeFile).toHaveBeenCalledWith(filePath, Buffer.from('zip-data'));
   });
 
   it('file:list がファイル名だけを返し、ENOENT は空配列にする', async () => {
@@ -118,11 +135,11 @@ describe('ipcHandlers', () => {
     await expect(handlers['dialog:save']({})).resolves.toBeNull();
 
     expect(deps.dialog.showOpenDialog).toHaveBeenCalledWith({
-      filters: JSON_FILTERS,
+      filters: PROJECT_FILE_FILTERS,
       properties: ['openFile'],
     });
     expect(deps.dialog.showSaveDialog).toHaveBeenCalledWith({
-      filters: JSON_FILTERS,
+      filters: PROJECT_FILE_FILTERS,
     });
   });
 });

@@ -17,6 +17,18 @@ export interface MapCanvasViewBoxValues {
   readonly height: number;
 }
 
+export interface SvgMapViewBox {
+  readonly minX: number;
+  readonly minY: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface ParsedSvgMap {
+  readonly content: string;
+  readonly viewBox: SvgMapViewBox;
+}
+
 interface LongitudeBounds {
   readonly minSvgX: number;
   readonly maxSvgX: number;
@@ -59,6 +71,84 @@ export function formatSurveyDistance(distanceKm: number): string {
   return distanceKm < 100
     ? distanceKm.toFixed(1)
     : Math.round(distanceKm).toLocaleString();
+}
+
+function parseLength(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const match = value.trim().match(/^([+-]?(?:\d+|\d*\.\d+)(?:e[+-]?\d+)?)/i);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getSvgAttribute(attributes: string, name: string): string | undefined {
+  const pattern = new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, 'i');
+  return attributes.match(pattern)?.[1];
+}
+
+function parseViewBox(attributes: string): SvgMapViewBox | null {
+  const rawViewBox = getSvgAttribute(attributes, 'viewBox');
+  if (rawViewBox) {
+    const values = rawViewBox
+      .trim()
+      .split(/[\s,]+/)
+      .map(Number);
+    if (
+      values.length === 4 &&
+      values.every(Number.isFinite) &&
+      values[2] > 0 &&
+      values[3] > 0
+    ) {
+      return {
+        minX: values[0],
+        minY: values[1],
+        width: values[2],
+        height: values[3],
+      };
+    }
+  }
+
+  const width = parseLength(getSvgAttribute(attributes, 'width'));
+  const height = parseLength(getSvgAttribute(attributes, 'height'));
+  return width && height
+    ? { minX: 0, minY: 0, width, height }
+    : null;
+}
+
+function sanitizeSvgContent(content: string): string {
+  return content
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, '')
+    .replace(/\s(?:href|xlink:href)\s*=\s*(['"])\s*javascript:[\s\S]*?\1/gi, '');
+}
+
+export function parseSvgMap(svgText: string): ParsedSvgMap | null {
+  const match = svgText.match(/<svg\b([^>]*)>([\s\S]*?)<\/svg>/i);
+  if (!match) {
+    return null;
+  }
+
+  const viewBox = parseViewBox(match[1]);
+  if (!viewBox) {
+    return null;
+  }
+
+  return {
+    content: sanitizeSvgContent(match[2]),
+    viewBox,
+  };
+}
+
+export function createBaseMapTransform(viewBox: SvgMapViewBox): string {
+  const scaleX = 360 / viewBox.width;
+  const scaleY = 180 / viewBox.height;
+  const translateX = -viewBox.minX * scaleX;
+  const translateY = -viewBox.minY * scaleY;
+  return `matrix(${scaleX} 0 0 ${scaleY} ${translateX} ${translateY})`;
 }
 
 export function computeRenderWrapOffsets(

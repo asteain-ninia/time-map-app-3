@@ -17,12 +17,19 @@
   import MapCanvasSvgLayers from './mapCanvas/MapCanvasSvgLayers.svelte';
   import {
     computeRenderWrapOffsets,
+    createBaseMapTransform,
     getAnchorVertexCount,
     normalizeRenderFps,
     normalizeVertexMarkerDisplayLimit,
     normalizeZoomLimits,
+    parseSvgMap,
     type MapCanvasVertexHandleEntry,
   } from './mapCanvasUtils';
+
+  const BASE_MAP_URLS = [
+    './assets/maps/base-map.svg',
+    './assets/maps/base-map-1.svg',
+  ];
 
   let {
     features = [] as readonly Feature[],
@@ -87,6 +94,7 @@
     surveyPointA = null as Coordinate | null,
     surveyPointB = null as Coordinate | null,
     surveyResult = null as SurveyResult | null,
+    onClearSurvey,
     boxSelectBox = null as { minX: number; minY: number; maxX: number; maxY: number } | null,
     validationMessage = '',
   }: {
@@ -173,6 +181,7 @@
     surveyPointA?: Coordinate | null;
     surveyPointB?: Coordinate | null;
     surveyResult?: SurveyResult | null;
+    onClearSurvey?: () => void;
     boxSelectBox?: { minX: number; minY: number; maxX: number; maxY: number } | null;
     validationMessage?: string;
   } = $props();
@@ -293,14 +302,35 @@
 
   /** ベースマップのSVGコンテンツ */
   let baseMapContent = $state('');
+  let baseMapTransform = $state(createBaseMapTransform({
+    minX: 0,
+    minY: 0,
+    width: 4243.4,
+    height: 2121.7,
+  }));
+
+  async function loadBaseMap(): Promise<void> {
+    for (const url of BASE_MAP_URLS) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          continue;
+        }
+        const parsed = parseSvgMap(await response.text());
+        if (!parsed) {
+          continue;
+        }
+        baseMapContent = parsed.content;
+        baseMapTransform = createBaseMapTransform(parsed.viewBox);
+        return;
+      } catch {
+        // 次のプリセット候補へフォールバックする。
+      }
+    }
+  }
 
   $effect(() => {
-    fetch('./assets/maps/base-map.svg')
-      .then(r => r.text())
-      .then(text => {
-        const match = text.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
-        if (match) baseMapContent = match[1];
-      });
+    void loadBaseMap();
   });
 
   $effect(() => {
@@ -597,6 +627,7 @@
     <MapCanvasSvgLayers
       {wrapOffsets}
       {baseMapContent}
+      {baseMapTransform}
       {currentTime}
       {features}
       {vertices}
@@ -673,6 +704,8 @@
     {surveyResult}
     {surveyPointA}
     {surveyPointB}
+    surveyMeasurementCount={surveyMeasurements.length}
+    {onClearSurvey}
     {cursorGeo}
   />
 </div>

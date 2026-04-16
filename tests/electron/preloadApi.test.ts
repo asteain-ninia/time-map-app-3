@@ -5,6 +5,8 @@ describe('createPreloadApi', () => {
   it.each([
     ['readFile', ['save.json'], 'file:read'],
     ['writeFile', ['save.json', '{"ok":true}'], 'file:write'],
+    ['readBinaryFile', ['save.gimoza'], 'file:readBinary'],
+    ['writeBinaryFile', ['save.gimoza', 'UEs='], 'file:writeBinary'],
     ['appendFile', ['logs/gimoza.log', '{"ok":true}'], 'file:append'],
     ['existsFile', ['save.json'], 'file:exists'],
     ['listFiles', ['savebackup'], 'file:list'],
@@ -21,5 +23,14 @@ describe('createPreloadApi', () => {
 
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(invoke).toHaveBeenCalledWith(channel, ...args);
+  });
+
+  it('setUnsavedChanges は送信用IPCでdirty状態を通知する', () => {
+    const send = vi.fn();
+    const api = createPreloadApi({ invoke: vi.fn(), send });
+
+    api.setUnsavedChanges(true);
+
+    expect(send).toHaveBeenCalledWith('app:setDirtyState', true);
   });
 });

@@ -9,11 +9,13 @@ import { PolygonValidationError } from '@application/polygonValidation';
 import {
   alignCoordinateNearReference,
   buildValidationVertices,
+  collectSameLayerPolygonObstacleRings,
   getAnchorReferenceLongitude,
   getRingDrawingConstraintMessage,
   getRingDrawingTarget,
   getSelectedPolygonReferenceLongitude,
   getValidationMessage,
+  resolveEdgeSlideCoordinate,
   validatePendingPolygon,
   validateRingDrawingVertex,
 } from '@presentation/app/appPolygonEditing';
@@ -272,5 +274,57 @@ describe('appPolygonEditing', () => {
         vertices
       )
     ).toContain('polygon-1');
+  });
+
+  it('同一レイヤーの他ポリゴンだけをエッジ滑り障害物として集める', () => {
+    const vertices = new Map<string, Vertex>([
+      ['a1', makeVertex('a1', 0, 0)],
+      ['a2', makeVertex('a2', 10, 0)],
+      ['a3', makeVertex('a3', 10, 10)],
+      ['a4', makeVertex('a4', 0, 10)],
+      ['b1', makeVertex('b1', 20, 0)],
+      ['b2', makeVertex('b2', 30, 0)],
+      ['b3', makeVertex('b3', 30, 10)],
+      ['b4', makeVertex('b4', 20, 10)],
+      ['c1', makeVertex('c1', 40, 0)],
+      ['c2', makeVertex('c2', 50, 0)],
+      ['c3', makeVertex('c3', 50, 10)],
+      ['c4', makeVertex('c4', 40, 10)],
+    ]);
+    const source = makePolygonFeature('source', 'layer-1', [
+      { id: 'source-ring', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
+    ]);
+    const sameLayer = makePolygonFeature('same-layer', 'layer-1', [
+      { id: 'same-ring', vertexIds: ['b1', 'b2', 'b3', 'b4'], ringType: 'territory', parentId: null },
+    ]);
+    const otherLayer = makePolygonFeature('other-layer', 'layer-2', [
+      { id: 'other-ring', vertexIds: ['c1', 'c2', 'c3', 'c4'], ringType: 'territory', parentId: null },
+    ]);
+
+    const rings = collectSameLayerPolygonObstacleRings(
+      [source, sameLayer, otherLayer],
+      time100,
+      vertices,
+      new Set(['source']),
+      new Coordinate(25, 5)
+    );
+
+    expect(rings).toHaveLength(1);
+    expect(rings[0][0]).toEqual({ x: 20, y: 0 });
+  });
+
+  it('障害物内部へ入る頂点ドラッグ座標を境界へ滑らせる', () => {
+    const result = resolveEdgeSlideCoordinate(
+      new Coordinate(25, 2),
+      [[
+        { x: 20, y: 0 },
+        { x: 30, y: 0 },
+        { x: 30, y: 10 },
+        { x: 20, y: 10 },
+      ]]
+    );
+
+    expect(result.x).toBe(25);
+    expect(result.y).toBe(0);
   });
 });

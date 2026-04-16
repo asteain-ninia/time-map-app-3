@@ -22,9 +22,12 @@ class BrowserWindowMock {
     }),
   };
 
-  readonly on = vi.fn((event: 'ready-to-show', listener: () => void) => {
+  readonly on = vi.fn((
+    event: 'ready-to-show' | 'close',
+    listener: (() => void) | ((event: { preventDefault(): void }) => void)
+  ) => {
     if (event === 'ready-to-show') {
-      this.readyToShowListener = listener;
+      this.readyToShowListener = listener as () => void;
     }
   });
 

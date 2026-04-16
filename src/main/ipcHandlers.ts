@@ -1,6 +1,9 @@
 import { dirname, join } from 'path';
 
-const JSON_FILTERS = [{ name: 'JSON ファイル', extensions: ['json'] }];
+const PROJECT_FILE_FILTERS = [
+  { name: 'gimoza プロジェクト', extensions: ['gimoza'] },
+  { name: 'JSON ファイル', extensions: ['json'] },
+];
 
 type IpcHandler = (event: unknown, ...args: any[]) => Promise<unknown>;
 
@@ -16,11 +19,11 @@ interface AppLike {
 
 interface DialogLike {
   showOpenDialog(options: {
-    filters: typeof JSON_FILTERS;
+    filters: typeof PROJECT_FILE_FILTERS;
     properties: string[];
   }): Promise<{ canceled: boolean; filePaths: string[] }>;
   showSaveDialog(options: {
-    filters: typeof JSON_FILTERS;
+    filters: typeof PROJECT_FILE_FILTERS;
   }): Promise<{ canceled: boolean; filePath?: string | null }>;
 }
 
@@ -34,8 +37,10 @@ interface FsLike {
   appendFile(path: string, data: string, encoding: BufferEncoding): Promise<void>;
   mkdir(path: string, options: { recursive: boolean }): Promise<void>;
   readdir(path: string, options: { withFileTypes: true }): Promise<readonly DirEntryLike[]>;
+  readFile(path: string): Promise<Buffer>;
   readFile(path: string, encoding: BufferEncoding): Promise<string>;
   unlink(path: string): Promise<void>;
+  writeFile(path: string, data: Buffer): Promise<void>;
   writeFile(path: string, data: string, encoding: BufferEncoding): Promise<void>;
 }
 
@@ -56,6 +61,16 @@ function createIpcHandlers({
     'file:write': async (_event, filePath: string, data: string): Promise<void> => {
       await fs.mkdir(dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, data, 'utf-8');
+    },
+
+    'file:readBinary': async (_event, filePath: string): Promise<string> => {
+      const data = await fs.readFile(filePath);
+      return Buffer.from(data).toString('base64');
+    },
+
+    'file:writeBinary': async (_event, filePath: string, base64Data: string): Promise<void> => {
+      await fs.mkdir(dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, Buffer.from(base64Data, 'base64'));
     },
 
     'file:append': async (_event, filePath: string, data: string): Promise<void> => {
@@ -112,7 +127,7 @@ function createIpcHandlers({
 
     'dialog:open': async (): Promise<string | null> => {
       const { canceled, filePaths } = await dialog.showOpenDialog({
-        filters: JSON_FILTERS,
+        filters: PROJECT_FILE_FILTERS,
         properties: ['openFile'],
       });
       return canceled ? null : filePaths[0] ?? null;
@@ -120,7 +135,7 @@ function createIpcHandlers({
 
     'dialog:save': async (): Promise<string | null> => {
       const { canceled, filePath } = await dialog.showSaveDialog({
-        filters: JSON_FILTERS,
+        filters: PROJECT_FILE_FILTERS,
       });
       return canceled ? null : filePath ?? null;
     },
@@ -144,4 +159,4 @@ function registerIpcHandlers({
   }
 }
 
-export { JSON_FILTERS, createIpcHandlers, registerIpcHandlers };
+export { PROJECT_FILE_FILTERS, createIpcHandlers, registerIpcHandlers };

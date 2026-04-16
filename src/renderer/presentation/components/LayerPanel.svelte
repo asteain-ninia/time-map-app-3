@@ -115,16 +115,23 @@
             <span class="layer-order">#{layer.order + 1}</span>
             <span class="layer-name">{layer.name}</span>
           </button>
-          <input
-            type="range"
-            class="opacity-slider"
-            min="0"
-            max="1"
-            step="0.05"
-            value={layer.opacity}
-            oninput={(e) => onOpacityChange(layer.id, e)}
-            title="透明度: {Math.round(layer.opacity * 100)}%"
-          />
+          <label class="opacity-control" title="不透明度: {Math.round(layer.opacity * 100)}%">
+            <svg class="opacity-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+              <path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" />
+            </svg>
+            <span class="sr-only">不透明度</span>
+            <input
+              type="range"
+              class="opacity-slider"
+              min="0"
+              max="1"
+              step="0.05"
+              value={layer.opacity}
+              oninput={(e) => onOpacityChange(layer.id, e)}
+            />
+            <span class="opacity-value">{Math.round(layer.opacity * 100)}%</span>
+          </label>
         </li>
       {/each}
     </ul>
@@ -254,9 +261,42 @@
   }
 
   .opacity-slider {
-    width: 60px;
+    width: 64px;
     height: 3px;
     accent-color: #007acc;
+  }
+
+  .opacity-control {
+    display: grid;
+    grid-template-columns: 16px 64px 34px;
+    align-items: center;
+    gap: 5px;
+    color: #aaa;
+    font-size: 11px;
+  }
+
+  .opacity-icon {
+    width: 14px;
+    height: 14px;
+    color: #9cc9e8;
+  }
+
+  .opacity-value {
+    font-variant-numeric: tabular-nums;
+    color: #bbb;
+    text-align: right;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .empty-message {

@@ -155,6 +155,17 @@ test('測量モード解除後も測量線が残る', async ({ page }) => {
   expect(pathsAfter).toBeGreaterThan(0);
 });
 
+// §2.1 測量 — クリアボタンで測量線を消せる
+test('測量クリアボタンで測量線とマーカーを消せる', async ({ page }) => {
+  await measureTwoPoints(page);
+
+  await expect(page.locator('.survey-clear')).toBeVisible();
+  await page.locator('.survey-clear').click();
+
+  await expect(page.locator('.map-svg path[stroke="#ffd93d"]')).toHaveCount(0);
+  await expect(page.locator('.measurement-marker')).toHaveCount(0);
+});
+
 // §2.1 測量 — 複数の測量線を同時に表示可能
 test('複数の測量線を同時に表示できる', async ({ page }) => {
   await page.keyboard.press('m');

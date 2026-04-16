@@ -12,10 +12,16 @@ import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 function createMockFs(): FileSystemPort & {
   readFile: ReturnType<typeof vi.fn>;
   writeFile: ReturnType<typeof vi.fn>;
+  readBinaryFile: ReturnType<typeof vi.fn>;
+  writeBinaryFile: ReturnType<typeof vi.fn>;
+  readAsset: ReturnType<typeof vi.fn>;
 } {
   return {
     readFile: vi.fn(),
     writeFile: vi.fn(),
+    readBinaryFile: vi.fn(),
+    writeBinaryFile: vi.fn(),
+    readAsset: vi.fn(),
   };
 }
 
@@ -64,6 +70,19 @@ describe('JSONWorldRepository', () => {
       const repo = new JSONWorldRepository(fs);
 
       await expect(repo.save('/path', World.createEmpty())).rejects.toThrow('Write failed');
+    });
+
+    it('.gimozaはproject.jsonとベースマップを無圧縮ZIPとして保存する', async () => {
+      const fs = createMockFs();
+      fs.writeBinaryFile.mockResolvedValue(undefined);
+      fs.readAsset.mockResolvedValue('<svg viewBox="0 0 360 180" />');
+      const repo = new JSONWorldRepository(fs);
+
+      await repo.save('/path/to/file.gimoza', createTestWorld());
+
+      expect(fs.writeBinaryFile).toHaveBeenCalledWith('/path/to/file.gimoza', expect.any(String));
+      const archive = fs.writeBinaryFile.mock.calls[0][1] as string;
+      expect(archive.length).toBeGreaterThan(0);
     });
   });
 
@@ -128,6 +147,22 @@ describe('JSONWorldRepository', () => {
       const loadedFeature = loaded.features.get('f1')!;
       expect(loadedFeature.featureType).toBe(originalFeature.featureType);
       expect(loadedFeature.anchors[0].property.name).toBe(originalFeature.anchors[0].property.name);
+    });
+
+    it('.gimozaからproject.jsonを読み込む', async () => {
+      const saveFs = createMockFs();
+      saveFs.writeBinaryFile.mockResolvedValue(undefined);
+      saveFs.readAsset.mockResolvedValue('<svg viewBox="0 0 360 180" />');
+      const original = createTestWorld();
+
+      await new JSONWorldRepository(saveFs).save('/test.gimoza', original);
+
+      const loadFs = createMockFs();
+      loadFs.readBinaryFile.mockResolvedValue(saveFs.writeBinaryFile.mock.calls[0][1]);
+      const loaded = await new JSONWorldRepository(loadFs).load('/test.gimoza');
+
+      expect(loaded.version).toBe('1.0.0');
+      expect(loaded.features.size).toBe(1);
     });
   });
 });

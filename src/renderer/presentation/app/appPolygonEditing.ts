@@ -4,6 +4,8 @@ import type { AddToolType } from '@presentation/state/toolMachine';
 import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
+import type { RingCoords } from '@domain/services/GeometryService';
+import { slideAlongEdge } from '@domain/services/EdgeSlideService';
 import type { RingDrawingState } from '@infrastructure/rendering/ringDrawingManager';
 import {
   isRingDrawingPointAllowed,
@@ -14,7 +16,11 @@ import {
   createTransientPolygonFeature,
   validatePolygonOrThrow,
 } from '@application/polygonValidation';
-import { wrapLongitudeNearReference } from '@infrastructure/rendering/featureRenderingUtils';
+import {
+  shiftLongitudeSequenceNearReference,
+  unwrapLongitudeSequence,
+  wrapLongitudeNearReference,
+} from '@infrastructure/rendering/featureRenderingUtils';
 
 type PolygonAnchor = FeatureAnchor & {
   readonly shape: Extract<FeatureAnchor['shape'], { readonly type: 'Polygon' }>;
@@ -117,6 +123,86 @@ export function alignCoordinateNearReference(
   return referenceLon === null
     ? coord
     : new Coordinate(wrapLongitudeNearReference(coord.x, referenceLon), coord.y);
+}
+
+export function collectSameLayerPolygonObstacleRings(
+  features: readonly Feature[],
+  currentTime: TimePoint | undefined,
+  vertices: ReadonlyMap<string, Vertex>,
+  sourceFeatureIds: ReadonlySet<string>,
+  referenceCoord: Coordinate
+): RingCoords[] {
+  if (!currentTime || sourceFeatureIds.size === 0) {
+    return [];
+  }
+
+  const sourceLayerIds = new Set<string>();
+  for (const feature of features) {
+    if (!sourceFeatureIds.has(feature.id)) {
+      continue;
+    }
+    const anchor = feature.getActiveAnchor(currentTime);
+    if (anchor) {
+      sourceLayerIds.add(anchor.placement.layerId);
+    }
+  }
+
+  if (sourceLayerIds.size === 0) {
+    return [];
+  }
+
+  const rings: RingCoords[] = [];
+  for (const feature of features) {
+    if (sourceFeatureIds.has(feature.id)) {
+      continue;
+    }
+
+    const anchor = feature.getActiveAnchor(currentTime);
+    if (
+      !anchor ||
+      anchor.shape.type !== 'Polygon' ||
+      !sourceLayerIds.has(anchor.placement.layerId)
+    ) {
+      continue;
+    }
+
+    for (const ring of anchor.shape.rings) {
+      if (ring.ringType !== 'territory') {
+        continue;
+      }
+
+      const rawCoords = ring.vertexIds
+        .map((vertexId) => vertices.get(vertexId))
+        .filter((vertex): vertex is Vertex => vertex !== undefined)
+        .map((vertex) => ({ x: vertex.x, y: vertex.y }));
+
+      if (rawCoords.length < 3) {
+        continue;
+      }
+
+      const unwrappedLongitudes = unwrapLongitudeSequence(rawCoords.map((coord) => coord.x));
+      const shiftedLongitudes = shiftLongitudeSequenceNearReference(
+        unwrappedLongitudes,
+        referenceCoord.x
+      );
+      rings.push(rawCoords.map((coord, index) => ({
+        x: shiftedLongitudes[index],
+        y: coord.y,
+      })));
+    }
+  }
+
+  return rings;
+}
+
+export function resolveEdgeSlideCoordinate(
+  coord: Coordinate,
+  obstacleRings: readonly RingCoords[]
+): Coordinate {
+  const slideResult = slideAlongEdge(coord.x, coord.y, obstacleRings);
+  return slideResult.didSlide
+    ? new Coordinate(slideResult.x, slideResult.y).clampLatitude()
+    : coord;
 }
 
 export function getRingDrawingConstraintMessage(

@@ -20,6 +20,7 @@ export interface MainWindowOptions {
 
 export interface BrowserWindowLike {
   on(event: 'ready-to-show', listener: () => void): void;
+  on(event: 'close', listener: (event: { preventDefault(): void }) => void): void;
   show(): void;
   loadURL(url: string): void;
   loadFile(filePath: string): void;

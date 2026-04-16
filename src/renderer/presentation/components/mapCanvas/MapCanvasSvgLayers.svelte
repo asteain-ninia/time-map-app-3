@@ -19,6 +19,7 @@
   let {
     wrapOffsets = [0] as readonly number[],
     baseMapContent = '',
+    baseMapTransform = 'matrix(0.08483762926992506 0 0 0.08483762926992506 0 0)',
     currentTime = undefined as TimePoint | undefined,
     features = [] as readonly Feature[],
     vertices = new Map<string, Vertex>() as ReadonlyMap<string, Vertex>,
@@ -58,6 +59,7 @@
   }: {
     wrapOffsets?: readonly number[];
     baseMapContent?: string;
+    baseMapTransform?: string;
     currentTime?: TimePoint;
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
@@ -117,7 +119,7 @@
 <g class="wrap-base-map-layer" pointer-events="none" style="user-select: none;">
   {#each wrapOffsets as offset}
     <g class="base-map-layer" transform="translate({offset}, 0)">
-      <g transform="scale({360 / 4243.4}, {180 / 2121.7})">
+      <g transform={baseMapTransform}>
         {@html baseMapContent}
       </g>
     </g>
@@ -155,6 +157,32 @@
         opacity={gridOpacity}
         isPrimaryWrap={offset === 0}
       />
+    </g>
+  {/each}
+</g>
+
+<g class="wrap-measurement-layer">
+  {#each wrapOffsets as offset}
+    <g class="wrap-measurement-tile" transform="translate({offset}, 0)">
+      {#each surveyMeasurements as measurement}
+        <MeasurementOverlay
+          pointA={measurement.pointA}
+          pointB={measurement.pointB}
+          result={measurement.result}
+          zoom={zoomLevel}
+          isPrimaryWrap={offset === 0}
+        />
+      {/each}
+
+      {#if toolMode === 'measure' && surveyPointA && !surveyPointB}
+        <MeasurementOverlay
+          pointA={surveyPointA}
+          pointB={null}
+          result={null}
+          zoom={zoomLevel}
+          isPrimaryWrap={offset === 0}
+        />
+      {/if}
     </g>
   {/each}
 </g>
@@ -205,32 +233,6 @@
           zoom={zoomLevel}
           cursorGeo={cursorGeo}
           isPolygon={false}
-        />
-      {/if}
-    </g>
-  {/each}
-</g>
-
-<g class="wrap-measurement-layer">
-  {#each wrapOffsets as offset}
-    <g class="wrap-measurement-tile" transform="translate({offset}, 0)">
-      {#each surveyMeasurements as measurement}
-        <MeasurementOverlay
-          pointA={measurement.pointA}
-          pointB={measurement.pointB}
-          result={measurement.result}
-          zoom={zoomLevel}
-          isPrimaryWrap={offset === 0}
-        />
-      {/each}
-
-      {#if toolMode === 'measure' && surveyPointA && !surveyPointB}
-        <MeasurementOverlay
-          pointA={surveyPointA}
-          pointB={null}
-          result={null}
-          zoom={zoomLevel}
-          isPrimaryWrap={offset === 0}
         />
       {/if}
     </g>

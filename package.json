@@ -1,7 +1,9 @@
 {
   "name": "gimoza",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "gimoza — 架空世界の地理と歴史を、時間軸に沿って視覚化・編纂するツール",
+  "author": "asteain-ninia",
+  "license": "MIT",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
