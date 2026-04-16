@@ -1,40 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { join } from 'path';
+import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
 import { access, appendFile, mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { registerIpcHandlers } from './ipcHandlers';
-
-const MIN_WIDTH = 800;
-const MIN_HEIGHT = 600;
-
-function createWindow(): void {
-  const mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: MIN_WIDTH,
-    minHeight: MIN_HEIGHT,
-    show: false,
-    title: 'gimoza — 時空地歴編纂機',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
-    }
-  });
-
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show();
-  });
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
-    return { action: 'deny' };
-  });
-
-  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']);
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
-  }
-}
+import { createMainWindow, disableApplicationMenu } from './window';
 
 app.whenReady().then(() => {
   registerIpcHandlers({
@@ -43,11 +10,24 @@ app.whenReady().then(() => {
     dialog,
     fs: { access, appendFile, mkdir, readdir, readFile, unlink, writeFile },
   });
-  createWindow();
+  disableApplicationMenu(Menu);
+  createMainWindow({
+    BrowserWindow,
+    shell,
+    isPackaged: app.isPackaged,
+    rendererUrl: process.env['ELECTRON_RENDERER_URL'],
+    dirname: __dirname,
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createMainWindow({
+        BrowserWindow,
+        shell,
+        isPackaged: app.isPackaged,
+        rendererUrl: process.env['ELECTRON_RENDERER_URL'],
+        dirname: __dirname,
+      });
     }
   });
 });

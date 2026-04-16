@@ -58,6 +58,21 @@ test('編集メニューを開閉できる', async ({ page }) => {
   await backdrop.click();
 });
 
+test('メニュー展開中もバックドロップは透明で別メニューへ切り替えられる', async ({ page }) => {
+  const fileTrigger = page.locator('.menu-trigger', { hasText: 'ファイル' });
+  await fileTrigger.click();
+
+  const backdrop = page.locator('.menu-backdrop');
+  await expect(backdrop).toBeVisible();
+  await expect(backdrop).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+
+  const editTrigger = page.locator('.menu-trigger', { hasText: '編集' });
+  await editTrigger.click();
+
+  await expect(page.locator('.menu-dropdown[aria-label=\"編集\"]')).toBeVisible();
+  await expect(page.locator('.menu-dropdown[aria-label=\"ファイル\"]')).toHaveCount(0);
+});
+
 test('Ctrl+Zが機能する（Undo）', async ({ page }) => {
   // エラーなく動作することを確認
   await page.keyboard.press('Control+z');

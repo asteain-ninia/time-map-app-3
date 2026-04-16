@@ -48,12 +48,10 @@
 <svelte:window onkeydown={onKeyDown} />
 
 {#if openMenu}
-  <button
-    type="button"
+  <div
     class="menu-backdrop"
-    aria-label="メニューを閉じる"
     onclick={closeMenu}
-  ></button>
+  ></div>
 {/if}
 
 <div class="menu-bar" role="menubar" aria-label="アプリメニュー">
@@ -159,12 +157,14 @@
 <style>
   .menu-backdrop {
     position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
+    inset: 0;
+    background: transparent;
     z-index: 99;
   }
 
   .menu-bar {
     display: flex;
+    position: relative;
     background: #2d2d2d;
     border-bottom: 1px solid #3c3c3c;
     padding: 0 4px;
@@ -202,7 +202,7 @@
     padding: 4px 0;
     min-width: 180px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    z-index: 100;
+    z-index: 101;
   }
 
   .menu-action {
