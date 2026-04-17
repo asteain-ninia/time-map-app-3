@@ -97,7 +97,7 @@ function createWorldWithPolygon(): World {
 function createFullWorld(): World {
   const vertices = new Map<string, Vertex>();
   vertices.set('v1', new Vertex('v1', new Coordinate(10, 20)));
-  vertices.set('v2', new Vertex('v2', new Coordinate(30, 40)));
+  vertices.set('v2', new Vertex('v2', new Coordinate(10, 20)));
 
   const features = new Map<string, Feature>();
   const anchor = new FeatureAnchor(
@@ -114,7 +114,7 @@ function createFullWorld(): World {
   const sharedVertexGroups = new Map<string, SharedVertexGroup>();
   sharedVertexGroups.set(
     'svg1',
-    new SharedVertexGroup('svg1', ['v1', 'v2'], new Coordinate(20, 30))
+    new SharedVertexGroup('svg1', ['v1', 'v2'], new Coordinate(10, 20))
   );
 
   const timelineMarkers = [
@@ -128,6 +128,29 @@ function createFullWorld(): World {
   };
 
   return new World('1.0.0', vertices, features, layers, sharedVertexGroups, timelineMarkers, metadata);
+}
+
+function createValidJsonWorld(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    version: '1.0.0',
+    layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
+    vertices: [{ id: 'v1', x: 0, y: 0 }],
+    features: [{
+      id: 'f1',
+      featureType: 'Point',
+      anchors: [{
+        id: 'a1',
+        timeRange: { start: { year: 100 } },
+        property: { name: 'test', description: '' },
+        shape: { type: 'Point', vertexId: 'v1' },
+        placement: { layerId: 'l1', parentId: null, childIds: [] },
+      }],
+    }],
+    sharedVertexGroups: [],
+    timelineMarkers: [],
+    metadata: DEFAULT_METADATA,
+    ...overrides,
+  };
 }
 
 describe('JSONSerializer', () => {
@@ -232,7 +255,7 @@ describe('JSONSerializer', () => {
       expect(parsed.sharedVertexGroups).toHaveLength(1);
       expect(parsed.sharedVertexGroups[0].id).toBe('svg1');
       expect(parsed.sharedVertexGroups[0].vertexIds).toEqual(['v1', 'v2']);
-      expect(parsed.sharedVertexGroups[0].representativeCoordinate).toEqual({ x: 20, y: 30 });
+      expect(parsed.sharedVertexGroups[0].representativeCoordinate).toEqual({ x: 10, y: 20 });
     });
 
     it('タイムラインマーカーをシリアライズできる', () => {
@@ -352,7 +375,7 @@ describe('JSONSerializer', () => {
 
       const svg = restored.sharedVertexGroups.get('svg1')!;
       expect(svg.vertexIds).toEqual(['v1', 'v2']);
-      expect(svg.representativeCoordinate.x).toBe(20);
+      expect(svg.representativeCoordinate.x).toBe(10);
 
       expect(restored.timelineMarkers[0].label).toBe('大戦争');
     });
@@ -580,6 +603,149 @@ describe('JSONSerializer', () => {
       });
       expect(() => deserialize(json)).toThrow('LineString shape requires vertexIds');
     });
+
+    it('sharedVertexGroups欠損の旧データは空グループとして読み込める', () => {
+      const world = createValidJsonWorld();
+      delete world.sharedVertexGroups;
+
+      const restored = deserialize(JSON.stringify(world));
+
+      expect(restored.sharedVertexGroups.size).toBe(0);
+    });
+
+    it('共有頂点グループが存在しない頂点を参照するとエラー', () => {
+      const json = JSON.stringify(createValidJsonWorld({
+        vertices: [
+          { id: 'v1', x: 0, y: 0 },
+          { id: 'v2', x: 0, y: 0 },
+        ],
+        sharedVertexGroups: [{
+          id: 'sg-1',
+          vertexIds: ['v1', 'v-missing'],
+          representativeCoordinate: { x: 0, y: 0 },
+        }],
+      }));
+
+      expect(() => deserialize(json)).toThrow('Shared vertex group "sg-1" references non-existent vertex "v-missing"');
+    });
+
+    it('同じ頂点が複数の共有頂点グループに所属するとエラー', () => {
+      const json = JSON.stringify(createValidJsonWorld({
+        vertices: [
+          { id: 'v1', x: 0, y: 0 },
+          { id: 'v2', x: 0, y: 0 },
+          { id: 'v3', x: 0, y: 0 },
+        ],
+        sharedVertexGroups: [
+          {
+            id: 'sg-1',
+            vertexIds: ['v1', 'v2'],
+            representativeCoordinate: { x: 0, y: 0 },
+          },
+          {
+            id: 'sg-2',
+            vertexIds: ['v2', 'v3'],
+            representativeCoordinate: { x: 0, y: 0 },
+          },
+        ],
+      }));
+
+      expect(() => deserialize(json)).toThrow('Vertex "v2" belongs to multiple shared vertex groups');
+    });
+
+    it('共有頂点グループの代表座標と頂点座標が一致しないとエラー', () => {
+      const json = JSON.stringify(createValidJsonWorld({
+        vertices: [
+          { id: 'v1', x: 0, y: 0 },
+          { id: 'v2', x: 1, y: 0 },
+        ],
+        sharedVertexGroups: [{
+          id: 'sg-1',
+          vertexIds: ['v1', 'v2'],
+          representativeCoordinate: { x: 0, y: 0 },
+        }],
+      }));
+
+      expect(() => deserialize(json)).toThrow(
+        'Shared vertex group "sg-1" vertex "v2" coordinate does not match representativeCoordinate'
+      );
+    });
+
+    it('自己交差ポリゴンを読み込み時に拒否する', () => {
+      const json = JSON.stringify(createValidJsonWorld({
+        vertices: [
+          { id: 'v1', x: 0, y: 0 },
+          { id: 'v2', x: 10, y: 10 },
+          { id: 'v3', x: 10, y: 0 },
+          { id: 'v4', x: 0, y: 10 },
+        ],
+        features: [{
+          id: 'f-poly',
+          featureType: 'Polygon',
+          anchors: [{
+            id: 'a-poly',
+            timeRange: { start: { year: 100 } },
+            property: { name: 'bowtie', description: '' },
+            shape: {
+              type: 'Polygon',
+              rings: [{
+                id: 'r-bowtie',
+                vertexIds: ['v1', 'v2', 'v3', 'v4'],
+                ringType: 'territory',
+                parentId: null,
+              }],
+            },
+            placement: { layerId: 'l1', parentId: null, childIds: [] },
+          }],
+        }],
+      }));
+
+      expect(() => deserialize(json)).toThrow('ring "r-bowtie" is self-intersecting');
+    });
+
+    it('親領土からはみ出す穴リングを読み込み時に拒否する', () => {
+      const json = JSON.stringify(createValidJsonWorld({
+        vertices: [
+          { id: 'o1', x: 0, y: 0 },
+          { id: 'o2', x: 20, y: 0 },
+          { id: 'o3', x: 20, y: 20 },
+          { id: 'o4', x: 0, y: 20 },
+          { id: 'h1', x: 4, y: 4 },
+          { id: 'h2', x: 16, y: 4 },
+          { id: 'h3', x: 24, y: 16 },
+          { id: 'h4', x: 4, y: 16 },
+        ],
+        features: [{
+          id: 'f-poly',
+          featureType: 'Polygon',
+          anchors: [{
+            id: 'a-poly',
+            timeRange: { start: { year: 100 } },
+            property: { name: 'invalid-hole', description: '' },
+            shape: {
+              type: 'Polygon',
+              rings: [
+                {
+                  id: 'outer',
+                  vertexIds: ['o1', 'o2', 'o3', 'o4'],
+                  ringType: 'territory',
+                  parentId: null,
+                },
+                {
+                  id: 'hole',
+                  vertexIds: ['h1', 'h2', 'h3', 'h4'],
+                  ringType: 'hole',
+                  parentId: 'outer',
+                },
+              ],
+            },
+            placement: { layerId: 'l1', parentId: null, childIds: [] },
+          }],
+        }],
+      }));
+
+      expect(() => deserialize(json)).toThrow('親リングの内部に完全に収まっていません');
+    });
   });
 
   describe('複数アンカーの地物', () => {
@@ -601,7 +767,7 @@ describe('JSONSerializer', () => {
         'a2',
         { start: new TimePoint(1200) },
         { name: '新領土', description: '拡大後' },
-        { type: 'Polygon', rings: [new Ring('r2', ['v1', 'v2', 'v3', 'v4'], 'territory', null)] },
+        { type: 'Polygon', rings: [new Ring('r2', ['v1', 'v2', 'v4', 'v3'], 'territory', null)] },
         { layerId: 'l1', parentId: null, childIds: [] }
       );
 

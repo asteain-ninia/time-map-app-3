@@ -26,16 +26,28 @@ export class MoveVerticesCommand implements UndoableCommand {
   ) {}
 
   execute(): void {
-    const uniqueVertexIds = [...new Set(this.vertexIds)];
-    if (uniqueVertexIds.length === 0) return;
+    const selectedVertexIds = [...new Set(this.vertexIds)];
+    if (selectedVertexIds.length === 0) return;
 
     const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
     const sharedGroups = this.featureUseCase.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
     this.oldCoordinates.clear();
     this.oldSharedGroups = new Map(sharedGroups);
 
+    const movedVertexIds = new Set<string>(selectedVertexIds);
+    const affectedGroupIds = new Set<string>();
+    for (const vertexId of selectedVertexIds) {
+      const group = findGroupForVertex(vertexId, sharedGroups);
+      if (!group) continue;
+
+      affectedGroupIds.add(group.id);
+      for (const linkedVertexId of group.vertexIds) {
+        movedVertexIds.add(linkedVertexId);
+      }
+    }
+
     const validationVertices = new Map(vertices);
-    for (const vertexId of uniqueVertexIds) {
+    for (const vertexId of movedVertexIds) {
       const vertex = vertices.get(vertexId);
       if (!vertex) continue;
 
@@ -53,7 +65,7 @@ export class MoveVerticesCommand implements UndoableCommand {
     if (this.currentTime) {
       const impactedFeatureIds = collectImpactedFeatureIdsByVertexIds(
         this.featureUseCase.getFeatures(),
-        uniqueVertexIds,
+        movedVertexIds,
         this.currentTime
       );
       validatePolygonFeatureIdsOrThrow(
@@ -69,14 +81,6 @@ export class MoveVerticesCommand implements UndoableCommand {
         vertexId,
         new Coordinate(coordinate.x + this.deltaX, coordinate.y + this.deltaY).clampLatitude()
       );
-    }
-
-    const affectedGroupIds = new Set<string>();
-    for (const vertexId of uniqueVertexIds) {
-      const group = findGroupForVertex(vertexId, sharedGroups);
-      if (group) {
-        affectedGroupIds.add(group.id);
-      }
     }
 
     for (const groupId of affectedGroupIds) {
