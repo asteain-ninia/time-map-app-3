@@ -9,3 +9,4 @@ playwright-report/
 *.backup-*.json
 savebackup/
 coverage/
+TEST-savedata.gimoza
