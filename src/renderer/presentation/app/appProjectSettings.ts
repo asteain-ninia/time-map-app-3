@@ -1,6 +1,7 @@
 import type { Layer } from '@domain/entities/Layer';
 import {
   DEFAULT_SETTINGS,
+  type BaseMapSettings,
   type WorldMetadata,
   type WorldSettings,
 } from '@domain/entities/World';
@@ -18,6 +19,29 @@ export function normalizeWorldSettings(settings: WorldSettings): WorldSettings {
     gridOpacity: Math.max(0, Math.min(1, settings.gridOpacity)),
     labelAreaThreshold: Math.max(0, settings.labelAreaThreshold),
     autoSaveInterval: Math.max(1, Math.round(settings.autoSaveInterval)),
+    baseMap: normalizeBaseMapSettings(settings.baseMap),
+  };
+}
+
+function normalizeBaseMapSettings(baseMap: BaseMapSettings): BaseMapSettings {
+  if (baseMap.mode !== 'custom') {
+    // bundled でも svgText を保持するのは .gimoza 展開後にアセットから注入された SVG を扱うため
+    const svgText = typeof baseMap.svgText === 'string' ? baseMap.svgText : '';
+    return {
+      ...DEFAULT_SETTINGS.baseMap,
+      svgText: svgText.trim() ? svgText : null,
+    };
+  }
+
+  const svgText = typeof baseMap.svgText === 'string' ? baseMap.svgText : '';
+  if (!svgText.trim()) {
+    return { ...DEFAULT_SETTINGS.baseMap };
+  }
+
+  return {
+    mode: 'custom',
+    fileName: baseMap.fileName.trim() || DEFAULT_SETTINGS.baseMap.fileName,
+    svgText,
   };
 }
 
@@ -62,5 +86,12 @@ export function hasProjectSettingsChanged(
     currentSettings.defaultPalette !== nextSettings.defaultPalette ||
     currentSettings.customPalettes.length !== nextSettings.customPalettes.length ||
     currentSettings.customPalettes.some((palette, index) => palette !== nextSettings.customPalettes[index]) ||
+    !areBaseMapsEqual(currentSettings.baseMap, nextSettings.baseMap) ||
     !areLayersEqual(currentLayers, nextLayers);
+}
+
+function areBaseMapsEqual(left: BaseMapSettings, right: BaseMapSettings): boolean {
+  return left.mode === right.mode &&
+    left.fileName === right.fileName &&
+    left.svgText === right.svgText;
 }

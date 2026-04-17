@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { JSONWorldRepository, type FileSystemPort } from '@infrastructure/persistence/JSONWorldRepository';
 import { serialize } from '@infrastructure/persistence/JSONSerializer';
+import {
+  base64ToBytes,
+  decodeUtf8,
+  readStoredZipEntries,
+} from '@infrastructure/persistence/zipArchive';
 import { World, DEFAULT_METADATA } from '@domain/entities/World';
 import { Feature } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
@@ -44,6 +49,29 @@ function createTestWorld(): World {
   return new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
 }
 
+function createTestWorldWithBaseMap(svgText: string): World {
+  const world = createTestWorld();
+  return new World(
+    world.version,
+    world.vertices,
+    world.features,
+    world.layers,
+    world.sharedVertexGroups,
+    world.timelineMarkers,
+    {
+      ...world.metadata,
+      settings: {
+        ...world.metadata.settings,
+        baseMap: {
+          mode: 'custom',
+          fileName: 'world.svg',
+          svgText,
+        },
+      },
+    }
+  );
+}
+
 describe('JSONWorldRepository', () => {
   describe('save', () => {
     it('WorldをJSON文字列としてファイルに書き込む', async () => {
@@ -83,6 +111,23 @@ describe('JSONWorldRepository', () => {
       expect(fs.writeBinaryFile).toHaveBeenCalledWith('/path/to/file.gimoza', expect.any(String));
       const archive = fs.writeBinaryFile.mock.calls[0][1] as string;
       expect(archive.length).toBeGreaterThan(0);
+    });
+
+    it('.gimoza保存時はカスタムベースマップをassets/base-map.svgへコピーする', async () => {
+      const fs = createMockFs();
+      fs.writeBinaryFile.mockResolvedValue(undefined);
+      const repo = new JSONWorldRepository(fs);
+      const customSvg = '<svg viewBox="0 0 720 360"><path d="M1 1" /></svg>';
+
+      await repo.save('/path/to/file.gimoza', createTestWorldWithBaseMap(customSvg));
+
+      const archive = fs.writeBinaryFile.mock.calls[0][1] as string;
+      const entries = readStoredZipEntries(base64ToBytes(archive));
+      const baseMapEntry = entries.find((entry) => entry.name === 'assets/base-map.svg');
+      const projectEntry = entries.find((entry) => entry.name === 'project.json');
+      expect(baseMapEntry).toBeDefined();
+      expect(decodeUtf8(baseMapEntry!.data)).toBe(customSvg);
+      expect(decodeUtf8(projectEntry!.data)).not.toContain(customSvg);
     });
   });
 
@@ -163,6 +208,21 @@ describe('JSONWorldRepository', () => {
 
       expect(loaded.version).toBe('1.0.0');
       expect(loaded.features.size).toBe(1);
+    });
+
+    it('.gimozaからベースマップアセットを復元する', async () => {
+      const saveFs = createMockFs();
+      saveFs.writeBinaryFile.mockResolvedValue(undefined);
+      const customSvg = '<svg viewBox="0 0 720 360"><path d="M1 1" /></svg>';
+      const original = createTestWorldWithBaseMap(customSvg);
+
+      await new JSONWorldRepository(saveFs).save('/test.gimoza', original);
+
+      const loadFs = createMockFs();
+      loadFs.readBinaryFile.mockResolvedValue(saveFs.writeBinaryFile.mock.calls[0][1]);
+      const loaded = await new JSONWorldRepository(loadFs).load('/test.gimoza');
+
+      expect(loaded.metadata.settings.baseMap.svgText).toBe(customSvg);
     });
   });
 });

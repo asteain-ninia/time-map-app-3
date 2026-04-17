@@ -66,6 +66,46 @@ describe('appProjectSettings', () => {
     expect(normalizeWorldSettings(settings)).toEqual(settings);
   });
 
+  it('有効なカスタムベースマップを保持する', () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      baseMap: {
+        mode: 'custom' as const,
+        fileName: 'world.svg',
+        svgText: '<svg viewBox="0 0 360 180"><path d="M0 0" /></svg>',
+      },
+    };
+
+    expect(normalizeWorldSettings(settings).baseMap).toEqual(settings.baseMap);
+  });
+
+  it('空のカスタムベースマップはプリセットへ戻す', () => {
+    const normalized = normalizeWorldSettings({
+      ...DEFAULT_SETTINGS,
+      baseMap: {
+        mode: 'custom',
+        fileName: 'empty.svg',
+        svgText: '',
+      },
+    });
+
+    expect(normalized.baseMap).toEqual(DEFAULT_SETTINGS.baseMap);
+  });
+
+  it('gimoza由来の埋め込みプリセットベースマップを保持する', () => {
+    const svgText = '<svg viewBox="0 0 360 180"></svg>';
+    const normalized = normalizeWorldSettings({
+      ...DEFAULT_SETTINGS,
+      baseMap: {
+        mode: 'bundled',
+        fileName: 'base-map.svg',
+        svgText,
+      },
+    });
+
+    expect(normalized.baseMap.svgText).toBe(svgText);
+  });
+
   it('メタデータ・設定・レイヤーの差分を検出する', () => {
     const currentLayers = [createLayer()];
     const nextLayers = [createLayer({ opacity: 0.5 })];
@@ -134,6 +174,24 @@ describe('appProjectSettings', () => {
       [createLayer()],
       DEFAULT_METADATA,
       nextSettings,
+      [createLayer()]
+    )).toBe(true);
+  });
+
+  it('ベースマップの差分を検出する', () => {
+    expect(hasProjectSettingsChanged(
+      DEFAULT_METADATA,
+      DEFAULT_SETTINGS,
+      [createLayer()],
+      DEFAULT_METADATA,
+      {
+        ...DEFAULT_SETTINGS,
+        baseMap: {
+          mode: 'custom',
+          fileName: 'world.svg',
+          svgText: '<svg viewBox="0 0 360 180"></svg>',
+        },
+      },
       [createLayer()]
     )).toBe(true);
   });

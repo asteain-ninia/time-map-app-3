@@ -23,6 +23,7 @@ function cloneSettings(settings: WorldSettings): WorldSettings {
   return {
     ...settings,
     customPalettes: [...settings.customPalettes],
+    baseMap: { ...settings.baseMap },
   };
 }
 

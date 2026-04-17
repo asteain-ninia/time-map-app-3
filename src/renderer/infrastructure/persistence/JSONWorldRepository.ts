@@ -6,6 +6,7 @@
 
 import type { WorldRepository } from '@domain/repositories/WorldRepository';
 import type { World } from '@domain/entities/World';
+import { World as WorldEntity } from '@domain/entities/World';
 import { serialize, deserialize, SerializationError } from './JSONSerializer';
 import {
   base64ToBytes,
@@ -44,11 +45,11 @@ export class JSONWorldRepository implements WorldRepository {
   }
 
   async save(filePath: string, world: World): Promise<void> {
-    const json = serialize(world);
     if (isGimozaFile(filePath)) {
-      await this.saveGimoza(filePath, json);
+      await this.saveGimoza(filePath, world);
       return;
     }
+    const json = serialize(world);
     await this.fs.writeFile(filePath, json);
   }
 
@@ -63,20 +64,33 @@ export class JSONWorldRepository implements WorldRepository {
     if (!projectEntry) {
       throw new SerializationError('.gimoza に project.json が含まれていません');
     }
-    return deserialize(decodeUtf8(projectEntry.data));
+    const world = deserialize(decodeUtf8(projectEntry.data));
+    const baseMapEntry = entries.find((entry) => entry.name === GIMOZA_BASE_MAP_ENTRY);
+    return baseMapEntry
+      ? withBaseMapSvgText(world, decodeUtf8(baseMapEntry.data))
+      : world;
   }
 
-  private async saveGimoza(filePath: string, projectJson: string): Promise<void> {
+  private async saveGimoza(filePath: string, world: World): Promise<void> {
     if (!this.fs.writeBinaryFile) {
       throw new SerializationError('.gimoza ファイルを書き込める環境ではありません');
     }
 
-    const baseMap = await this.loadBundledBaseMap();
+    const baseMap = await this.resolveBaseMap(world);
+    const projectJson = serialize(withBaseMapSvgText(world, null));
     const entries = [
       { name: GIMOZA_PROJECT_ENTRY, data: encodeUtf8(projectJson) },
       { name: GIMOZA_BASE_MAP_ENTRY, data: encodeUtf8(baseMap) },
     ];
     await this.fs.writeBinaryFile(filePath, bytesToBase64(createStoredZip(entries)));
+  }
+
+  private async resolveBaseMap(world: World): Promise<string> {
+    const configuredMap = world.metadata.settings.baseMap.svgText;
+    if (configuredMap && configuredMap.trim().length > 0) {
+      return configuredMap;
+    }
+    return this.loadBundledBaseMap();
   }
 
   private async loadBundledBaseMap(): Promise<string> {
@@ -96,6 +110,30 @@ export class JSONWorldRepository implements WorldRepository {
 
 function isGimozaFile(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.gimoza');
+}
+
+function withBaseMapSvgText(world: World, svgText: string | null): World {
+  const settings = world.metadata.settings;
+  const metadata = {
+    ...world.metadata,
+    settings: {
+      ...settings,
+      baseMap: {
+        ...settings.baseMap,
+        svgText,
+      },
+    },
+  };
+
+  return new WorldEntity(
+    world.version,
+    world.vertices,
+    world.features,
+    world.layers,
+    world.sharedVertexGroups,
+    world.timelineMarkers,
+    metadata
+  );
 }
 
 /**

@@ -1977,6 +1977,7 @@
           targetFps={appConfig.renderFps}
           vertexMarkerDisplayLimit={appConfig.alwaysVisibleVertexLimit}
           labelAreaThreshold={projectSettings.labelAreaThreshold}
+          baseMapSvgText={projectSettings.baseMap.svgText}
           {currentTime}
           {toolMode}
           {addToolType}

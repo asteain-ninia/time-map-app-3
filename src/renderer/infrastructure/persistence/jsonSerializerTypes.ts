@@ -109,6 +109,13 @@ interface JsonWorldSettings {
   defaultAutoColor: boolean;
   defaultPalette: string;
   customPalettes: string[];
+  baseMap?: JsonBaseMapSettings;
+}
+
+interface JsonBaseMapSettings {
+  mode?: string;
+  fileName?: string;
+  svgText?: string | null;
 }
 
 interface JsonWorldMetadata {
@@ -134,6 +141,7 @@ const SUPPORTED_VERSION = '1.0.0';
 export type {
   JsonAnchorPlacement,
   JsonAnchorProperty,
+  JsonBaseMapSettings,
   JsonCoordinate,
   JsonFeature,
   JsonFeatureAnchor,

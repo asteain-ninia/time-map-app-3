@@ -44,6 +44,7 @@
     targetFps = 60,
     vertexMarkerDisplayLimit = 1000,
     labelAreaThreshold = 0.0005,
+    baseMapSvgText = null as string | null,
     currentTime = undefined as TimePoint | undefined,
     toolMode = 'view' as ToolMode,
     addToolType = 'polygon' as AddToolType,
@@ -110,6 +111,7 @@
     targetFps?: number;
     vertexMarkerDisplayLimit?: number;
     labelAreaThreshold?: number;
+    baseMapSvgText?: string | null;
     currentTime?: TimePoint;
     toolMode?: ToolMode;
     addToolType?: AddToolType;
@@ -307,21 +309,33 @@
     width: 4243.4,
     height: 2121.7,
   }));
+  let baseMapLoadToken = 0;
 
-  async function loadBaseMap(): Promise<void> {
+  function applyParsedBaseMap(svgText: string, token: number): boolean {
+    const parsed = parseSvgMap(svgText);
+    if (!parsed || token !== baseMapLoadToken) {
+      return false;
+    }
+    baseMapContent = parsed.content;
+    baseMapTransform = createBaseMapTransform(parsed.viewBox);
+    return true;
+  }
+
+  async function loadBaseMap(svgText: string | null): Promise<void> {
+    const token = ++baseMapLoadToken;
+    if (svgText?.trim() && applyParsedBaseMap(svgText, token)) {
+      return;
+    }
+
     for (const url of BASE_MAP_URLS) {
       try {
         const response = await fetch(url);
         if (!response.ok) {
           continue;
         }
-        const parsed = parseSvgMap(await response.text());
-        if (!parsed) {
-          continue;
+        if (applyParsedBaseMap(await response.text(), token)) {
+          return;
         }
-        baseMapContent = parsed.content;
-        baseMapTransform = createBaseMapTransform(parsed.viewBox);
-        return;
       } catch {
         // 次のプリセット候補へフォールバックする。
       }
@@ -329,7 +343,7 @@
   }
 
   $effect(() => {
-    void loadBaseMap();
+    void loadBaseMap(baseMapSvgText);
   });
 
   $effect(() => {

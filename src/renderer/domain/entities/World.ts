@@ -5,6 +5,13 @@ import type { SharedVertexGroup } from './SharedVertexGroup';
 import { TimelineMarker } from './TimelineMarker';
 export { TimelineMarker } from './TimelineMarker';
 
+/** ベースマップ設定 */
+export interface BaseMapSettings {
+  readonly mode: 'bundled' | 'custom';
+  readonly fileName: string;
+  readonly svgText: string | null;
+}
+
 /** プロジェクト設定 */
 export interface WorldSettings {
   readonly zoomMin: number;
@@ -19,6 +26,7 @@ export interface WorldSettings {
   readonly defaultAutoColor: boolean;
   readonly defaultPalette: string;
   readonly customPalettes: readonly string[];
+  readonly baseMap: BaseMapSettings;
 }
 
 /** メタデータ */
@@ -43,7 +51,12 @@ export const DEFAULT_SETTINGS: WorldSettings = {
   labelAreaThreshold: 0.0005,
   defaultAutoColor: true,
   defaultPalette: 'クラシック',
-  customPalettes: []
+  customPalettes: [],
+  baseMap: {
+    mode: 'bundled',
+    fileName: 'base-map.svg',
+    svgText: null,
+  }
 };
 
 /** デフォルトのメタデータ */

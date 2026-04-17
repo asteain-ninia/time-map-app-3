@@ -26,6 +26,7 @@ import { SerializationError } from './jsonSerializerErrors';
 import type {
   JsonAnchorPlacement,
   JsonAnchorProperty,
+  JsonBaseMapSettings,
   JsonFeature,
   JsonFeatureAnchor,
   JsonFeatureShape,
@@ -166,6 +167,7 @@ function serializeSettings(s: WorldSettings): JsonWorldSettings {
     defaultAutoColor: s.defaultAutoColor,
     defaultPalette: s.defaultPalette,
     customPalettes: [...s.customPalettes],
+    baseMap: { ...s.baseMap },
   };
 }
 
@@ -314,6 +316,25 @@ function deserializeSettings(json: JsonWorldSettings): WorldSettings {
     defaultAutoColor: json.defaultAutoColor ?? DEFAULT_SETTINGS.defaultAutoColor,
     defaultPalette: json.defaultPalette ?? DEFAULT_SETTINGS.defaultPalette,
     customPalettes: json.customPalettes ?? DEFAULT_SETTINGS.customPalettes,
+    baseMap: deserializeBaseMapSettings(json.baseMap),
+  };
+}
+
+function deserializeBaseMapSettings(json?: JsonBaseMapSettings): WorldSettings['baseMap'] {
+  if (!json) {
+    return { ...DEFAULT_SETTINGS.baseMap };
+  }
+
+  const mode = json.mode === 'custom' ? 'custom' : 'bundled';
+  const fileName = typeof json.fileName === 'string' && json.fileName.trim()
+    ? json.fileName.trim()
+    : DEFAULT_SETTINGS.baseMap.fileName;
+  const svgText = typeof json.svgText === 'string' ? json.svgText : null;
+
+  return {
+    mode,
+    fileName,
+    svgText,
   };
 }
 

@@ -257,6 +257,24 @@ describe('JSONSerializer', () => {
       expect(parsed.metadata.settings.gridColor).toBe('#888888');
     });
 
+    it('カスタムベースマップ設定をシリアライズできる', () => {
+      const metadata = {
+        ...DEFAULT_METADATA,
+        settings: {
+          ...DEFAULT_SETTINGS,
+          baseMap: {
+            mode: 'custom' as const,
+            fileName: 'world.svg',
+            svgText: '<svg viewBox="0 0 360 180"></svg>',
+          },
+        },
+      };
+      const world = new World('1.0.0', new Map(), new Map(), [], new Map(), [], metadata);
+      const parsed = JSON.parse(serialize(world));
+
+      expect(parsed.metadata.settings.baseMap).toEqual(metadata.settings.baseMap);
+    });
+
     it('placement.childIdsをシリアライズできる', () => {
       const world = createWorldWithPolygon();
       const json = serialize(world);
@@ -384,6 +402,25 @@ describe('JSONSerializer', () => {
       expect(restored.metadata.settings.zoomMin).toBe(DEFAULT_SETTINGS.zoomMin);
       expect(restored.metadata.settings.equatorLength).toBe(DEFAULT_SETTINGS.equatorLength);
       expect(restored.metadata.settings.defaultPalette).toBe('クラシック');
+      expect(restored.metadata.settings.baseMap).toEqual(DEFAULT_SETTINGS.baseMap);
+    });
+
+    it('カスタムベースマップ設定を復元できる', () => {
+      const metadata = {
+        ...DEFAULT_METADATA,
+        settings: {
+          ...DEFAULT_SETTINGS,
+          baseMap: {
+            mode: 'custom' as const,
+            fileName: 'world.svg',
+            svgText: '<svg viewBox="0 0 360 180"></svg>',
+          },
+        },
+      };
+      const world = new World('1.0.0', new Map(), new Map(), [], new Map(), [], metadata);
+      const restored = deserialize(serialize(world));
+
+      expect(restored.metadata.settings.baseMap).toEqual(metadata.settings.baseMap);
     });
   });
 

@@ -1,8 +1,14 @@
 <script lang="ts">
-  import type { WorldSettings, WorldMetadata } from '@domain/entities/World';
+  import {
+    DEFAULT_SETTINGS,
+    type BaseMapSettings,
+    type WorldSettings,
+    type WorldMetadata,
+  } from '@domain/entities/World';
   import { Layer } from '@domain/entities/Layer';
   import type { AppConfig } from '@infrastructure/ConfigManager';
   import type { LogLevel } from '@infrastructure/Logger';
+  import { parseSvgMap } from './mapCanvasUtils';
   import {
     DEFAULT_PALETTE_NAME,
     getAvailablePaletteNames,
@@ -60,6 +66,8 @@
   let labelAreaThreshold = $state(0.0005);
   let defaultAutoColor = $state(true);
   let defaultPalette = $state(DEFAULT_PALETTE_NAME);
+  let baseMap = $state<BaseMapSettings>({ ...DEFAULT_SETTINGS.baseMap });
+  let baseMapError = $state('');
   let snapDistancePx = $state(50);
   let renderFps = $state(60);
   let alwaysVisibleVertexLimit = $state(1000);
@@ -89,6 +97,8 @@
       labelAreaThreshold = settings.labelAreaThreshold;
       defaultAutoColor = settings.defaultAutoColor;
       defaultPalette = settings.defaultPalette ?? DEFAULT_PALETTE_NAME;
+      baseMap = { ...settings.baseMap };
+      baseMapError = '';
       draftCustomPalettes = getCustomPaletteDefinitions(settings.customPalettes).map((palette, index) => ({
         id: `custom-palette-${index}`,
         name: palette.name,
@@ -210,6 +220,37 @@
     return parseCustomPaletteColors(colorsText).slice(0, 8);
   }
 
+  async function selectBaseMapFile(event: Event): Promise<void> {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const svgText = await file.text();
+      if (!parseSvgMap(svgText)) {
+        baseMapError = 'viewBox または width/height を持つSVGを選択してください。';
+        return;
+      }
+      baseMap = {
+        mode: 'custom',
+        fileName: file.name,
+        svgText,
+      };
+      baseMapError = '';
+    } catch {
+      baseMapError = 'SVGファイルを読み込めませんでした。';
+    } finally {
+      input.value = '';
+    }
+  }
+
+  function resetBaseMap(): void {
+    baseMap = { ...DEFAULT_SETTINGS.baseMap };
+    baseMapError = '';
+  }
+
   function createDraftLayerId(): string {
     const existingIds = new Set(draftLayers.map((layer) => layer.id));
     let index = draftLayers.length + 1;
@@ -272,6 +313,7 @@
         defaultAutoColor,
         defaultPalette,
         customPalettes,
+        baseMap,
       },
       draftLayers,
       {
@@ -307,6 +349,30 @@
         <div class="field">
           <label class="field-label" for="ps-desc">説明</label>
           <textarea class="field-textarea" id="ps-desc" rows="2" bind:value={worldDescription}></textarea>
+        </div>
+
+        <div class="section">地図</div>
+
+        <div class="field">
+          <label class="field-label" for="ps-base-map">ベースマップSVG</label>
+          <div class="base-map-row">
+            <input
+              class="field-input"
+              id="ps-base-map"
+              type="file"
+              accept=".svg,image/svg+xml"
+              onchange={selectBaseMapFile}
+            />
+            <button class="btn secondary" type="button" onclick={resetBaseMap}>
+              プリセットへ戻す
+            </button>
+          </div>
+          <div class="help-text">
+            現在: {baseMap.mode === 'custom' ? baseMap.fileName : 'プリセット地図'}
+          </div>
+          {#if baseMapError}
+            <div class="help-text error-text">{baseMapError}</div>
+          {/if}
         </div>
 
         <div class="section">レイヤー管理</div>
@@ -706,6 +772,7 @@
     cursor: pointer;
   }
 
+  .base-map-row,
   .layer-create-row,
   .layer-row,
   .palette-create-row,
@@ -713,6 +780,10 @@
     display: flex;
     gap: 8px;
     align-items: center;
+  }
+
+  .base-map-row .btn {
+    flex-shrink: 0;
   }
 
   .layer-list,
