@@ -83,6 +83,9 @@ test('Ctrl+Zが機能する（Undo）', async ({ page }) => {
 test('Ctrl+Aで選択地物の全頂点を選択できる', async ({ page }) => {
   await addPolygonFeature(page);
 
+  await page.keyboard.press('e');
+  await page.waitForTimeout(200);
+
   const featureTab = page.locator('.tab', { hasText: '地物一覧' });
   await featureTab.click();
   await page.waitForTimeout(200);

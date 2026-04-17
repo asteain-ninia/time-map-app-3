@@ -3,6 +3,7 @@ import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
+import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 
 describe('MoveFeatureCommand', () => {
   let addFeature: AddFeatureUseCase;
@@ -130,6 +131,40 @@ describe('MoveFeatureCommand', () => {
       expect(vertex.coordinate.x).toBe(0);
       expect(vertex.coordinate.y).toBe(0);
     });
+
+    it('共有頂点を含む地物移動ではリンク先頂点と代表座標も維持して移動する', () => {
+      const featureA = addFeature.addPoint(new Coordinate(10, 0), 'l1', time);
+      const featureB = addFeature.addPoint(new Coordinate(10, 0), 'l1', time);
+      const anchorA = featureA.getActiveAnchor(time)!;
+      const anchorB = featureB.getActiveAnchor(time)!;
+      if (anchorA.shape.type !== 'Point' || anchorB.shape.type !== 'Point') {
+        throw new Error('test setup failed');
+      }
+      const sharedA = anchorA.shape.vertexId;
+      const sharedB = anchorB.shape.vertexId;
+      const sharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+      sharedGroups.set(
+        'sg-1',
+        new SharedVertexGroup('sg-1', [sharedA, sharedB], new Coordinate(10, 0))
+      );
+
+      const cmd = new MoveFeatureCommand(addFeature, {
+        featureId: featureA.id,
+        dx: 3,
+        dy: 4,
+        currentTime: time,
+      });
+      cmd.execute();
+
+      expect(addFeature.getVertices().get(sharedA)!.coordinate).toEqual(new Coordinate(13, 4));
+      expect(addFeature.getVertices().get(sharedB)!.coordinate).toEqual(new Coordinate(13, 4));
+      expect(sharedGroups.get('sg-1')!.representativeCoordinate).toEqual(new Coordinate(13, 4));
+
+      cmd.undo();
+      expect(addFeature.getVertices().get(sharedA)!.coordinate).toEqual(new Coordinate(10, 0));
+      expect(addFeature.getVertices().get(sharedB)!.coordinate).toEqual(new Coordinate(10, 0));
+      expect(sharedGroups.get('sg-1')!.representativeCoordinate).toEqual(new Coordinate(10, 0));
+    });
   });
 
   describe('存在しない地物', () => {
@@ -140,6 +175,31 @@ describe('MoveFeatureCommand', () => {
       // エラーにならない
       cmd.execute();
       cmd.undo();
+    });
+
+    it('存在しない地物のUndoでも共有頂点グループを保持する', () => {
+      const pointA = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const pointB = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const anchorA = pointA.getActiveAnchor(time)!;
+      const anchorB = pointB.getActiveAnchor(time)!;
+      if (anchorA.shape.type !== 'Point' || anchorB.shape.type !== 'Point') {
+        throw new Error('test setup failed');
+      }
+      const sharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+      const group = new SharedVertexGroup(
+        'sg-1',
+        [anchorA.shape.vertexId, anchorB.shape.vertexId],
+        new Coordinate(10, 20)
+      );
+      sharedGroups.set(group.id, group);
+
+      const cmd = new MoveFeatureCommand(addFeature, {
+        featureId: 'nonexistent', dx: 1, dy: 2, currentTime: time,
+      });
+      cmd.execute();
+      cmd.undo();
+
+      expect(sharedGroups.get(group.id)).toBe(group);
     });
   });
 

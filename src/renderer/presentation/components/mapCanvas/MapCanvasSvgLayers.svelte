@@ -30,6 +30,7 @@
     gridColor = '#888888',
     gridOpacity = 0.3,
     zoomLevel = 1,
+    viewWidthPx = 800,
     labelAreaThreshold = 0.0005,
     selectedFeatureId = null as string | null,
     vertexSelectionContextFeatureId = null as string | null,
@@ -70,6 +71,7 @@
     gridColor?: string;
     gridOpacity?: number;
     zoomLevel?: number;
+    viewWidthPx?: number;
     labelAreaThreshold?: number;
     selectedFeatureId?: string | null;
     vertexSelectionContextFeatureId?: string | null;
@@ -196,6 +198,7 @@
             anchor={entry.anchor}
             {vertices}
             zoom={zoomLevel}
+            {viewWidthPx}
             {selectedVertexIds}
             {sharedGroups}
             {snapIndicators}

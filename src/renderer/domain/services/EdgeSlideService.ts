@@ -22,8 +22,18 @@ export interface SlideResult {
   readonly y: number;
   /** 滑りが発生したか */
   readonly didSlide: boolean;
+  /** 障害物を横切るため移動を拒否したか */
+  readonly blocked?: boolean;
   /** 滑っているエッジのインデックス（なければ null） */
   readonly edgeIndex: number | null;
+}
+
+interface SegmentHit {
+  readonly x: number;
+  readonly y: number;
+  readonly t: number;
+  readonly edgeIndex: number;
+  readonly ring: RingCoords;
 }
 
 /**
@@ -37,8 +47,13 @@ export interface SlideResult {
 export function slideAlongEdge(
   targetX: number,
   targetY: number,
-  obstacles: readonly RingCoords[]
+  obstacles: readonly RingCoords[],
+  source?: { readonly x: number; readonly y: number }
 ): SlideResult {
+  const firstHit = source
+    ? findFirstSegmentRingIntersection(source.x, source.y, targetX, targetY, obstacles)
+    : null;
+
   // 移動先がどの障害物ポリゴンの内部にも入らなければそのまま
   let collidingRing: RingCoords | null = null;
   for (const ring of obstacles) {
@@ -48,12 +63,133 @@ export function slideAlongEdge(
     }
   }
 
+  if (firstHit) {
+    if (!collidingRing) {
+      return {
+        x: source!.x,
+        y: source!.y,
+        didSlide: false,
+        blocked: true,
+        edgeIndex: null,
+      };
+    }
+
+    return {
+      x: firstHit.x,
+      y: firstHit.y,
+      didSlide: true,
+      edgeIndex: firstHit.edgeIndex,
+    };
+  }
+
   if (!collidingRing) {
     return { x: targetX, y: targetY, didSlide: false, edgeIndex: null };
   }
 
+  if (source && isPointOnRingBoundary(source.x, source.y, collidingRing)) {
+    return {
+      x: source.x,
+      y: source.y,
+      didSlide: false,
+      blocked: true,
+      edgeIndex: null,
+    };
+  }
+
   // 最も近いエッジを見つけて投影する
   return findNearestEdgeProjection(targetX, targetY, collidingRing);
+}
+
+function isPointOnRingBoundary(px: number, py: number, ring: RingCoords): boolean {
+  const epsilon = 1e-9;
+  for (let index = 0; index < ring.length; index += 1) {
+    const a = ring[index];
+    const b = ring[(index + 1) % ring.length];
+    const projection = projectPointOnSegment(px, py, a.x, a.y, b.x, b.y);
+    const dx = px - projection.x;
+    const dy = py - projection.y;
+    if (dx * dx + dy * dy <= epsilon * epsilon) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function findFirstSegmentRingIntersection(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  obstacles: readonly RingCoords[]
+): SegmentHit | null {
+  let bestHit: SegmentHit | null = null;
+
+  for (const ring of obstacles) {
+    for (let index = 0; index < ring.length; index += 1) {
+      const a = ring[index];
+      const b = ring[(index + 1) % ring.length];
+      const hit = getSegmentIntersection(
+        startX,
+        startY,
+        endX,
+        endY,
+        a.x,
+        a.y,
+        b.x,
+        b.y
+      );
+
+      if (!hit) {
+        continue;
+      }
+
+      if (!bestHit || hit.t < bestHit.t) {
+        bestHit = { ...hit, edgeIndex: index, ring };
+      }
+    }
+  }
+
+  return bestHit;
+}
+
+function getSegmentIntersection(
+  p1x: number,
+  p1y: number,
+  p2x: number,
+  p2y: number,
+  q1x: number,
+  q1y: number,
+  q2x: number,
+  q2y: number
+): { readonly x: number; readonly y: number; readonly t: number } | null {
+  const epsilon = 1e-9;
+  const rx = p2x - p1x;
+  const ry = p2y - p1y;
+  const sx = q2x - q1x;
+  const sy = q2y - q1y;
+  const denominator = cross2(rx, ry, sx, sy);
+  if (Math.abs(denominator) <= epsilon) {
+    return null;
+  }
+
+  const qpx = q1x - p1x;
+  const qpy = q1y - p1y;
+  const t = cross2(qpx, qpy, sx, sy) / denominator;
+  const u = cross2(qpx, qpy, rx, ry) / denominator;
+
+  if (t <= epsilon || t >= 1 - epsilon || u < -epsilon || u > 1 + epsilon) {
+    return null;
+  }
+
+  return {
+    x: p1x + t * rx,
+    y: p1y + t * ry,
+    t,
+  };
+}
+
+function cross2(ax: number, ay: number, bx: number, by: number): number {
+  return ax * by - ay * bx;
 }
 
 /**

@@ -197,9 +197,13 @@ export function collectSameLayerPolygonObstacleRings(
 
 export function resolveEdgeSlideCoordinate(
   coord: Coordinate,
-  obstacleRings: readonly RingCoords[]
+  obstacleRings: readonly RingCoords[],
+  previousCoord?: Coordinate
 ): Coordinate {
-  const slideResult = slideAlongEdge(coord.x, coord.y, obstacleRings);
+  const slideResult = slideAlongEdge(coord.x, coord.y, obstacleRings, previousCoord);
+  if (slideResult.blocked && previousCoord) {
+    return previousCoord;
+  }
   return slideResult.didSlide
     ? new Coordinate(slideResult.x, slideResult.y).clampLatitude()
     : coord;

@@ -19,6 +19,7 @@
     anchor,
     vertices,
     zoom,
+    viewWidthPx = 800,
     selectedVertexIds = new Set<string>(),
     sharedGroups = new Map<string, SharedVertexGroup>(),
     snapIndicators = [],
@@ -32,6 +33,7 @@
     anchor: FeatureAnchor;
     vertices: ReadonlyMap<string, Vertex>;
     zoom: number;
+    viewWidthPx?: number;
     selectedVertexIds?: ReadonlySet<string>;
     sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
     snapIndicators?: readonly SnapIndicator[];
@@ -74,6 +76,12 @@
   const EDGE_HANDLE_RADIUS = 3.5;
   const SNAP_INDICATOR_RADIUS = 8;
 
+  let worldUnitsPerPixel = $derived(360 / Math.max(zoom, 0.0001) / Math.max(viewWidthPx, 1));
+
+  function pxToWorld(px: number): number {
+    return px * worldUnitsPerPixel;
+  }
+
   function isActivationKey(key: string): boolean {
     return key === 'Enter' || key === ' ';
   }
@@ -90,13 +98,13 @@
       role="button"
       tabindex="0"
       aria-label="エッジ中点に頂点を追加"
-      x={mx - EDGE_HANDLE_RADIUS / zoom}
-      y={my - EDGE_HANDLE_RADIUS / zoom}
-      width={EDGE_HANDLE_RADIUS * 2 / zoom}
-      height={EDGE_HANDLE_RADIUS * 2 / zoom}
+      x={mx - pxToWorld(EDGE_HANDLE_RADIUS)}
+      y={my - pxToWorld(EDGE_HANDLE_RADIUS)}
+      width={pxToWorld(EDGE_HANDLE_RADIUS * 2)}
+      height={pxToWorld(EDGE_HANDLE_RADIUS * 2)}
       fill="rgba(255, 255, 255, 0.6)"
       stroke="#00ccff"
-      stroke-width={1 / zoom}
+      stroke-width={pxToWorld(1)}
       style="cursor: copy;"
       onmousedown={(e) => {
         e.stopPropagation();
@@ -126,10 +134,10 @@
     aria-label={isSelected ? '選択中の頂点' : '頂点を選択'}
     cx={geoToSvgX(vertex.x)}
     cy={geoToSvgY(vertex.y)}
-    r={(isSelected ? VERTEX_RADIUS + 1 : VERTEX_RADIUS) / zoom}
+    r={pxToWorld(isSelected ? VERTEX_RADIUS + 1 : VERTEX_RADIUS)}
     fill={isSelected ? '#00ccff' : shared ? '#ffaa00' : '#ffffff'}
     stroke={isSelected ? '#ffffff' : shared ? '#ff8800' : '#00ccff'}
-    stroke-width={(isSelected ? 2 : 1.5) / zoom}
+    stroke-width={pxToWorld(isSelected ? 2 : 1.5)}
     style="cursor: move;"
     onmousedown={(e) => {
       e.stopPropagation();
@@ -156,11 +164,11 @@
     class="snap-indicator"
     cx={geoToSvgX(snapLon)}
     cy={geoToSvgY(snapIndicator.y)}
-    r={SNAP_INDICATOR_RADIUS / zoom}
+    r={pxToWorld(SNAP_INDICATOR_RADIUS)}
     fill="none"
     stroke={snapIndicator.isShared ? '#ffaa00' : '#00ff88'}
-    stroke-width={2 / zoom}
-    stroke-dasharray="{3 / zoom} {2 / zoom}"
+    stroke-width={pxToWorld(2)}
+    stroke-dasharray="{pxToWorld(3)} {pxToWorld(2)}"
     opacity="0.8"
   />
 {/each}

@@ -327,4 +327,51 @@ describe('appPolygonEditing', () => {
     expect(result.x).toBe(25);
     expect(result.y).toBe(0);
   });
+
+  it('障害物を横切って反対側へ出る頂点ドラッグ座標は直前座標に留める', () => {
+    const previous = new Coordinate(15, 5);
+    const result = resolveEdgeSlideCoordinate(
+      new Coordinate(35, 5),
+      [[
+        { x: 20, y: 0 },
+        { x: 30, y: 0 },
+        { x: 30, y: 10 },
+        { x: 20, y: 10 },
+      ]],
+      previous
+    );
+
+    expect(result).toBe(previous);
+  });
+
+  it('障害物境界上から内部へ向かう頂点ドラッグ座標は直前座標に留める', () => {
+    const previous = new Coordinate(20, 5);
+    const result = resolveEdgeSlideCoordinate(
+      new Coordinate(29, 5),
+      [[
+        { x: 20, y: 0 },
+        { x: 30, y: 0 },
+        { x: 30, y: 10 },
+        { x: 20, y: 10 },
+      ]],
+      previous
+    );
+
+    expect(result).toBe(previous);
+  });
+
+  it('障害物境界上への頂点ドラッグ座標は直前座標へ戻さない', () => {
+    const result = resolveEdgeSlideCoordinate(
+      new Coordinate(20, 5),
+      [[
+        { x: 20, y: 0 },
+        { x: 30, y: 0 },
+        { x: 30, y: 10 },
+        { x: 20, y: 10 },
+      ]],
+      new Coordinate(15, 5)
+    );
+
+    expect(result).toEqual(new Coordinate(20, 5));
+  });
 });

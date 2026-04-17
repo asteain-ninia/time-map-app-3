@@ -29,6 +29,37 @@ describe('EdgeSlideService', () => {
       expect(result.edgeIndex).toBe(0); // 下辺
     });
 
+    it('直前座標がある場合、内部への移動は最初に交差したエッジで止まる', () => {
+      const result = slideAlongEdge(9, 5, [square], { x: -5, y: 5 });
+      expect(result.didSlide).toBe(true);
+      expect(result.x).toBe(0);
+      expect(result.y).toBe(5);
+      expect(result.edgeIndex).toBe(3); // 左辺
+    });
+
+    it('境界上から障害物内部へ向かう移動は反対側エッジへ飛ばさず拒否する', () => {
+      const result = slideAlongEdge(9, 5, [square], { x: 0, y: 5 });
+      expect(result.didSlide).toBe(false);
+      expect(result.blocked).toBe(true);
+      expect(result.x).toBe(0);
+      expect(result.y).toBe(5);
+    });
+
+    it('障害物を横切って反対側へ出る移動は拒否される', () => {
+      const result = slideAlongEdge(15, 5, [square], { x: -5, y: 5 });
+      expect(result.didSlide).toBe(false);
+      expect(result.blocked).toBe(true);
+      expect(result.x).toBe(-5);
+      expect(result.y).toBe(5);
+    });
+
+    it('移動先が障害物境界上の場合は横断ブロックしない', () => {
+      const result = slideAlongEdge(0, 5, [square], { x: -5, y: 5 });
+      expect(result.blocked).not.toBe(true);
+      expect(result.x).toBe(0);
+      expect(result.y).toBe(5);
+    });
+
     it('右辺に最も近い場合、右辺へ投影される', () => {
       // (9, 5) はsquare内部。最も近いエッジは右辺 x=10
       const result = slideAlongEdge(9, 5, [square]);

@@ -150,6 +150,12 @@
     validatePendingPolygon,
     validateRingDrawingVertex,
   } from '@presentation/app/appPolygonEditing';
+  import {
+    applyFeatureTranslationPreview,
+    createFeatureDragSnapshot,
+    restoreFeatureDragSnapshot,
+    type FeatureDragSnapshot,
+  } from '@presentation/app/appFeatureDragging';
 
   const container = getContainer();
   const {
@@ -181,9 +187,9 @@
 
   const toolStore = createToolStore((addToolType, coords) => {
     // 描画確定時のコールバック — UndoRedoManager経由で実行
-    const layers = layerQueries.getLayers();
-    if (layers.length === 0) return;
-    const layerId = layers[0].id;
+    const targetLayer = getAddTargetLayer();
+    if (!targetLayer) return;
+    const layerId = targetLayer.id;
     const time = timelineQueries.getCurrentTime();
     const polygonIndexInLayer = features.filter((feature) => {
       const anchor = feature.getActiveAnchor(time);
@@ -469,6 +475,8 @@
   let featureDragStartGeo = $state<{ lon: number; lat: number } | null>(null);
   /** 地物ドラッグ中の前回geo座標（差分計算用） */
   let featureDragLastGeo = $state<{ lon: number; lat: number } | null>(null);
+  /** 地物ドラッグ開始時の頂点・共有頂点代表座標 */
+  let featureDragSnapshot = $state<FeatureDragSnapshot | null>(null);
   /** 複数選択由来の頂点ドラッグか */
   let dragMovesMultipleVertices = $state(false);
   /** 頂点ドラッグ中にプレビュー移動する実頂点ID群 */
@@ -499,6 +507,22 @@
     dragMovedVertexIds = [];
     dragBaseCoordinates = new Map();
     dragBaseSharedGroupCoordinates = new Map();
+  }
+
+  function resetFeatureDragContext(): void {
+    featureDragState = null;
+    featureDragStartGeo = null;
+    featureDragLastGeo = null;
+    featureDragSnapshot = null;
+  }
+
+  function restoreFeatureDragPreview(): void {
+    if (!featureDragSnapshot) return;
+    restoreFeatureDragSnapshot(
+      featureDragSnapshot,
+      addFeature.getVertices() as Map<string, Vertex>,
+      addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>
+    );
   }
 
   function collectDraggedSelectionIds(
@@ -567,7 +591,7 @@
     return ownerFeatureIds;
   }
 
-  function resolveVertexDragCoordinate(targetCoord: Coordinate): Coordinate {
+  function resolveVertexDragCoordinate(targetCoord: Coordinate, previousCoord: Coordinate): Coordinate {
     if (!dragState || dragMovesMultipleVertices) {
       return targetCoord;
     }
@@ -583,7 +607,7 @@
       sourceFeatureIds,
       targetCoord
     );
-    return resolveEdgeSlideCoordinate(targetCoord, obstacleRings);
+    return resolveEdgeSlideCoordinate(targetCoord, obstacleRings, previousCoord);
   }
 
   function beginVertexDrag(
@@ -688,6 +712,17 @@
     layers = layerQueries.getLayers();
   }
 
+  function getAddTargetLayer(): Layer | null {
+    const layerList = layerQueries.getLayers();
+    if (focusedLayerId) {
+      const focusedLayer = layerList.find((layer) => layer.id === focusedLayerId && layer.visible);
+      if (focusedLayer) {
+        return focusedLayer;
+      }
+    }
+    return layerList.find((layer) => layer.visible) ?? layerList[0] ?? null;
+  }
+
   // --- 初期レイヤー（デフォルト1つ） ---
   if (layerQueries.getLayers().length === 0) {
     manageLayers.addLayer('default', 'レイヤー1');
@@ -790,9 +825,17 @@
     dragState = null;
     boxSelectState = null;
     snapIndicators = [];
+    restoreFeatureDragPreview();
+    refreshFeatureData();
+    resetFeatureDragContext();
     resetVertexDragContext();
     if (mode !== 'edit') {
       editInteractionMode = 'vertex';
+      ringDrawingState = null;
+      knifeDrawingState = null;
+      showSplitModal = false;
+      showMergeModal = false;
+      mergeTargetIds = [];
     }
     validationMessage = '';
     syncToolState();
@@ -890,12 +933,12 @@
       syncToolState();
       // 点ツール: 即座にポイント追加（Undo対応）
       if (addToolType === 'point') {
-        const layerList = layerQueries.getLayers();
-        if (layerList.length > 0) {
+        const targetLayer = getAddTargetLayer();
+        if (targetLayer) {
           undoRedo.execute(new AddFeatureCommand(addFeature, {
             type: 'point',
             coord: alignedCoord,
-            layerId: layerList[0].id,
+            layerId: targetLayer.id,
             time: timelineQueries.getCurrentTime(),
           }));
           refreshFeatureData();
@@ -930,7 +973,7 @@
         nextCoords,
         addToolType,
         currentTime,
-        layerQueries.getLayers()[0]?.id ?? null,
+        getAddTargetLayer()?.id ?? null,
         features,
         addFeature.getVertices()
       );
@@ -960,7 +1003,7 @@
         drawingCoords,
         addToolType,
         currentTime,
-        layerQueries.getLayers()[0]?.id ?? null,
+        getAddTargetLayer()?.id ?? null,
         features,
         addFeature.getVertices()
       );
@@ -1160,14 +1203,21 @@
     if (mergeTargetIds.length < 2 || !currentTime) return;
     const mergedFeatureId = mergeTargetIds[0];
 
-    undoRedo.execute(
-      new MergeFeatureCommand(addFeature, {
-        featureIds: mergeTargetIds,
-        currentTime,
-        mergedName,
-      })
-    );
+    try {
+      undoRedo.execute(
+        new MergeFeatureCommand(addFeature, {
+          featureIds: mergeTargetIds,
+          currentTime,
+          mergedName,
+        })
+      );
+    } catch (error) {
+      validationMessage = getValidationMessage(error);
+      showMergeModal = false;
+      return;
+    }
 
+    validationMessage = '';
     refreshFeatureData();
     showMergeModal = false;
     mergeTargetIds = [];
@@ -1308,6 +1358,15 @@
       featureDragState = startFeatureDrag(selectedFeatureId!, screenX, screenY);
       featureDragStartGeo = { lon: coord.x, lat: coord.y };
       featureDragLastGeo = { lon: coord.x, lat: coord.y };
+      const feature = getFeatureById(features, selectedFeatureId);
+      featureDragSnapshot = feature && currentTime
+        ? createFeatureDragSnapshot(
+          feature,
+          currentTime,
+          addFeature.getVertices(),
+          addFeature.getSharedVertexGroups()
+        )
+        : null;
       return;
     }
 
@@ -1328,20 +1387,20 @@
     }
 
     if (!currentTime || !featureDragStartGeo || !featureDragLastGeo) {
-      featureDragState = null;
-      featureDragStartGeo = null;
-      featureDragLastGeo = null;
+      restoreFeatureDragPreview();
+      refreshFeatureData();
+      resetFeatureDragContext();
       suppressNextMapClick = true;
       return;
     }
 
-    if (hasFeatureDragMoved(featureDragState)) {
-      const totalDx = featureDragLastGeo.lon - featureDragStartGeo.lon;
-      const totalDy = featureDragLastGeo.lat - featureDragStartGeo.lat;
+    const shouldCommit = hasFeatureDragMoved(featureDragState);
+    const totalDx = featureDragLastGeo.lon - featureDragStartGeo.lon;
+    const totalDy = featureDragLastGeo.lat - featureDragStartGeo.lat;
 
-      // プレビュー中に直接移動した分を元に戻す（逆方向に移動）
-      applyFeatureTranslation(featureDragState.featureId, -totalDx, -totalDy);
+    restoreFeatureDragPreview();
 
+    if (shouldCommit) {
       try {
         // Undo対応コマンドで正式に移動
         undoRedo.execute(
@@ -1356,47 +1415,25 @@
       } catch (error) {
         validationMessage = getValidationMessage(error);
       }
-      refreshFeatureData();
     }
 
+    refreshFeatureData();
     suppressNextMapClick = true;
-    featureDragState = null;
-    featureDragStartGeo = null;
-    featureDragLastGeo = null;
+    resetFeatureDragContext();
   }
 
   /** 地物の全頂点を平行移動する（プレビュー用） */
   function applyFeatureTranslation(featureId: string, dx: number, dy: number): void {
     const feature = features.find(f => f.id === featureId);
     if (!feature || !currentTime) return;
-    const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor) return;
-
-    const mutableVertices = addFeature.getVertices() as Map<string, Vertex>;
-    const vertexIds: string[] = [];
-
-    switch (anchor.shape.type) {
-      case 'Point':
-        vertexIds.push(anchor.shape.vertexId);
-        break;
-      case 'LineString':
-        vertexIds.push(...anchor.shape.vertexIds);
-        break;
-      case 'Polygon':
-        for (const ring of anchor.shape.rings) {
-          vertexIds.push(...ring.vertexIds);
-        }
-        break;
-    }
-
-    for (const vid of vertexIds) {
-      const vertex = mutableVertices.get(vid);
-      if (vertex) {
-        mutableVertices.set(vid, vertex.withCoordinate(
-          new Coordinate(vertex.coordinate.x + dx, vertex.coordinate.y + dy)
-        ));
-      }
-    }
+    applyFeatureTranslationPreview(
+      feature,
+      currentTime,
+      dx,
+      dy,
+      addFeature.getVertices() as Map<string, Vertex>,
+      addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>
+    );
   }
 
   /** 矩形選択の確定 */
@@ -1602,12 +1639,13 @@
   ): void {
     // 頂点ドラッグ
     if (dragState) {
+      const previousCoord = dragState.previewCoord;
       const rawCoord = createWrappedDragCoordinate(
         dragState.previewCoord.x,
         geo.lon,
         geo.lat
       );
-      const newCoord = resolveVertexDragCoordinate(rawCoord);
+      const newCoord = resolveVertexDragCoordinate(rawCoord, previousCoord);
       dragState = updateDragPreview(dragState, newCoord);
       if (dragMovesMultipleVertices) {
         applyMultiVertexDragPreview(newCoord);
@@ -1673,8 +1711,8 @@
 
   /** 右クリックメニューを表示 */
   function onContextMenu(e: MouseEvent): void {
-    // 編集・表示モードのみ
-    if (toolMode !== 'edit' && toolMode !== 'view') return;
+    // 編集モードのみ
+    if (toolMode !== 'edit') return;
     if (!selectedFeatureId) return;
 
     e.preventDefault();
@@ -1746,7 +1784,7 @@
   }
 
   function onSelectAllVertices(): void {
-    if (toolMode !== 'view' && toolMode !== 'edit') {
+    if (toolMode !== 'edit') {
       return;
     }
 
@@ -1783,7 +1821,7 @@
         selectedVertexIds = new Set();
       }
     }
-    if (e.key === 'Delete' && selectedVertexIds.size > 0) {
+    if (e.key === 'Delete' && toolMode === 'edit' && selectedVertexIds.size > 0) {
       onDeleteVertex();
     }
     if (e.ctrlKey && e.key === 'z') {
@@ -1962,7 +2000,7 @@
           {onEdgeHandleActivate}
           {onCursorGeoUpdate}
           onDragEnd={() => { commitDrag(); commitFeatureDrag(); commitBoxSelect(); }}
-          showVertexHandles={editInteractionMode !== 'featureMove'}
+          showVertexHandles={toolMode === 'edit' && editInteractionMode !== 'featureMove'}
           isRingDrawing={ringDrawingState !== null}
           ringDrawingCanConfirm={ringDrawingState ? canConfirmRing(ringDrawingState) : false}
           ringDrawingCoords={ringDrawingState?.coords ?? []}

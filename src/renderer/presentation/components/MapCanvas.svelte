@@ -28,7 +28,6 @@
 
   const BASE_MAP_URLS = [
     './assets/maps/base-map.svg',
-    './assets/maps/base-map-1.svg',
   ];
 
   let {
@@ -638,6 +637,7 @@
       {gridColor}
       {gridOpacity}
       {zoomLevel}
+      {viewWidthPx}
       {labelAreaThreshold}
       {selectedFeatureId}
       {vertexSelectionContextFeatureId}

@@ -139,7 +139,7 @@
   </div>
 {/if}
 
-{#if selectionAnchor && !isDrawing && (toolMode === 'edit' || toolMode === 'view')}
+{#if selectionAnchor && !isDrawing && toolMode === 'edit'}
   <EditToolbar
     featureType={selectionAnchor.shape.type}
     {isRingDrawing}

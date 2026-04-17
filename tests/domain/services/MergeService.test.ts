@@ -71,6 +71,7 @@ describe('MergeService', () => {
       const result = mergePolygons([sq1, sq2]);
       expect(result.success).toBe(true);
       expect(result.mergedRings.length).toBeGreaterThanOrEqual(1);
+      expect(result.mergedPolygons).toHaveLength(1);
       // 結合結果の外周リングは少なくとも4頂点
       expect(result.mergedRings[0].length).toBeGreaterThanOrEqual(4);
     });
@@ -80,6 +81,9 @@ describe('MergeService', () => {
       const sq2 = makeSquare(20, 20, 5);
       const result = mergePolygons([sq1, sq2]);
       expect(result.success).toBe(true);
+      expect(result.mergedPolygons).toHaveLength(2);
+      expect(result.mergedPolygons[0][0]).toHaveLength(4);
+      expect(result.mergedPolygons[1][0]).toHaveLength(4);
     });
 
     it('重なる正方形を結合する', () => {
@@ -108,6 +112,7 @@ describe('MergeService', () => {
       const result = mergePolygons([sq]);
       expect(result.success).toBe(true);
       expect(result.mergedRings).toEqual(sq);
+      expect(result.mergedPolygons).toEqual([sq]);
     });
   });
 

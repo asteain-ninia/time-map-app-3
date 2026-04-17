@@ -244,3 +244,26 @@ export function polygonUnion(
     isEmpty: polygons.length === 0,
   };
 }
+
+/**
+ * 複数ポリゴンの和を一括計算する。
+ *
+ * polygon-clipping の MultiPolygon 結果を保持するため、離れた領土同士を
+ * 結合しても最大領域だけに潰さない。
+ */
+export function polygonUnionAll(
+  polygons: readonly (readonly RingCoords[])[]
+): BooleanResult {
+  const nonEmptyPolygons = polygons.filter((polygon) => polygon.length > 0);
+  if (nonEmptyPolygons.length === 0) {
+    return { polygons: [], isEmpty: true };
+  }
+
+  const clipPolygons = nonEmptyPolygons.map((polygon) => toClipPolygon(polygon));
+  const result = polygonClipping.union(...clipPolygons);
+  const mergedPolygons = result.map(poly => fromClipPolygon(poly));
+  return {
+    polygons: mergedPolygons,
+    isEmpty: mergedPolygons.length === 0,
+  };
+}

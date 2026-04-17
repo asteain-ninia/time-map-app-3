@@ -8,8 +8,7 @@
  */
 
 import type { RingCoords } from './GeometryService';
-import { polygonArea } from './GeometryService';
-import { polygonUnion } from './BooleanOperationService';
+import { polygonUnionAll } from './BooleanOperationService';
 
 // ── 結合（合体） ──
 
@@ -17,8 +16,10 @@ import { polygonUnion } from './BooleanOperationService';
 export interface MergeResult {
   /** 結合が成功したか */
   readonly success: boolean;
-  /** 結合後のリング群（外周 + 穴） */
+  /** 結合後の先頭ポリゴンのリング群（後方互換用） */
   readonly mergedRings: readonly RingCoords[];
+  /** 結合後の全ポリゴン（各ポリゴンは外周 + 穴） */
+  readonly mergedPolygons: readonly (readonly RingCoords[])[];
   /** エラーメッセージ（失敗時） */
   readonly error?: string;
 }
@@ -79,25 +80,23 @@ export function mergePolygons(
   polygons: readonly (readonly RingCoords[])[]
 ): MergeResult {
   if (polygons.length === 0) {
-    return { success: false, mergedRings: [], error: '結合対象がありません' };
+    return { success: false, mergedRings: [], mergedPolygons: [], error: '結合対象がありません' };
   }
 
   if (polygons.length === 1) {
-    return { success: true, mergedRings: polygons[0] };
+    return { success: true, mergedRings: polygons[0], mergedPolygons: [polygons[0]] };
   }
 
-  // 逐次的にブーリアン和を計算
-  let accumulated: readonly RingCoords[] = polygons[0];
-  for (let i = 1; i < polygons.length; i++) {
-    const result = polygonUnion(accumulated, polygons[i]);
-    if (result.isEmpty) {
-      return { success: false, mergedRings: [], error: '結合結果が空です' };
-    }
-    // 結果のうち最大のポリゴンを使用
-    accumulated = selectLargestPolygon(result.polygons);
+  const result = polygonUnionAll(polygons);
+  if (result.isEmpty) {
+    return { success: false, mergedRings: [], mergedPolygons: [], error: '結合結果が空です' };
   }
 
-  return { success: true, mergedRings: accumulated };
+  return {
+    success: true,
+    mergedRings: result.polygons[0] ?? [],
+    mergedPolygons: result.polygons,
+  };
 }
 
 // ── 割譲/合邦（所属変更） ──
@@ -200,24 +199,4 @@ export function buildCession(
     newParentId,
     type: 'cede',
   };
-}
-
-// ── ヘルパー ──
-
-function selectLargestPolygon(
-  polygons: readonly (readonly RingCoords[])[]
-): readonly RingCoords[] {
-  if (polygons.length === 0) return [];
-  if (polygons.length === 1) return polygons[0];
-
-  let maxArea = -1;
-  let maxIdx = 0;
-  for (let i = 0; i < polygons.length; i++) {
-    const area = polygons[i].length > 0 ? polygonArea(polygons[i][0]) : 0;
-    if (area > maxArea) {
-      maxArea = area;
-      maxIdx = i;
-    }
-  }
-  return polygons[maxIdx];
 }

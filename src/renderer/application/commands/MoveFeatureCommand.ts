@@ -10,9 +10,11 @@ import type { UndoableCommand } from '../UndoRedoManager';
 import type { AddFeatureUseCase } from '../AddFeatureUseCase';
 import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
+import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import {
+  findGroupForVertex,
   getLinkedVertexIds,
 } from '@domain/services/SharedVertexService';
 import {
@@ -34,6 +36,8 @@ export class MoveFeatureCommand implements UndoableCommand {
   readonly description: string;
   private movedVertexIds: string[] = [];
   private originalCoords: Map<string, Coordinate> = new Map();
+  private originalSharedGroups: Map<string, SharedVertexGroup> = new Map();
+  private executed = false;
 
   constructor(
     private readonly featureUseCase: AddFeatureUseCase,
@@ -43,6 +47,11 @@ export class MoveFeatureCommand implements UndoableCommand {
   }
 
   execute(): void {
+    this.executed = false;
+    this.originalCoords.clear();
+    this.originalSharedGroups.clear();
+    this.movedVertexIds = [];
+
     const { featureId, dx, dy, currentTime } = this.params;
     const feature = this.featureUseCase.getFeatureById(featureId);
     if (!feature) return;
@@ -54,6 +63,7 @@ export class MoveFeatureCommand implements UndoableCommand {
     const allVertexIds = new Set<string>();
     const vertices = this.featureUseCase.getVertices();
     const groups = this.featureUseCase.getSharedVertexGroups();
+    const affectedGroupIds = new Set<string>();
 
     for (const vid of vertexIds) {
       allVertexIds.add(vid);
@@ -61,6 +71,10 @@ export class MoveFeatureCommand implements UndoableCommand {
       const linked = getLinkedVertexIds(vid, groups);
       for (const linkedVid of linked) {
         allVertexIds.add(linkedVid);
+      }
+      const group = findGroupForVertex(vid, groups);
+      if (group) {
+        affectedGroupIds.add(group.id);
       }
     }
 
@@ -90,8 +104,7 @@ export class MoveFeatureCommand implements UndoableCommand {
     );
 
     // 元の座標を保存（Undo用）
-    this.originalCoords.clear();
-    this.movedVertexIds = [];
+    this.originalSharedGroups = new Map(groups);
 
     const mutableVertices = vertices as Map<string, Vertex>;
     for (const vid of allVertexIds) {
@@ -107,9 +120,27 @@ export class MoveFeatureCommand implements UndoableCommand {
       ).clampLatitude();
       mutableVertices.set(vid, vertex.withCoordinate(newCoord));
     }
+
+    const mutableGroups = groups as Map<string, SharedVertexGroup>;
+    for (const groupId of affectedGroupIds) {
+      const group = mutableGroups.get(groupId);
+      if (!group) continue;
+      mutableGroups.set(groupId, group.withRepresentativeCoordinate(
+        new Coordinate(
+          group.representativeCoordinate.x + dx,
+          group.representativeCoordinate.y + dy
+        ).clampLatitude()
+      ));
+    }
+
+    this.executed = true;
   }
 
   undo(): void {
+    if (!this.executed) {
+      return;
+    }
+
     const mutableVertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
     for (const vid of this.movedVertexIds) {
       const original = this.originalCoords.get(vid);
@@ -117,6 +148,12 @@ export class MoveFeatureCommand implements UndoableCommand {
       const vertex = mutableVertices.get(vid);
       if (!vertex) continue;
       mutableVertices.set(vid, vertex.withCoordinate(original));
+    }
+
+    const mutableGroups = this.featureUseCase.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+    mutableGroups.clear();
+    for (const [groupId, group] of this.originalSharedGroups) {
+      mutableGroups.set(groupId, group);
     }
   }
 
