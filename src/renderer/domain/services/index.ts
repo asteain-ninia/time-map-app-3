@@ -40,6 +40,14 @@ export {
 export type { SlideResult } from './EdgeSlideService';
 
 export {
+  constrainMovingEdgesAgainstPoints,
+} from './EdgePointCollisionService';
+export type {
+  MovingEdgeConstraint,
+  ObstaclePoint,
+} from './EdgePointCollisionService';
+
+export {
   screenToWorldSnapDistance,
   findSnapCandidates,
   findGroupForVertex,

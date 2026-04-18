@@ -28,12 +28,21 @@ export interface SlideResult {
   readonly edgeIndex: number | null;
 }
 
+interface Point2 {
+  readonly x: number;
+  readonly y: number;
+}
+
 interface SegmentHit {
   readonly x: number;
   readonly y: number;
   readonly t: number;
   readonly edgeIndex: number;
   readonly ring: RingCoords;
+  readonly ax: number;
+  readonly ay: number;
+  readonly bx: number;
+  readonly by: number;
 }
 
 /**
@@ -64,22 +73,7 @@ export function slideAlongEdge(
   }
 
   if (firstHit) {
-    if (!collidingRing) {
-      return {
-        x: source!.x,
-        y: source!.y,
-        didSlide: false,
-        blocked: true,
-        edgeIndex: null,
-      };
-    }
-
-    return {
-      x: firstHit.x,
-      y: firstHit.y,
-      didSlide: true,
-      edgeIndex: firstHit.edgeIndex,
-    };
+    return slideFromSegmentHit(firstHit, targetX, targetY);
   }
 
   if (!collidingRing) {
@@ -87,6 +81,22 @@ export function slideAlongEdge(
   }
 
   if (source && isPointOnRingBoundary(source.x, source.y, collidingRing)) {
+    const boundarySlide = findBoundarySlideProjection(
+      source.x,
+      source.y,
+      targetX,
+      targetY,
+      collidingRing
+    );
+    if (boundarySlide && !isSamePointWithinEpsilon(boundarySlide, source)) {
+      return {
+        x: boundarySlide.x,
+        y: boundarySlide.y,
+        didSlide: true,
+        edgeIndex: boundarySlide.edgeIndex,
+      };
+    }
+
     return {
       x: source.x,
       y: source.y,
@@ -113,6 +123,54 @@ function isPointOnRingBoundary(px: number, py: number, ring: RingCoords): boolea
     }
   }
   return false;
+}
+
+function findBoundarySlideProjection(
+  sourceX: number,
+  sourceY: number,
+  targetX: number,
+  targetY: number,
+  ring: RingCoords
+): (Point2 & { readonly edgeIndex: number }) | null {
+  const epsilon = 1e-9;
+  let bestProjection: (Point2 & { readonly edgeIndex: number }) | null = null;
+  let bestDistance = Infinity;
+
+  for (let index = 0; index < ring.length; index += 1) {
+    const a = ring[index];
+    const b = ring[(index + 1) % ring.length];
+    const sourceProjection = projectPointOnSegment(sourceX, sourceY, a.x, a.y, b.x, b.y);
+    const sourceDx = sourceX - sourceProjection.x;
+    const sourceDy = sourceY - sourceProjection.y;
+    if (sourceDx * sourceDx + sourceDy * sourceDy > epsilon * epsilon) {
+      continue;
+    }
+
+    const targetProjection = projectPointOnSegment(targetX, targetY, a.x, a.y, b.x, b.y);
+    const targetDx = targetX - targetProjection.x;
+    const targetDy = targetY - targetProjection.y;
+    const distance = targetDx * targetDx + targetDy * targetDy;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestProjection = {
+        x: targetProjection.x,
+        y: targetProjection.y,
+        edgeIndex: index,
+      };
+    }
+  }
+
+  return bestProjection;
+}
+
+function isSamePointWithinEpsilon(
+  a: Point2,
+  b: Point2,
+  epsilon: number = 1e-9
+): boolean {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy <= epsilon * epsilon;
 }
 
 function findFirstSegmentRingIntersection(
@@ -144,7 +202,15 @@ function findFirstSegmentRingIntersection(
       }
 
       if (!bestHit || hit.t < bestHit.t) {
-        bestHit = { ...hit, edgeIndex: index, ring };
+        bestHit = {
+          ...hit,
+          edgeIndex: index,
+          ring,
+          ax: a.x,
+          ay: a.y,
+          bx: b.x,
+          by: b.y,
+        };
       }
     }
   }
@@ -190,6 +256,56 @@ function getSegmentIntersection(
 
 function cross2(ax: number, ay: number, bx: number, by: number): number {
   return ax * by - ay * bx;
+}
+
+function slideFromSegmentHit(
+  hit: SegmentHit,
+  targetX: number,
+  targetY: number
+): SlideResult {
+  const projected = projectRemainingMoveAlongSegment(
+    hit.x,
+    hit.y,
+    targetX,
+    targetY,
+    hit.ax,
+    hit.ay,
+    hit.bx,
+    hit.by
+  );
+
+  return {
+    x: projected.x,
+    y: projected.y,
+    didSlide: true,
+    edgeIndex: hit.edgeIndex,
+  };
+}
+
+function projectRemainingMoveAlongSegment(
+  contactX: number,
+  contactY: number,
+  targetX: number,
+  targetY: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number
+): Point2 {
+  const epsilon = 1e-9;
+  const edgeX = bx - ax;
+  const edgeY = by - ay;
+  const edgeLengthSq = edgeX * edgeX + edgeY * edgeY;
+  if (edgeLengthSq <= epsilon * epsilon) {
+    return { x: contactX, y: contactY };
+  }
+
+  const remainingX = targetX - contactX;
+  const remainingY = targetY - contactY;
+  const scalar = (remainingX * edgeX + remainingY * edgeY) / edgeLengthSq;
+  const projectedX = contactX + scalar * edgeX;
+  const projectedY = contactY + scalar * edgeY;
+  return projectPointOnSegment(projectedX, projectedY, ax, ay, bx, by);
 }
 
 /**

@@ -27,6 +27,32 @@ async function addPolygonFeature(page: import('@playwright/test').Page) {
   await page.keyboard.press('e');
 }
 
+async function getVisibleVertexHandleBox(page: import('@playwright/test').Page) {
+  const map = page.locator('.map-svg');
+  const mapBox = await map.boundingBox();
+  if (!mapBox) throw new Error('map not found');
+
+  const handles = page.locator('.vertex-handle');
+  const count = await handles.count();
+  for (let index = 0; index < count; index += 1) {
+    const handleBox = await handles.nth(index).boundingBox();
+    if (!handleBox) continue;
+
+    const centerX = handleBox.x + handleBox.width / 2;
+    const centerY = handleBox.y + handleBox.height / 2;
+    if (
+      centerX >= mapBox.x &&
+      centerX <= mapBox.x + mapBox.width &&
+      centerY >= mapBox.y &&
+      centerY <= mapBox.y + mapBox.height
+    ) {
+      return handleBox;
+    }
+  }
+
+  throw new Error('visible vertex handle not found');
+}
+
 test('頂点ドラッグ後も地物選択が維持される', async ({ page }) => {
   await addPolygonFeature(page);
 
@@ -37,15 +63,20 @@ test('頂点ドラッグ後も地物選択が維持される', async ({ page }) 
   await map.click({ position: { x: box.width / 2, y: box.height / 2 - 20 } });
   await page.waitForTimeout(300);
 
-  const handle = page.locator('.vertex-handle').nth(0);
-  const handleBox = await handle.boundingBox();
-  if (!handleBox) throw new Error('vertex handle not found');
+  const handleBox = await getVisibleVertexHandleBox(page);
 
   const startX = handleBox.x + handleBox.width / 2;
   const startY = handleBox.y + handleBox.height / 2;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(startX - 45, startY - 30, { steps: 12 });
+  const draggingHandleBox = await page.locator('.vertex-handle.dragging').first().boundingBox();
+  expect(draggingHandleBox?.width).toBeLessThanOrEqual(7);
+  expect(draggingHandleBox?.height).toBeLessThanOrEqual(7);
+  const draggingOutlineStyle = await page.locator('.vertex-handle.dragging').first().evaluate((element) =>
+    getComputedStyle(element).outlineStyle
+  );
+  expect(draggingOutlineStyle).toBe('none');
   await page.mouse.up();
   await page.waitForTimeout(300);
 

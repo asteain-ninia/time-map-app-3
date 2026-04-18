@@ -21,6 +21,7 @@
     zoom,
     viewWidthPx = 800,
     selectedVertexIds = new Set<string>(),
+    draggingVertexIds = new Set<string>(),
     sharedGroups = new Map<string, SharedVertexGroup>(),
     snapIndicators = [],
     visibleVertexIds = undefined as ReadonlySet<string> | undefined,
@@ -35,6 +36,7 @@
     zoom: number;
     viewWidthPx?: number;
     selectedVertexIds?: ReadonlySet<string>;
+    draggingVertexIds?: ReadonlySet<string>;
     sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
     snapIndicators?: readonly SnapIndicator[];
     visibleVertexIds?: ReadonlySet<string>;
@@ -72,7 +74,10 @@
   let snapReferenceLon = $derived(() => renderedVertexPositions()[0]?.x ?? vertexPositions()[0]?.x);
 
   /** ハンドルサイズ */
+  // TODO: マーカーサイズ指定は画面px基準と地図単位基準が混在しやすい。
+  // 次回整理時に、各マーカーがどちらの基準で描かれるべきかを明示して統一する。
   const VERTEX_RADIUS = 5;
+  const DRAGGING_VERTEX_RADIUS = 2.25;
   const EDGE_HANDLE_RADIUS = 3.5;
   const SNAP_INDICATOR_RADIUS = 8;
 
@@ -125,19 +130,21 @@
 <!-- 頂点ハンドル -->
 {#each renderedVertexPositions() as vertex (vertex.vertexId)}
   {@const isSelected = selectedVertexIds.has(vertex.vertexId)}
+  {@const isDragging = draggingVertexIds.has(vertex.vertexId)}
   {@const shared = isVertexShared(vertex.vertexId, sharedGroups)}
   <circle
     class="vertex-handle"
     class:selected={isSelected}
+    class:dragging={isDragging}
     role="button"
     tabindex="0"
     aria-label={isSelected ? '選択中の頂点' : '頂点を選択'}
     cx={geoToSvgX(vertex.x)}
     cy={geoToSvgY(vertex.y)}
-    r={pxToWorld(isSelected ? VERTEX_RADIUS + 1 : VERTEX_RADIUS)}
-    fill={isSelected ? '#00ccff' : shared ? '#ffaa00' : '#ffffff'}
-    stroke={isSelected ? '#ffffff' : shared ? '#ff8800' : '#00ccff'}
-    stroke-width={pxToWorld(isSelected ? 2 : 1.5)}
+    r={pxToWorld(isDragging ? DRAGGING_VERTEX_RADIUS : isSelected ? VERTEX_RADIUS + 1 : VERTEX_RADIUS)}
+    fill={isDragging ? '#ffffff' : isSelected ? '#00ccff' : shared ? '#ffaa00' : '#ffffff'}
+    stroke={isDragging ? '#00ccff' : isSelected ? '#ffffff' : shared ? '#ff8800' : '#00ccff'}
+    stroke-width={pxToWorld(isDragging ? 1 : isSelected ? 2 : 1.5)}
     style="cursor: move;"
     onmousedown={(e) => {
       e.stopPropagation();
@@ -172,3 +179,19 @@
     opacity="0.8"
   />
 {/each}
+
+<style>
+  .vertex-handle,
+  .edge-handle {
+    outline: none;
+  }
+
+  .vertex-handle:focus-visible:not(.dragging),
+  .edge-handle:focus-visible {
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9));
+  }
+
+  .vertex-handle.dragging {
+    filter: none;
+  }
+</style>

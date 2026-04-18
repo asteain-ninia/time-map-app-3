@@ -142,7 +142,6 @@
   import {
     alignCoordinateNearReference,
     buildValidationVertices,
-    collectSameLayerPolygonObstacleRings,
     getRingDrawingTarget,
     getSelectedPolygonReferenceLongitude,
     getValidationMessage,
@@ -150,6 +149,11 @@
     validatePendingPolygon,
     validateRingDrawingVertex,
   } from '@presentation/app/appPolygonEditing';
+  import {
+    collectMovingPolygonEdgeConstraints,
+    collectSameLayerPolygonObstacleRings,
+    collectSameLayerPolygonObstacleVertices,
+  } from '@presentation/app/edgeSlideConstraintCollectors';
   import {
     applyFeatureTranslationPreview,
     createFeatureDragSnapshot,
@@ -485,6 +489,14 @@
   let dragBaseCoordinates = $state<ReadonlyMap<string, Coordinate>>(new Map());
   /** 頂点ドラッグ開始時の共有頂点代表座標 */
   let dragBaseSharedGroupCoordinates = $state<ReadonlyMap<string, Coordinate>>(new Map());
+  /** ドラッグ中の頂点ハンドルを小さく描画する対象 */
+  let draggingVertexIds = $derived.by<ReadonlySet<string>>(() => {
+    if (!dragState) {
+      return new Set<string>();
+    }
+
+    return new Set(dragMovedVertexIds.length > 0 ? dragMovedVertexIds : [dragState.vertexId]);
+  });
 
   /** ツールストアの状態をリアクティブ変数に同期する */
   function syncToolState(): void {
@@ -600,14 +612,36 @@
       ? dragMovedVertexIds
       : [dragState.vertexId];
     const sourceFeatureIds = collectOwnerFeatureIdsForVertices(draggedVertexIds);
+    const currentVertices = addFeature.getVertices();
     const obstacleRings = collectSameLayerPolygonObstacleRings(
       features,
       currentTime,
-      addFeature.getVertices(),
+      currentVertices,
       sourceFeatureIds,
       targetCoord
     );
-    return resolveEdgeSlideCoordinate(targetCoord, obstacleRings, previousCoord);
+    const movingEdges = collectMovingPolygonEdgeConstraints(
+      features,
+      currentTime,
+      currentVertices,
+      new Set(draggedVertexIds),
+      sourceFeatureIds,
+      targetCoord
+    );
+    const obstaclePoints = collectSameLayerPolygonObstacleVertices(
+      features,
+      currentTime,
+      currentVertices,
+      sourceFeatureIds,
+      targetCoord
+    );
+    return resolveEdgeSlideCoordinate(
+      targetCoord,
+      obstacleRings,
+      previousCoord,
+      movingEdges,
+      obstaclePoints
+    );
   }
 
   function beginVertexDrag(
@@ -1987,6 +2021,7 @@
           selectionFeatureId={selectionFeatureId}
           vertexSelectionContextFeatureId={vertexSelectionContextFeatureId}
           {selectedVertexIds}
+          {draggingVertexIds}
           {sharedGroups}
           {snapIndicators}
           {onMapClick}

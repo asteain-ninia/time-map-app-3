@@ -38,6 +38,7 @@
     showVertexHandles = true,
     vertexHandleEntries = [] as readonly MapCanvasVertexHandleEntry[],
     selectedVertexIds = new Set<string>() as ReadonlySet<string>,
+    draggingVertexIds = new Set<string>() as ReadonlySet<string>,
     sharedGroups = new Map<string, SharedVertexGroup>() as ReadonlyMap<string, SharedVertexGroup>,
     snapIndicators = [] as readonly SnapIndicator[],
     suppressPassiveVertexHandles = false,
@@ -79,6 +80,7 @@
     showVertexHandles?: boolean;
     vertexHandleEntries?: readonly MapCanvasVertexHandleEntry[];
     selectedVertexIds?: ReadonlySet<string>;
+    draggingVertexIds?: ReadonlySet<string>;
     sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
     snapIndicators?: readonly SnapIndicator[];
     suppressPassiveVertexHandles?: boolean;
@@ -200,6 +202,7 @@
             zoom={zoomLevel}
             {viewWidthPx}
             {selectedVertexIds}
+            {draggingVertexIds}
             {sharedGroups}
             {snapIndicators}
             showEdgeHandles={!suppressPassiveVertexHandles && entry.showEdgeHandles}

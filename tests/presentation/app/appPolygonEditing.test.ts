@@ -9,7 +9,6 @@ import { PolygonValidationError } from '@application/polygonValidation';
 import {
   alignCoordinateNearReference,
   buildValidationVertices,
-  collectSameLayerPolygonObstacleRings,
   getAnchorReferenceLongitude,
   getRingDrawingConstraintMessage,
   getRingDrawingTarget,
@@ -19,6 +18,11 @@ import {
   validatePendingPolygon,
   validateRingDrawingVertex,
 } from '@presentation/app/appPolygonEditing';
+import {
+  collectMovingPolygonEdgeConstraints,
+  collectSameLayerPolygonObstacleRings,
+  collectSameLayerPolygonObstacleVertices,
+} from '@presentation/app/edgeSlideConstraintCollectors';
 
 const time100 = new TimePoint(100);
 
@@ -313,6 +317,68 @@ describe('appPolygonEditing', () => {
     expect(rings[0][0]).toEqual({ x: 20, y: 0 });
   });
 
+  it('同一レイヤーの他ポリゴン頂点を移動辺の障害物として集める', () => {
+    const vertices = new Map<string, Vertex>([
+      ['a1', makeVertex('a1', 0, 0)],
+      ['a2', makeVertex('a2', 10, 0)],
+      ['a3', makeVertex('a3', 10, 10)],
+      ['b1', makeVertex('b1', 20, 0)],
+      ['b2', makeVertex('b2', 30, 0)],
+      ['b3', makeVertex('b3', 30, 10)],
+      ['b4', makeVertex('b4', 20, 10)],
+      ['c1', makeVertex('c1', 40, 0)],
+      ['c2', makeVertex('c2', 50, 0)],
+      ['c3', makeVertex('c3', 50, 10)],
+      ['c4', makeVertex('c4', 40, 10)],
+    ]);
+    const source = makePolygonFeature('source', 'layer-1', [
+      { id: 'source-ring', vertexIds: ['a1', 'a2', 'a3'], ringType: 'territory', parentId: null },
+    ]);
+    const sameLayer = makePolygonFeature('same-layer', 'layer-1', [
+      { id: 'same-ring', vertexIds: ['b1', 'b2', 'b3', 'b4'], ringType: 'territory', parentId: null },
+    ]);
+    const otherLayer = makePolygonFeature('other-layer', 'layer-2', [
+      { id: 'other-ring', vertexIds: ['c1', 'c2', 'c3', 'c4'], ringType: 'territory', parentId: null },
+    ]);
+
+    const points = collectSameLayerPolygonObstacleVertices(
+      [source, sameLayer, otherLayer],
+      time100,
+      vertices,
+      new Set(['source']),
+      new Coordinate(25, 5)
+    );
+
+    expect(points).toHaveLength(4);
+    expect(points[0]).toEqual({ x: 20, y: 0 });
+  });
+
+  it('移動頂点に接続するポリゴン辺を衝突制約として集める', () => {
+    const vertices = new Map<string, Vertex>([
+      ['a1', makeVertex('a1', 0, 0)],
+      ['a2', makeVertex('a2', 10, 0)],
+      ['a3', makeVertex('a3', 10, 10)],
+      ['a4', makeVertex('a4', 0, 10)],
+    ]);
+    const source = makePolygonFeature('source', 'layer-1', [
+      { id: 'source-ring', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
+    ]);
+
+    const constraints = collectMovingPolygonEdgeConstraints(
+      [source],
+      time100,
+      vertices,
+      new Set(['a3']),
+      new Set(['source']),
+      new Coordinate(12, 12)
+    );
+
+    expect(constraints).toEqual([
+      { fixedX: 10, fixedY: 0, sourceX: 10, sourceY: 10 },
+      { fixedX: 0, fixedY: 10, sourceX: 10, sourceY: 10 },
+    ]);
+  });
+
   it('障害物内部へ入る頂点ドラッグ座標を境界へ滑らせる', () => {
     const result = resolveEdgeSlideCoordinate(
       new Coordinate(25, 2),
@@ -328,7 +394,37 @@ describe('appPolygonEditing', () => {
     expect(result.y).toBe(0);
   });
 
-  it('障害物を横切って反対側へ出る頂点ドラッグ座標は直前座標に留める', () => {
+  it('移動中の辺が他地物の頂点へ当たる座標を接触線へ滑らせる', () => {
+    const result = resolveEdgeSlideCoordinate(
+      new Coordinate(20, 10),
+      [],
+      new Coordinate(0, 10),
+      [{ fixedX: 0, fixedY: 0, sourceX: 0, sourceY: 10 }],
+      [{ x: 5, y: 5 }]
+    );
+
+    expect(result).toEqual(new Coordinate(15, 15));
+  });
+
+  it('辺-点滑りの結果として移動辺が障害物面の内部を通る場合は安全な境界座標へ逃がす', () => {
+    const previous = new Coordinate(-5, 30);
+    const result = resolveEdgeSlideCoordinate(
+      new Coordinate(30, -15),
+      [[
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 10 },
+        { x: 0, y: 10 },
+      ]],
+      previous,
+      [{ fixedX: -30, fixedY: -30, sourceX: -5, sourceY: 30 }],
+      [{ x: 0, y: 0 }]
+    );
+
+    expect(result).toEqual(new Coordinate(10, 0));
+  });
+
+  it('障害物を横切って反対側へ出る頂点ドラッグ座標は最初の接触辺に留める', () => {
     const previous = new Coordinate(15, 5);
     const result = resolveEdgeSlideCoordinate(
       new Coordinate(35, 5),
@@ -341,7 +437,7 @@ describe('appPolygonEditing', () => {
       previous
     );
 
-    expect(result).toBe(previous);
+    expect(result).toEqual(new Coordinate(20, 5));
   });
 
   it('障害物境界上から内部へ向かう頂点ドラッグ座標は直前座標に留める', () => {

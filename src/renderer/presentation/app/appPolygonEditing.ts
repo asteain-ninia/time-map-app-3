@@ -6,6 +6,11 @@ import { Coordinate } from '@domain/value-objects/Coordinate';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { RingCoords } from '@domain/services/GeometryService';
 import { slideAlongEdge } from '@domain/services/EdgeSlideService';
+import {
+  constrainMovingEdgesAgainstPoints,
+  type MovingEdgeConstraint,
+  type ObstaclePoint,
+} from '@domain/services/EdgePointCollisionService';
 import type { RingDrawingState } from '@infrastructure/rendering/ringDrawingManager';
 import {
   isRingDrawingPointAllowed,
@@ -17,14 +22,14 @@ import {
   validatePolygonOrThrow,
 } from '@application/polygonValidation';
 import {
-  shiftLongitudeSequenceNearReference,
-  unwrapLongitudeSequence,
   wrapLongitudeNearReference,
 } from '@infrastructure/rendering/featureRenderingUtils';
 
 type PolygonAnchor = FeatureAnchor & {
   readonly shape: Extract<FeatureAnchor['shape'], { readonly type: 'Polygon' }>;
 };
+
+export type { MovingEdgeConstraint, ObstaclePoint };
 
 export interface RingDrawingTarget {
   readonly feature: Feature;
@@ -125,88 +130,30 @@ export function alignCoordinateNearReference(
     : new Coordinate(wrapLongitudeNearReference(coord.x, referenceLon), coord.y);
 }
 
-export function collectSameLayerPolygonObstacleRings(
-  features: readonly Feature[],
-  currentTime: TimePoint | undefined,
-  vertices: ReadonlyMap<string, Vertex>,
-  sourceFeatureIds: ReadonlySet<string>,
-  referenceCoord: Coordinate
-): RingCoords[] {
-  if (!currentTime || sourceFeatureIds.size === 0) {
-    return [];
-  }
-
-  const sourceLayerIds = new Set<string>();
-  for (const feature of features) {
-    if (!sourceFeatureIds.has(feature.id)) {
-      continue;
-    }
-    const anchor = feature.getActiveAnchor(currentTime);
-    if (anchor) {
-      sourceLayerIds.add(anchor.placement.layerId);
-    }
-  }
-
-  if (sourceLayerIds.size === 0) {
-    return [];
-  }
-
-  const rings: RingCoords[] = [];
-  for (const feature of features) {
-    if (sourceFeatureIds.has(feature.id)) {
-      continue;
-    }
-
-    const anchor = feature.getActiveAnchor(currentTime);
-    if (
-      !anchor ||
-      anchor.shape.type !== 'Polygon' ||
-      !sourceLayerIds.has(anchor.placement.layerId)
-    ) {
-      continue;
-    }
-
-    for (const ring of anchor.shape.rings) {
-      if (ring.ringType !== 'territory') {
-        continue;
-      }
-
-      const rawCoords = ring.vertexIds
-        .map((vertexId) => vertices.get(vertexId))
-        .filter((vertex): vertex is Vertex => vertex !== undefined)
-        .map((vertex) => ({ x: vertex.x, y: vertex.y }));
-
-      if (rawCoords.length < 3) {
-        continue;
-      }
-
-      const unwrappedLongitudes = unwrapLongitudeSequence(rawCoords.map((coord) => coord.x));
-      const shiftedLongitudes = shiftLongitudeSequenceNearReference(
-        unwrappedLongitudes,
-        referenceCoord.x
-      );
-      rings.push(rawCoords.map((coord, index) => ({
-        x: shiftedLongitudes[index],
-        y: coord.y,
-      })));
-    }
-  }
-
-  return rings;
-}
-
 export function resolveEdgeSlideCoordinate(
   coord: Coordinate,
   obstacleRings: readonly RingCoords[],
-  previousCoord?: Coordinate
+  previousCoord?: Coordinate,
+  movingEdges: readonly MovingEdgeConstraint[] = [],
+  obstaclePoints: readonly ObstaclePoint[] = []
 ): Coordinate {
   const slideResult = slideAlongEdge(coord.x, coord.y, obstacleRings, previousCoord);
   if (slideResult.blocked && previousCoord) {
     return previousCoord;
   }
-  return slideResult.didSlide
+  const ringConstrainedCoord = slideResult.didSlide
     ? new Coordinate(slideResult.x, slideResult.y).clampLatitude()
     : coord;
+  const edgePointResult = constrainMovingEdgesAgainstPoints(
+    ringConstrainedCoord.x,
+    ringConstrainedCoord.y,
+    movingEdges,
+    obstaclePoints,
+    obstacleRings
+  );
+  return edgePointResult.didSlide
+    ? new Coordinate(edgePointResult.x, edgePointResult.y).clampLatitude()
+    : ringConstrainedCoord;
 }
 
 export function getRingDrawingConstraintMessage(

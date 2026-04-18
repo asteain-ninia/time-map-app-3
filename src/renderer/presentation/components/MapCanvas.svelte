@@ -54,6 +54,7 @@
     selectionFeatureId = null as string | null,
     vertexSelectionContextFeatureId = null as string | null,
     selectedVertexIds = new Set<string>() as ReadonlySet<string>,
+    draggingVertexIds = new Set<string>() as ReadonlySet<string>,
     sharedGroups = new Map<string, SharedVertexGroup>() as ReadonlyMap<string, SharedVertexGroup>,
     snapIndicators = [] as readonly SnapIndicator[],
     onMapClick,
@@ -121,6 +122,7 @@
     selectionFeatureId?: string | null;
     vertexSelectionContextFeatureId?: string | null;
     selectedVertexIds?: ReadonlySet<string>;
+    draggingVertexIds?: ReadonlySet<string>;
     sharedGroups?: ReadonlyMap<string, SharedVertexGroup>;
     snapIndicators?: readonly SnapIndicator[];
     onMapClick?: (coord: Coordinate, featureId?: string | null) => void;
@@ -659,6 +661,7 @@
       {showVertexHandles}
       vertexHandleEntries={vertexHandleEntries()}
       {selectedVertexIds}
+      {draggingVertexIds}
       {sharedGroups}
       {snapIndicators}
       suppressPassiveVertexHandles={suppressPassiveVertexHandles}
