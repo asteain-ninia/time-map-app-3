@@ -16,7 +16,12 @@ import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { RingCoords } from '@domain/services/GeometryService';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { Ring } from '@domain/value-objects/Ring';
-import { splitByLine, splitByClosed } from '@domain/services/KnifeService';
+import { splitPolygonsByLine, splitPolygonsByClosed } from '@domain/services/KnifeService';
+import {
+  buildPolygonRingDrafts,
+  rebuildTerritoryHierarchy,
+  resolvePolygonShapePolygons,
+} from '@domain/services/PolygonShapeService';
 import { eventBus } from '../EventBus';
 
 export interface SplitFeatureParams {
@@ -57,25 +62,25 @@ export class SplitFeatureCommand implements UndoableCommand {
     this.originalAnchors = [...feature.anchors];
 
     const vertices = this.featureUseCase.getVertices();
-    const polygonRings = this.resolveRings(anchor.shape, vertices);
+    const polygons = resolvePolygonShapePolygons(anchor.shape, vertices);
 
     const result = isClosed
-      ? splitByClosed(polygonRings, cuttingLine)
-      : splitByLine(polygonRings, cuttingLine);
+      ? splitPolygonsByClosed(polygons, cuttingLine)
+      : splitPolygonsByLine(polygons, cuttingLine);
 
     if (!result.success) return;
 
     const verticesBefore = new Set(vertices.keys());
 
     // pieceA → 元の地物を更新
-    const pieceAShape = this.createPolygonShape(result.pieceA, 'a');
+    const pieceAShape = this.createPolygonShape(result.pieceAPolygons, 'a');
     const updatedAnchor = anchor.withShape(pieceAShape);
     const newAnchors = feature.anchors.map(a => a.id === anchor.id ? updatedAnchor : a);
     const updatedFeature = feature.withAnchors(newAnchors);
     (this.featureUseCase.getFeaturesMap() as Map<string, Feature>).set(featureId, updatedFeature);
 
     // pieceB → 新しい地物として追加
-    const pieceBShape = this.createPolygonShape(result.pieceB, 'b');
+    const pieceBShape = this.createPolygonShape(result.pieceBPolygons, 'b');
     const newFeature = this.featureUseCase.addPolygonFromShape(
       pieceBShape,
       anchor.placement.layerId,
@@ -119,41 +124,33 @@ export class SplitFeatureCommand implements UndoableCommand {
     }
   }
 
-  private resolveRings(
-    shape: FeatureShape & { type: 'Polygon' },
-    vertices: ReadonlyMap<string, Vertex>
-  ): RingCoords[] {
-    return shape.rings.map(ring => {
-      return ring.vertexIds.map(vid => {
-        const v = vertices.get(vid);
-        return v ? { x: v.x, y: v.y } : { x: 0, y: 0 };
-      });
-    });
-  }
-
   private createPolygonShape(
-    ringCoords: readonly RingCoords[],
+    polygons: readonly (readonly RingCoords[])[],
     suffix: string
   ): FeatureShape & { type: 'Polygon' } {
     const mutableVertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
     const rings: Ring[] = [];
+    const drafts = buildPolygonRingDrafts(polygons, () => this.createSplitRingId(suffix));
 
-    for (let i = 0; i < ringCoords.length; i++) {
-      const coords = ringCoords[i];
+    for (const draft of rebuildTerritoryHierarchy(drafts)) {
       const vertexIds: string[] = [];
-
-      for (const c of coords) {
-        const id = `v-split-${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      for (const c of draft.coords) {
+        const id = this.createSplitVertexId(suffix);
         const vertex = new Vertex(id, new Coordinate(c.x, c.y));
         mutableVertices.set(id, vertex);
         vertexIds.push(id);
       }
-
-      const ringId = `ring-split-${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const ringType: 'territory' | 'hole' = i === 0 ? 'territory' : 'hole';
-      rings.push(new Ring(ringId, vertexIds, ringType, i === 0 ? null : rings[0]?.id ?? null));
+      rings.push(new Ring(draft.id, vertexIds, draft.ringType, draft.parentId));
     }
 
     return { type: 'Polygon', rings };
+  }
+
+  private createSplitVertexId(suffix: string): string {
+    return `v-split-${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  private createSplitRingId(suffix: string): string {
+    return `ring-split-${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 }

@@ -18,6 +18,8 @@
   import { getContainer } from '@infrastructure/DIContainer';
   import { AddFeatureCommand } from '@application/commands/AddFeatureCommand';
   import { DeleteFeatureCommand } from '@application/commands/DeleteFeatureCommand';
+  import { DeleteVerticesCommand, type DeleteVertexParams } from '@application/commands/DeleteVertexCommand';
+  import { InsertVertexCommand } from '@application/commands/InsertVertexCommand';
   import { MoveVertexCommand } from '@application/commands/MoveVertexCommand';
   import { MoveVerticesCommand } from '@application/commands/MoveVerticesCommand';
   import { eventBus } from '@application/EventBus';
@@ -88,7 +90,7 @@
     startKnifeDrawing,
     addKnifeVertex,
     undoKnifeVertex,
-    canConfirmKnife as canConfirmKnifeDrawing,
+    canConfirmKnifeForPolygons as canConfirmKnifeDrawing,
     type KnifeDrawingState,
   } from '@infrastructure/rendering/knifeDrawingManager';
   import { SplitFeatureCommand } from '@application/commands/SplitFeatureCommand';
@@ -109,6 +111,7 @@
   import {
     validatePolygonOrThrow,
   } from '@application/polygonValidation';
+  import { resolvePolygonShapePolygons } from '@domain/services/PolygonShapeService';
   import { createDefaultPolygonStyle } from '@infrastructure/StyleResolver';
   import {
     wrapLongitudeNearReference,
@@ -1205,14 +1208,8 @@
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor || anchor.shape.type !== 'Polygon') return false;
 
-    const verts = addFeature.getVertices();
-    const polygonRings = anchor.shape.rings.map(ring =>
-      ring.vertexIds.map(vid => {
-        const v = verts.get(vid);
-        return v ? { x: v.x, y: v.y } : { x: 0, y: 0 };
-      })
-    );
-    return canConfirmKnifeDrawing(knifeDrawingState, polygonRings);
+    const polygons = resolvePolygonShapePolygons(anchor.shape, addFeature.getVertices());
+    return canConfirmKnifeDrawing(knifeDrawingState, polygons);
   }
 
   // --- 結合ツール ---
@@ -1328,29 +1325,56 @@
     return map;
   }
 
-  function onDeleteVertex(): void {
-    // 頂点削除は後続で詳細化（コンテキストメニューと共通）
-    if (selectedVertexIds.size === 0 || !selectionFeatureId || !currentTime) return;
+  function createDeleteVertexParams(vertexId: string): DeleteVertexParams | null {
+    if (!selectionFeatureId || !currentTime) return null;
     const feature = features.find((f) => f.id === selectionFeatureId);
-    if (!feature) return;
+    if (!feature) return null;
     const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor) return;
+    if (!anchor) return null;
+
+    if (anchor.shape.type === 'LineString') {
+      return {
+        type: 'line',
+        featureId: selectionFeatureId,
+        currentTime,
+        vertexId,
+      };
+    }
+
+    if (anchor.shape.type === 'Polygon') {
+      for (const ring of anchor.shape.rings) {
+        if (ring.vertexIds.includes(vertexId)) {
+          return {
+            type: 'polygon',
+            featureId: selectionFeatureId,
+            currentTime,
+            ringId: ring.id,
+            vertexId,
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function onDeleteVertex(): void {
+    if (selectedVertexIds.size === 0 || !selectionFeatureId || !currentTime) return;
+
+    const params: DeleteVertexParams[] = [];
 
     for (const vertexId of selectedVertexIds) {
-      try {
-        if (anchor.shape.type === 'LineString') {
-          vertexEdit.deleteVertexFromLine(selectionFeatureId, currentTime, vertexId);
-        } else if (anchor.shape.type === 'Polygon') {
-          for (const ring of anchor.shape.rings) {
-            if (ring.vertexIds.includes(vertexId)) {
-              vertexEdit.deleteVertexFromPolygon(selectionFeatureId, currentTime, ring.id, vertexId);
-              break;
-            }
-          }
-        }
-      } catch {
-        // 最小頂点数エラー等
+      const param = createDeleteVertexParams(vertexId);
+      if (param) {
+        params.push(param);
       }
+    }
+
+    if (params.length === 0) return;
+    try {
+      undoRedo.execute(new DeleteVerticesCommand(vertexEdit, addFeature, params));
+    } catch {
+      return;
     }
     selectedVertexIds = new Set();
     refreshFeatureData();
@@ -1520,7 +1544,15 @@
       if (anchor.shape.type === 'LineString') {
         const edgeIndex = anchor.shape.vertexIds.indexOf(v1);
         if (edgeIndex >= 0) {
-          return vertexEdit.insertVertexOnLine(selectionFeatureId, currentTime, edgeIndex, midpoint);
+          const command = new InsertVertexCommand(vertexEdit, addFeature, {
+            type: 'line',
+            featureId: selectionFeatureId,
+            currentTime,
+            edgeIndex,
+            coordinate: midpoint,
+          });
+          undoRedo.execute(command);
+          return command.insertedVertexId;
         }
         return null;
       }
@@ -1531,7 +1563,16 @@
           for (let i = 0; i < ids.length; i++) {
             const next = (i + 1) % ids.length;
             if (ids[i] === v1 && ids[next] === v2) {
-              return vertexEdit.insertVertexOnPolygon(selectionFeatureId, currentTime, ring.id, i, midpoint);
+              const command = new InsertVertexCommand(vertexEdit, addFeature, {
+                type: 'polygon',
+                featureId: selectionFeatureId,
+                currentTime,
+                ringId: ring.id,
+                edgeIndex: i,
+                coordinate: midpoint,
+              });
+              undoRedo.execute(command);
+              return command.insertedVertexId;
             }
           }
         }

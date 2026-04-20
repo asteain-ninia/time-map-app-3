@@ -8,6 +8,7 @@ import {
   isNearFirstVertex,
   validateKnifeLine,
   canConfirmKnife,
+  canConfirmKnifeForPolygons,
 } from '@infrastructure/rendering/knifeDrawingManager';
 
 /** テスト用ポリゴン（10x10の正方形） */
@@ -17,6 +18,19 @@ const squarePolygon = [
     { x: 10, y: 0 },
     { x: 10, y: 10 },
     { x: 0, y: 10 },
+  ],
+];
+
+/** 複数 territory のテスト用ポリゴン */
+const multiTerritoryPolygons = [
+  squarePolygon,
+  [
+    [
+      { x: 20, y: 0 },
+      { x: 30, y: 0 },
+      { x: 30, y: 10 },
+      { x: 20, y: 10 },
+    ],
   ],
 ];
 
@@ -183,6 +197,15 @@ describe('knifeDrawingManager', () => {
       state = addKnifeVertex(state, new Coordinate(7, 7));
       state = setKnifeClosed(state, true);
       expect(canConfirmKnife(state, squarePolygon)).toBe(true);
+    });
+
+    it('複数territoryの2個目を横断する開線を確定可能にする', () => {
+      let state = startKnifeDrawing('f1');
+      state = addKnifeVertex(state, new Coordinate(25, -1));
+      state = addKnifeVertex(state, new Coordinate(25, 11));
+
+      expect(canConfirmKnife(state, multiTerritoryPolygons.flat())).toBe(false);
+      expect(canConfirmKnifeForPolygons(state, multiTerritoryPolygons)).toBe(true);
     });
   });
 });

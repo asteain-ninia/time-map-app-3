@@ -10,12 +10,9 @@
  * 穴リング横切り時の処理も含む（polygon-clipping が自動的に処理する）。
  */
 
-import polygonClipping from 'polygon-clipping';
 import type { RingCoords } from './GeometryService';
 import { polygonArea, segmentsIntersect, isPointInPolygon } from './GeometryService';
 import {
-  toClipPolygon,
-  fromClipPolygon,
   polygonDifference,
   polygonIntersection,
 } from './BooleanOperationService';
@@ -28,6 +25,10 @@ export interface KnifeSplitResult {
   readonly pieceA: readonly RingCoords[];
   /** 分割片B（通常は小さい方） */
   readonly pieceB: readonly RingCoords[];
+  /** 分割片Aの全ポリゴン */
+  readonly pieceAPolygons: readonly (readonly RingCoords[])[];
+  /** 分割片Bの全ポリゴン */
+  readonly pieceBPolygons: readonly (readonly RingCoords[])[];
   /** エラーメッセージ（失敗時） */
   readonly error?: string;
 }
@@ -115,6 +116,29 @@ function buildHalfPlane(
 }
 
 /**
+ * 切断線の端点キャップで対象ポリゴンを切り落とさないよう、線方向へ延長する。
+ */
+function extendCuttingLine(
+  line: readonly { x: number; y: number }[],
+  extent: number
+): { x: number; y: number }[] {
+  if (line.length < 2) return [...line];
+
+  const first = line[0];
+  const second = line[1];
+  const last = line[line.length - 1];
+  const previous = line[line.length - 2];
+  const startDir = normalize(first.x - second.x, first.y - second.y);
+  const endDir = normalize(last.x - previous.x, last.y - previous.y);
+
+  return [
+    { x: first.x + startDir.x * extent, y: first.y + startDir.y * extent },
+    ...line,
+    { x: last.x + endDir.x * extent, y: last.y + endDir.y * extent },
+  ];
+}
+
+/**
  * 二分割: 開いた分断線でポリゴンを2つに分割する
  *
  * §2.3.3.2: ナイフツールで面を横断する分断線を作成
@@ -127,35 +151,61 @@ export function splitByLine(
   polygon: readonly RingCoords[],
   cuttingLine: readonly { x: number; y: number }[]
 ): KnifeSplitResult {
-  const validation = validateCuttingLine(polygon, cuttingLine, false);
+  return splitPolygonsByLine([polygon], cuttingLine);
+}
+
+/**
+ * 二分割: 複数ポリゴンを開いた分断線で分割する
+ */
+export function splitPolygonsByLine(
+  polygons: readonly (readonly RingCoords[])[],
+  cuttingLine: readonly { x: number; y: number }[]
+): KnifeSplitResult {
+  const validation = validateCuttingLineForPolygons(polygons, cuttingLine, false);
   if (!validation.valid) {
-    return { success: false, pieceA: [], pieceB: [], error: validation.error };
+    return createFailedResult(validation.error);
   }
 
   // 分断線の左右の半平面ポリゴンを作り、
   // polygon と各半平面の交差で2片を得る
-  const extent = computeExtent(polygon) * 2;
+  const extent = computePolygonsExtent(polygons) * 4;
+  const extendedLine = extendCuttingLine(cuttingLine, extent);
 
-  const leftHalf = buildHalfPlane(cuttingLine, 'left', extent);
-  const rightHalf = buildHalfPlane(cuttingLine, 'right', extent);
+  const leftHalf = buildHalfPlane(extendedLine, 'left', extent);
+  const rightHalf = buildHalfPlane(extendedLine, 'right', extent);
 
-  const pieceAResult = polygonIntersection(polygon, [leftHalf]);
-  const pieceBResult = polygonIntersection(polygon, [rightHalf]);
+  const pieceAPolygons: RingCoords[][] = [];
+  const pieceBPolygons: RingCoords[][] = [];
+  for (const polygon of polygons) {
+    const outerRing = polygon[0];
+    const crossesThisPolygon =
+      outerRing !== undefined && countLineRingIntersections(cuttingLine, outerRing) >= 2;
 
-  if (pieceAResult.isEmpty || pieceBResult.isEmpty) {
-    return {
-      success: false,
-      pieceA: [],
-      pieceB: [],
-      error: '分断線がポリゴンを2つに分割していません',
-    };
+    const pieceAResult = polygonIntersection(polygon, [leftHalf]);
+    const pieceBResult = polygonIntersection(polygon, [rightHalf]);
+    if (!crossesThisPolygon) {
+      const intactPolygon = polygon.map((ring) => [...ring]);
+      if (sumPolygonsArea(pieceBResult.polygons) > sumPolygonsArea(pieceAResult.polygons)) {
+        pieceBPolygons.push(intactPolygon);
+      } else {
+        pieceAPolygons.push(intactPolygon);
+      }
+      continue;
+    }
+
+    if (!pieceAResult.isEmpty) {
+      pieceAPolygons.push(...pieceAResult.polygons.map((piece) => piece.map((ring) => [...ring])));
+    }
+    if (!pieceBResult.isEmpty) {
+      pieceBPolygons.push(...pieceBResult.polygons.map((piece) => piece.map((ring) => [...ring])));
+    }
   }
 
-  // 各片のリング群を取得（最大のポリゴンを採用）
-  const pieceA = selectLargestPolygon(pieceAResult.polygons);
-  const pieceB = selectLargestPolygon(pieceBResult.polygons);
+  if (pieceAPolygons.length === 0 || pieceBPolygons.length === 0) {
+    return createFailedResult('分断線がポリゴンを2つに分割していません');
+  }
 
-  return { success: true, pieceA, pieceB };
+  return createSuccessResult(pieceAPolygons, pieceBPolygons);
 }
 
 /**
@@ -171,29 +221,71 @@ export function splitByClosed(
   polygon: readonly RingCoords[],
   closedLine: readonly { x: number; y: number }[]
 ): KnifeSplitResult {
-  const validation = validateCuttingLine(polygon, closedLine, true);
+  return splitPolygonsByClosed([polygon], closedLine);
+}
+
+/**
+ * 閉線分割: 複数ポリゴンを閉じた分断線で内外に分割する
+ */
+export function splitPolygonsByClosed(
+  polygons: readonly (readonly RingCoords[])[],
+  closedLine: readonly { x: number; y: number }[]
+): KnifeSplitResult {
+  const validation = validateCuttingLineForPolygons(polygons, closedLine, true);
   if (!validation.valid) {
-    return { success: false, pieceA: [], pieceB: [], error: validation.error };
+    return createFailedResult(validation.error);
   }
 
-  // 閉線の内側 = polygon ∩ closedLine
-  const insideResult = polygonIntersection(polygon, [closedLine]);
-  // 閉線の外側 = polygon - closedLine
-  const outsideResult = polygonDifference(polygon, [closedLine]);
-
-  if (insideResult.isEmpty || outsideResult.isEmpty) {
-    return {
-      success: false,
-      pieceA: [],
-      pieceB: [],
-      error: '閉線がポリゴンを2つに分割していません',
-    };
+  const outsidePolygons: RingCoords[][] = [];
+  const insidePolygons: RingCoords[][] = [];
+  for (const polygon of polygons) {
+    // 閉線の内側 = polygon ∩ closedLine
+    const insideResult = polygonIntersection(polygon, [closedLine]);
+    // 閉線の外側 = polygon - closedLine
+    const outsideResult = polygonDifference(polygon, [closedLine]);
+    if (!outsideResult.isEmpty) {
+      outsidePolygons.push(...outsideResult.polygons.map((piece) => piece.map((ring) => [...ring])));
+    }
+    if (!insideResult.isEmpty) {
+      insidePolygons.push(...insideResult.polygons.map((piece) => piece.map((ring) => [...ring])));
+    }
   }
 
-  const pieceA = selectLargestPolygon(outsideResult.polygons); // 外側
-  const pieceB = selectLargestPolygon(insideResult.polygons);  // 内側
+  if (insidePolygons.length === 0 || outsidePolygons.length === 0) {
+    return createFailedResult('閉線がポリゴンを2つに分割していません');
+  }
 
-  return { success: true, pieceA, pieceB };
+  return createSuccessResult(outsidePolygons, insidePolygons);
+}
+
+function createFailedResult(error?: string): KnifeSplitResult {
+  return {
+    success: false,
+    pieceA: [],
+    pieceB: [],
+    pieceAPolygons: [],
+    pieceBPolygons: [],
+    error,
+  };
+}
+
+function createSuccessResult(
+  pieceAPolygons: readonly (readonly RingCoords[])[],
+  pieceBPolygons: readonly (readonly RingCoords[])[]
+): KnifeSplitResult {
+  return {
+    success: true,
+    pieceA: selectLargestPolygon(pieceAPolygons),
+    pieceB: selectLargestPolygon(pieceBPolygons),
+    pieceAPolygons: clonePolygons(pieceAPolygons),
+    pieceBPolygons: clonePolygons(pieceBPolygons),
+  };
+}
+
+function clonePolygons(
+  polygons: readonly (readonly RingCoords[])[]
+): RingCoords[][] {
+  return polygons.map((polygon) => polygon.map((ring) => [...ring]));
 }
 
 /**
@@ -208,6 +300,14 @@ export function validateCuttingLine(
   line: readonly { x: number; y: number }[],
   isClosed: boolean
 ): KnifeValidation {
+  return validateCuttingLineForPolygons([polygon], line, isClosed);
+}
+
+export function validateCuttingLineForPolygons(
+  polygons: readonly (readonly RingCoords[])[],
+  line: readonly { x: number; y: number }[],
+  isClosed: boolean
+): KnifeValidation {
   if (line.length < 2) {
     return { valid: false, error: '分断線には2点以上が必要です' };
   }
@@ -216,21 +316,28 @@ export function validateCuttingLine(
     return { valid: false, error: '閉線には3点以上が必要です' };
   }
 
-  if (polygon.length === 0 || polygon[0].length < 3) {
+  if (
+    polygons.length === 0 ||
+    polygons.every((polygon) => polygon.length === 0 || polygon[0].length < 3)
+  ) {
     return { valid: false, error: '有効なポリゴンが必要です' };
   }
 
   if (!isClosed) {
-    // 二分割: 分断線がポリゴンの外周と少なくとも2回交差するか確認
-    const outerRing = polygon[0];
-    const intersections = countLineRingIntersections(line, outerRing);
-    if (intersections < 2) {
+    // 二分割: 分断線が少なくとも1つのポリゴン外周を2回以上横断するか確認
+    const crossesAnyPolygon = polygons.some((polygon) => {
+      const outerRing = polygon[0];
+      return outerRing ? countLineRingIntersections(line, outerRing) >= 2 : false;
+    });
+    if (!crossesAnyPolygon) {
       return { valid: false, error: '分断線がポリゴンを横断していません（外周と2回以上交差する必要があります）' };
     }
   } else {
     // 閉線: 閉線の少なくとも一部がポリゴン内部にあるか確認
-    const outerRing = polygon[0];
-    const hasInside = line.some(p => isPointInPolygon(p.x, p.y, outerRing));
+    const hasInside = polygons.some((polygon) => {
+      const outerRing = polygon[0];
+      return outerRing && line.some(p => isPointInPolygon(p.x, p.y, outerRing));
+    });
     if (!hasInside) {
       return { valid: false, error: '閉線がポリゴン内部に含まれていません' };
     }
@@ -284,17 +391,33 @@ function selectLargestPolygon(
   return polygons[maxIdx].map(r => [...r]);
 }
 
+function sumPolygonsArea(polygons: readonly (readonly RingCoords[])[]): number {
+  return polygons.reduce((sum, polygon) => sum + polygonNetArea(polygon), 0);
+}
+
+function polygonNetArea(polygon: readonly RingCoords[]): number {
+  if (polygon.length === 0) return 0;
+  const [outer, ...holes] = polygon;
+  return polygonArea(outer) - holes.reduce((sum, hole) => sum + polygonArea(hole), 0);
+}
+
 /**
  * ポリゴンの外接矩形の対角線長を計算（エクステント）
  */
 function computeExtent(polygon: readonly RingCoords[]): number {
+  return computePolygonsExtent([polygon]);
+}
+
+function computePolygonsExtent(polygons: readonly (readonly RingCoords[])[]): number {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const ring of polygon) {
-    for (const p of ring) {
-      if (p.x < minX) minX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y > maxY) maxY = p.y;
+  for (const polygon of polygons) {
+    for (const ring of polygon) {
+      for (const p of ring) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
     }
   }
   const dx = maxX - minX;

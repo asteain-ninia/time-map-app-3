@@ -1,14 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import {
   splitByLine,
+  splitPolygonsByLine,
   splitByClosed,
   validateCuttingLine,
+  validateCuttingLineForPolygons,
 } from '@domain/services/KnifeService';
-import type { RingCoords } from '@domain/services/GeometryService';
+import { polygonArea, type RingCoords } from '@domain/services/GeometryService';
 
 /** 簡単な正方形ポリゴン (0,0)-(10,0)-(10,10)-(0,10) */
 const square: RingCoords[] = [
   [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
+];
+
+/** 離れた正方形ポリゴン (20,0)-(30,0)-(30,10)-(20,10) */
+const shiftedSquare: RingCoords[] = [
+  [{ x: 20, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 10 }, { x: 20, y: 10 }],
 ];
 
 /** 穴付きポリゴン */
@@ -22,6 +29,20 @@ const squareWithHole: RingCoords[] = [
 /** 長方形ポリゴン (0,0)-(20,0)-(20,10)-(0,10) */
 const rectangle: RingCoords[] = [
   [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }],
+];
+
+/** C字形ポリゴン。右側を縦に切ると片側が2つの離れた領域になる */
+const cShape: RingCoords[] = [
+  [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 2 },
+    { x: 2, y: 2 },
+    { x: 2, y: 8 },
+    { x: 10, y: 8 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+  ],
 ];
 
 describe('KnifeService', () => {
@@ -65,6 +86,16 @@ describe('KnifeService', () => {
         false
       );
       expect(result.valid).toBe(true);
+    });
+
+    it('複数territoryの交差回数を合算して横断扱いにしない', () => {
+      const result = validateCuttingLineForPolygons(
+        [square, shiftedSquare],
+        [{ x: 5, y: 5 }, { x: 25, y: 5 }],
+        false
+      );
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('横断していません');
     });
 
     it('閉線がポリゴン内部にあれば有効', () => {
@@ -144,6 +175,42 @@ describe('KnifeService', () => {
       );
       expect(result.success).toBe(true);
     });
+
+    it('凹ポリゴンの片側が複数片になっても全片を保持する', () => {
+      const result = splitByLine(
+        cShape,
+        [{ x: 5, y: -1 }, { x: 5, y: 11 }]
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.pieceAPolygons).toHaveLength(1);
+      expect(result.pieceBPolygons).toHaveLength(2);
+      expect(sumPolygonsArea([...result.pieceAPolygons, ...result.pieceBPolygons]))
+        .toBeCloseTo(sumPolygonsArea([cShape]), 6);
+    });
+
+    it('開線が横断していない離れたterritoryは延長半平面で分断しない', () => {
+      const result = splitPolygonsByLine(
+        [square, shiftedSquare],
+        [{ x: -1, y: 5 }, { x: 11, y: 5 }]
+      );
+
+      expect(result.success).toBe(true);
+      const untouchedPolygons = [...result.pieceAPolygons, ...result.pieceBPolygons]
+        .filter((polygon) => {
+          const bounds = getRingBounds(polygon[0]);
+          return bounds.minX === 20 && bounds.maxX === 30;
+        });
+
+      expect(untouchedPolygons).toHaveLength(1);
+      expect(getRingBounds(untouchedPolygons[0][0])).toEqual({
+        minX: 20,
+        maxX: 30,
+        minY: 0,
+        maxY: 10,
+      });
+      expect(result.pieceAPolygons).toContain(untouchedPolygons[0]);
+    });
   });
 
   describe('splitByClosed（閉線分割）', () => {
@@ -204,3 +271,30 @@ describe('KnifeService', () => {
     });
   });
 });
+
+function sumPolygonsArea(polygons: readonly (readonly RingCoords[])[]): number {
+  return polygons.reduce((total, polygon) => total + polygonAreaOf(polygon), 0);
+}
+
+function polygonAreaOf(polygon: readonly RingCoords[]): number {
+  if (polygon.length === 0) return 0;
+  const [outer, ...holes] = polygon;
+  return polygonArea(outer) - holes.reduce((sum, hole) => sum + polygonArea(hole), 0);
+}
+
+function getRingBounds(ring: RingCoords): {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+} {
+  return ring.reduce(
+    (bounds, point) => ({
+      minX: Math.min(bounds.minX, point.x),
+      maxX: Math.max(bounds.maxX, point.x),
+      minY: Math.min(bounds.minY, point.y),
+      maxY: Math.max(bounds.maxY, point.y),
+    }),
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
+  );
+}

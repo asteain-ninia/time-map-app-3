@@ -111,9 +111,19 @@ export type { TimeValidationError, TimeGranularity } from './TimeService';
 export {
   splitByLine,
   splitByClosed,
+  splitPolygonsByLine,
+  splitPolygonsByClosed,
   validateCuttingLine,
+  validateCuttingLineForPolygons,
 } from './KnifeService';
 export type { KnifeSplitResult, KnifeValidation } from './KnifeService';
+
+export {
+  buildPolygonRingDrafts,
+  rebuildTerritoryHierarchy,
+  resolvePolygonShapePolygons,
+} from './PolygonShapeService';
+export type { PolygonRingDraft } from './PolygonShapeService';
 
 export {
   validateMerge,

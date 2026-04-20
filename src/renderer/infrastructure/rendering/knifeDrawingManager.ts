@@ -11,6 +11,7 @@
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import {
   validateCuttingLine,
+  validateCuttingLineForPolygons,
   type KnifeValidation,
 } from '@domain/services/KnifeService';
 import type { RingCoords } from '@domain/services/GeometryService';
@@ -107,6 +108,21 @@ export function validateKnifeLine(
 }
 
 /**
+ * 複数 territory を持つ面の分断線バリデーションを実行する
+ *
+ * @param state 描画状態
+ * @param polygons 対象ポリゴン群（各要素は外周 + 穴）
+ * @returns バリデーション結果
+ */
+export function validateKnifeLineForPolygons(
+  state: KnifeDrawingState,
+  polygons: readonly (readonly RingCoords[])[]
+): KnifeValidation {
+  const coords = state.coords.map(c => ({ x: c.x, y: c.y }));
+  return validateCuttingLineForPolygons(polygons, coords, state.isClosed);
+}
+
+/**
  * 確定可能か判定する
  *
  * 開線: 2点以上かつバリデーション通過
@@ -119,5 +135,18 @@ export function canConfirmKnife(
   if (state.isClosed && state.coords.length < 3) return false;
   if (!state.isClosed && state.coords.length < 2) return false;
   const validation = validateKnifeLine(state, polygonRings);
+  return validation.valid;
+}
+
+/**
+ * 複数 territory を持つ面で確定可能か判定する
+ */
+export function canConfirmKnifeForPolygons(
+  state: KnifeDrawingState,
+  polygons: readonly (readonly RingCoords[])[]
+): boolean {
+  if (state.isClosed && state.coords.length < 3) return false;
+  if (!state.isClosed && state.coords.length < 2) return false;
+  const validation = validateKnifeLineForPolygons(state, polygons);
   return validation.valid;
 }
