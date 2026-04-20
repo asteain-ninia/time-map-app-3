@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { SplitFeatureCommand } from '@application/commands/SplitFeatureCommand';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { Vertex } from '@domain/entities/Vertex';
+import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { Ring } from '@domain/value-objects/Ring';
 import { validatePolygonRingHierarchy } from '@domain/services/RingEditService';
@@ -98,6 +99,73 @@ describe('SplitFeatureCommand', () => {
 
       cmd.undo();
       expect(addFeature.getVertices().size).toBe(verticesBefore);
+    });
+
+    it('分割で生成された切断辺の頂点を共有頂点グループにする', () => {
+      const feature = createSquarePolygon();
+
+      const cmd = new SplitFeatureCommand(addFeature, {
+        featureId: feature.id,
+        cuttingLine: [{ x: 5, y: -1 }, { x: 5, y: 11 }],
+        isClosed: false,
+        currentTime: time,
+      });
+      cmd.execute();
+
+      const groups = [...addFeature.getSharedVertexGroups().values()];
+      expect(groups).toHaveLength(2);
+
+      const sortedGroups = groups.toSorted((a, b) =>
+        a.representativeCoordinate.y - b.representativeCoordinate.y
+      );
+      expect(sortedGroups[0].representativeCoordinate.x).toBeCloseTo(5);
+      expect(sortedGroups[0].representativeCoordinate.y).toBeCloseTo(0);
+      expect(sortedGroups[1].representativeCoordinate.x).toBeCloseTo(5);
+      expect(sortedGroups[1].representativeCoordinate.y).toBeCloseTo(10);
+
+      const vertices = addFeature.getVertices();
+      for (const group of sortedGroups) {
+        expect(group.vertexIds).toHaveLength(2);
+        for (const vertexId of group.vertexIds) {
+          const vertex = vertices.get(vertexId);
+          expect(vertex?.coordinate.equals(group.representativeCoordinate)).toBe(true);
+        }
+      }
+    });
+
+    it('Undoで分割時に追加された共有頂点グループだけを戻す', () => {
+      const pointA = addFeature.addPoint(new Coordinate(100, 0), 'l1', time, '点A');
+      const pointB = addFeature.addPoint(new Coordinate(100, 0), 'l1', time, '点B');
+      const pointAShape = pointA.getActiveAnchor(time)?.shape;
+      const pointBShape = pointB.getActiveAnchor(time)?.shape;
+      if (pointAShape?.type !== 'Point' || pointBShape?.type !== 'Point') {
+        throw new Error('point expected');
+      }
+
+      const sharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+      sharedGroups.set(
+        'sg-existing',
+        new SharedVertexGroup(
+          'sg-existing',
+          [pointAShape.vertexId, pointBShape.vertexId],
+          new Coordinate(100, 0)
+        )
+      );
+
+      const feature = createSquarePolygon();
+      const cmd = new SplitFeatureCommand(addFeature, {
+        featureId: feature.id,
+        cuttingLine: [{ x: 5, y: -1 }, { x: 5, y: 11 }],
+        isClosed: false,
+        currentTime: time,
+      });
+      cmd.execute();
+      expect(addFeature.getSharedVertexGroups().size).toBe(3);
+
+      cmd.undo();
+      expect(addFeature.getSharedVertexGroups().size).toBe(1);
+      expect(addFeature.getSharedVertexGroups().get('sg-existing')?.vertexIds)
+        .toEqual([pointAShape.vertexId, pointBShape.vertexId]);
     });
 
     it('分割片が複数領土に分かれる場合も新地物に全領土リングを保持する', () => {

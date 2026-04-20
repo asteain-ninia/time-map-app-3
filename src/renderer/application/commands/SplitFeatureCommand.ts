@@ -11,6 +11,7 @@ import type { UndoableCommand } from '../UndoRedoManager';
 import type { AddFeatureUseCase } from '../AddFeatureUseCase';
 import type { Feature } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
+import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import type { FeatureShape } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { RingCoords } from '@domain/services/GeometryService';
@@ -37,12 +38,23 @@ export interface SplitFeatureParams {
   readonly newFeatureName?: string;
 }
 
+type SplitPiece = 'a' | 'b';
+
+interface SplitVertexRecord {
+  readonly piece: SplitPiece;
+  readonly ringId: string;
+  readonly vertexId: string;
+  readonly coordinate: Coordinate;
+}
+
 export class SplitFeatureCommand implements UndoableCommand {
   readonly description: string;
 
   private originalAnchors: Feature['anchors'] | null = null;
+  private originalSharedGroups = new Map<string, SharedVertexGroup>();
   private newFeatureId: string | null = null;
   private addedVertexIds: string[] = [];
+  private splitVertexRecords: SplitVertexRecord[] = [];
 
   constructor(
     private readonly featureUseCase: AddFeatureUseCase,
@@ -53,13 +65,17 @@ export class SplitFeatureCommand implements UndoableCommand {
 
   execute(): void {
     const { featureId, cuttingLine, isClosed, currentTime, newFeatureName } = this.params;
+    this.originalAnchors = null;
+    this.originalSharedGroups = new Map();
+    this.newFeatureId = null;
+    this.addedVertexIds = [];
+    this.splitVertexRecords = [];
+
     const feature = this.featureUseCase.getFeatureById(featureId);
     if (!feature) return;
 
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor || anchor.shape.type !== 'Polygon') return;
-
-    this.originalAnchors = [...feature.anchors];
 
     const vertices = this.featureUseCase.getVertices();
     const polygons = resolvePolygonShapePolygons(anchor.shape, vertices);
@@ -69,6 +85,10 @@ export class SplitFeatureCommand implements UndoableCommand {
       : splitPolygonsByLine(polygons, cuttingLine);
 
     if (!result.success) return;
+
+    const sharedGroups = this.featureUseCase.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+    this.originalAnchors = [...feature.anchors];
+    this.originalSharedGroups = new Map(sharedGroups);
 
     const verticesBefore = new Set(vertices.keys());
 
@@ -97,6 +117,8 @@ export class SplitFeatureCommand implements UndoableCommand {
       }
     }
 
+    this.createSplitSharedGroups(sharedGroups);
+
     eventBus.emit('feature:added', { featureId: newFeature.id });
   }
 
@@ -105,6 +127,7 @@ export class SplitFeatureCommand implements UndoableCommand {
 
     const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
     const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
+    const sharedGroups = this.featureUseCase.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
 
     // 元の地物を復元
     const feature = features.get(this.params.featureId);
@@ -122,11 +145,16 @@ export class SplitFeatureCommand implements UndoableCommand {
     for (const vid of this.addedVertexIds) {
       vertices.delete(vid);
     }
+
+    sharedGroups.clear();
+    for (const [groupId, group] of this.originalSharedGroups) {
+      sharedGroups.set(groupId, group);
+    }
   }
 
   private createPolygonShape(
     polygons: readonly (readonly RingCoords[])[],
-    suffix: string
+    suffix: SplitPiece
   ): FeatureShape & { type: 'Polygon' } {
     const mutableVertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
     const rings: Ring[] = [];
@@ -136,9 +164,16 @@ export class SplitFeatureCommand implements UndoableCommand {
       const vertexIds: string[] = [];
       for (const c of draft.coords) {
         const id = this.createSplitVertexId(suffix);
-        const vertex = new Vertex(id, new Coordinate(c.x, c.y));
+        const coordinate = new Coordinate(c.x, c.y);
+        const vertex = new Vertex(id, coordinate);
         mutableVertices.set(id, vertex);
         vertexIds.push(id);
+        this.splitVertexRecords.push({
+          piece: suffix,
+          ringId: draft.id,
+          vertexId: id,
+          coordinate,
+        });
       }
       rings.push(new Ring(draft.id, vertexIds, draft.ringType, draft.parentId));
     }
@@ -146,11 +181,60 @@ export class SplitFeatureCommand implements UndoableCommand {
     return { type: 'Polygon', rings };
   }
 
-  private createSplitVertexId(suffix: string): string {
+  private createSplitSharedGroups(sharedGroups: Map<string, SharedVertexGroup>): void {
+    const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
+    const recordsByCoordinate = new Map<string, SplitVertexRecord[]>();
+
+    for (const record of this.splitVertexRecords) {
+      const key = this.createCoordinateKey(record.coordinate);
+      recordsByCoordinate.set(key, [...(recordsByCoordinate.get(key) ?? []), record]);
+    }
+
+    for (const records of recordsByCoordinate.values()) {
+      const recordsByRing = new Map<string, SplitVertexRecord>();
+      for (const record of records) {
+        const componentKey = `${record.piece}:${record.ringId}`;
+        if (!recordsByRing.has(componentKey)) {
+          recordsByRing.set(componentKey, record);
+        }
+      }
+
+      const sharedRecords = [...recordsByRing.values()];
+      const sharedPieces = new Set(sharedRecords.map((record) => record.piece));
+      if (!sharedPieces.has('a') || !sharedPieces.has('b')) continue;
+
+      const representativeRecord = sharedRecords[0];
+      if (!representativeRecord) continue;
+
+      const representativeCoordinate = representativeRecord.coordinate;
+      for (const record of sharedRecords) {
+        const vertex = vertices.get(record.vertexId);
+        if (vertex) {
+          vertices.set(record.vertexId, vertex.withCoordinate(representativeCoordinate));
+        }
+      }
+
+      const groupId = this.createSharedGroupId();
+      sharedGroups.set(
+        groupId,
+        new SharedVertexGroup(groupId, sharedRecords.map((record) => record.vertexId), representativeCoordinate)
+      );
+    }
+  }
+
+  private createCoordinateKey(coordinate: Coordinate): string {
+    return `${coordinate.x.toFixed(9)}:${coordinate.y.toFixed(9)}`;
+  }
+
+  private createSplitVertexId(suffix: SplitPiece): string {
     return `v-split-${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
-  private createSplitRingId(suffix: string): string {
+  private createSplitRingId(suffix: SplitPiece): string {
     return `ring-split-${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  private createSharedGroupId(): string {
+    return `svg-split-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 }
