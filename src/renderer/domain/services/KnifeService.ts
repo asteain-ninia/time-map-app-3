@@ -402,12 +402,8 @@ function polygonNetArea(polygon: readonly RingCoords[]): number {
 }
 
 /**
- * ポリゴンの外接矩形の対角線長を計算（エクステント）
+ * 複数ポリゴンの外接矩形の対角線長を計算（エクステント）
  */
-function computeExtent(polygon: readonly RingCoords[]): number {
-  return computePolygonsExtent([polygon]);
-}
-
 function computePolygonsExtent(polygons: readonly (readonly RingCoords[])[]): number {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const polygon of polygons) {
