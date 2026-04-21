@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { AddFeatureCommand } from '@application/commands/AddFeatureCommand';
+import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { ManageLayersUseCase } from '@application/ManageLayersUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
@@ -59,6 +60,39 @@ describe('AddFeatureCommand', () => {
 
       expect(addFeature.getFeatures()).toHaveLength(1);
       expect(addFeature.getVertices().size).toBe(1);
+    });
+
+    it('redoで初回追加IDを復元し後続の地物移動を再実行できる', () => {
+      const addCommand = new AddFeatureCommand(addFeature, {
+        type: 'point', coord: new Coordinate(10, 20), layerId, time,
+      });
+      undoRedo.execute(addCommand);
+
+      const addedFeatureId = addFeature.getFeatures()[0].id;
+      const shape = addFeature.getFeatureById(addedFeatureId)?.getActiveAnchor(time)?.shape;
+      if (shape?.type !== 'Point') {
+        throw new Error('point expected');
+      }
+      const addedVertexId = shape.vertexId;
+
+      undoRedo.execute(new MoveFeatureCommand(addFeature, {
+        featureId: addedFeatureId,
+        dx: 5,
+        dy: -3,
+        currentTime: time,
+      }));
+
+      undoRedo.undo();
+      undoRedo.undo();
+      expect(addFeature.getFeatureById(addedFeatureId)).toBeUndefined();
+
+      undoRedo.redo();
+      expect(addFeature.getFeatureById(addedFeatureId)).toBeDefined();
+      expect(addFeature.getVertices().has(addedVertexId)).toBe(true);
+
+      undoRedo.redo();
+      const movedVertex = addFeature.getVertices().get(addedVertexId)!;
+      expect(movedVertex.coordinate).toEqual(new Coordinate(15, 17));
     });
   });
 

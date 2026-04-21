@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MergeFeatureCommand } from '@application/commands/MergeFeatureCommand';
+import { MoveVertexCommand } from '@application/commands/MoveVertexCommand';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
+import { UndoRedoManager } from '@application/UndoRedoManager';
+import { VertexEditUseCase } from '@application/VertexEditUseCase';
 import { Vertex } from '@domain/entities/Vertex';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { Ring } from '@domain/value-objects/Ring';
@@ -9,6 +12,8 @@ import { validatePolygonRingHierarchy } from '@domain/services/RingEditService';
 
 describe('MergeFeatureCommand', () => {
   let addFeature: AddFeatureUseCase;
+  let vertexEdit: VertexEditUseCase;
+  let undoRedo: UndoRedoManager;
   const time = new TimePoint(2000);
 
   /** 隣接する2つの正方形ポリゴンを作成 */
@@ -26,6 +31,8 @@ describe('MergeFeatureCommand', () => {
 
   beforeEach(() => {
     addFeature = new AddFeatureUseCase();
+    vertexEdit = new VertexEditUseCase(addFeature);
+    undoRedo = new UndoRedoManager();
   });
 
   it('2つのポリゴンを結合する', () => {
@@ -76,6 +83,40 @@ describe('MergeFeatureCommand', () => {
     cmd.undo();
 
     expect(addFeature.getVertices().size).toBe(verticesBefore);
+  });
+
+  it('redoで結合後の頂点IDを復元し後続の頂点移動を再実行できる', () => {
+    const { f1, f2 } = createAdjacentSquares();
+    const mergeCommand = new MergeFeatureCommand(addFeature, {
+      featureIds: [f1.id, f2.id],
+      currentTime: time,
+    });
+    undoRedo.execute(mergeCommand);
+
+    const mergedVertexIds = getPolygonVertexIds(f1.id);
+    const movedVertexId = findLeftmostVertexId(mergedVertexIds);
+    const originalVertex = addFeature.getVertices().get(movedVertexId)!;
+    const movedCoordinate = new Coordinate(originalVertex.coordinate.x - 1, originalVertex.coordinate.y);
+
+    undoRedo.execute(new MoveVertexCommand(
+      vertexEdit,
+      addFeature,
+      movedVertexId,
+      movedCoordinate,
+      null,
+      time
+    ));
+
+    undoRedo.undo();
+    undoRedo.undo();
+    expect(addFeature.getFeatureById(f2.id)).toBeDefined();
+
+    undoRedo.redo();
+    expect(addFeature.getFeatureById(f2.id)).toBeUndefined();
+    expect(getPolygonVertexIds(f1.id)).toEqual(mergedVertexIds);
+
+    undoRedo.redo();
+    expect(addFeature.getVertices().get(movedVertexId)?.coordinate).toEqual(movedCoordinate);
   });
 
   it('カスタム名を設定できる', () => {
@@ -303,4 +344,32 @@ describe('MergeFeatureCommand', () => {
     expect(addFeature.getFeatureById(f1.id)).toBeDefined();
     expect(addFeature.getFeatureById(f2.id)).toBeDefined();
   });
+
+  function getPolygonVertexIds(featureId: string): readonly string[] {
+    const shape = addFeature.getFeatureById(featureId)?.getActiveAnchor(time)?.shape;
+    if (shape?.type !== 'Polygon') {
+      return [];
+    }
+    return shape.rings.flatMap((ring) => [...ring.vertexIds]);
+  }
+
+  function findLeftmostVertexId(vertexIds: readonly string[]): string {
+    const vertices = addFeature.getVertices();
+    const leftmost = vertexIds.reduce<string | null>((currentId, candidateId) => {
+      if (!currentId) {
+        return candidateId;
+      }
+      const current = vertices.get(currentId);
+      const candidate = vertices.get(candidateId);
+      if (!current || !candidate) {
+        return currentId;
+      }
+      return candidate.coordinate.x < current.coordinate.x ? candidateId : currentId;
+    }, null);
+
+    if (!leftmost) {
+      throw new Error('vertex expected');
+    }
+    return leftmost;
+  }
 });

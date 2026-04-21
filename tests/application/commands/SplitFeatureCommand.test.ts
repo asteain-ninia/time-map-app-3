@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SplitFeatureCommand } from '@application/commands/SplitFeatureCommand';
+import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
+import { UndoRedoManager } from '@application/UndoRedoManager';
 import { Vertex } from '@domain/entities/Vertex';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import { Coordinate } from '@domain/value-objects/Coordinate';
@@ -10,6 +12,7 @@ import { TimePoint } from '@domain/value-objects/TimePoint';
 
 describe('SplitFeatureCommand', () => {
   let addFeature: AddFeatureUseCase;
+  let undoRedo: UndoRedoManager;
   const time = new TimePoint(2000);
 
   /**
@@ -32,6 +35,7 @@ describe('SplitFeatureCommand', () => {
 
   beforeEach(() => {
     addFeature = new AddFeatureUseCase();
+    undoRedo = new UndoRedoManager();
   });
 
   describe('二分割（開線）', () => {
@@ -166,6 +170,42 @@ describe('SplitFeatureCommand', () => {
       expect(addFeature.getSharedVertexGroups().size).toBe(1);
       expect(addFeature.getSharedVertexGroups().get('sg-existing')?.vertexIds)
         .toEqual([pointAShape.vertexId, pointBShape.vertexId]);
+    });
+
+    it('redoで分割時の新地物IDと頂点IDを復元し後続の地物移動を再実行できる', () => {
+      const feature = createSquarePolygon();
+      const splitCommand = new SplitFeatureCommand(addFeature, {
+        featureId: feature.id,
+        cuttingLine: [{ x: 5, y: -1 }, { x: 5, y: 11 }],
+        isClosed: false,
+        currentTime: time,
+      });
+      undoRedo.execute(splitCommand);
+
+      const newFeatureId = splitCommand.createdFeatureId;
+      if (!newFeatureId) {
+        throw new Error('split feature expected');
+      }
+      const vertexIdsAfterSplit = getPolygonVertexIds(newFeatureId);
+      const minXAfterSplit = getMinX(newFeatureId);
+
+      undoRedo.execute(new MoveFeatureCommand(addFeature, {
+        featureId: newFeatureId,
+        dx: 20,
+        dy: 0,
+        currentTime: time,
+      }));
+
+      undoRedo.undo();
+      undoRedo.undo();
+      expect(addFeature.getFeatureById(newFeatureId)).toBeUndefined();
+
+      undoRedo.redo();
+      expect(addFeature.getFeatureById(newFeatureId)).toBeDefined();
+      expect(getPolygonVertexIds(newFeatureId)).toEqual(vertexIdsAfterSplit);
+
+      undoRedo.redo();
+      expect(getMinX(newFeatureId)).toBeCloseTo(minXAfterSplit + 20);
     });
 
     it('分割片が複数領土に分かれる場合も新地物に全領土リングを保持する', () => {
@@ -412,5 +452,20 @@ describe('SplitFeatureCommand', () => {
       vertices.set(id, new Vertex(id, coordinate));
       return id;
     });
+  }
+
+  function getPolygonVertexIds(featureId: string): readonly string[] {
+    const shape = addFeature.getFeatureById(featureId)?.getActiveAnchor(time)?.shape;
+    if (shape?.type !== 'Polygon') {
+      return [];
+    }
+    return shape.rings.flatMap((ring) => [...ring.vertexIds]);
+  }
+
+  function getMinX(featureId: string): number {
+    const vertices = getPolygonVertexIds(featureId)
+      .map((vertexId) => addFeature.getVertices().get(vertexId))
+      .filter((vertex): vertex is Vertex => vertex !== undefined);
+    return Math.min(...vertices.map((vertex) => vertex.coordinate.x));
   }
 });

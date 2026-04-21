@@ -12,6 +12,7 @@ import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
 import type { PolygonStyle } from '@domain/value-objects/FeatureAnchor';
 import type { AddFeatureUseCase } from '../AddFeatureUseCase';
+import { eventBus } from '../EventBus';
 import type { UndoableCommand } from '../UndoRedoManager';
 import {
   createTransientPolygonFeature,
@@ -28,6 +29,7 @@ export class AddFeatureCommand implements UndoableCommand {
   readonly description: string;
   private addedFeature: Feature | null = null;
   private addedVertexIds: string[] = [];
+  private addedVertices = new Map<string, Vertex>();
 
   constructor(
     private readonly featureUseCase: AddFeatureUseCase,
@@ -40,6 +42,11 @@ export class AddFeatureCommand implements UndoableCommand {
   }
 
   execute(): void {
+    if (this.addedFeature) {
+      this.restoreAddedFeature();
+      return;
+    }
+
     // 追加前の頂点IDを記録
     const verticesBefore = new Set(this.featureUseCase.getVertices().keys());
 
@@ -88,9 +95,14 @@ export class AddFeatureCommand implements UndoableCommand {
 
     // 新しく追加された頂点IDを特定
     this.addedVertexIds = [];
+    this.addedVertices.clear();
     for (const id of this.featureUseCase.getVertices().keys()) {
       if (!verticesBefore.has(id)) {
         this.addedVertexIds.push(id);
+        const vertex = this.featureUseCase.getVertices().get(id);
+        if (vertex) {
+          this.addedVertices.set(id, vertex);
+        }
       }
     }
   }
@@ -105,5 +117,17 @@ export class AddFeatureCommand implements UndoableCommand {
     for (const vid of this.addedVertexIds) {
       vertices.delete(vid);
     }
+  }
+
+  private restoreAddedFeature(): void {
+    if (!this.addedFeature) return;
+
+    const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
+    const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
+    for (const [vertexId, vertex] of this.addedVertices) {
+      vertices.set(vertexId, vertex);
+    }
+    features.set(this.addedFeature.id, this.addedFeature);
+    eventBus.emit('feature:added', { featureId: this.addedFeature.id });
   }
 }

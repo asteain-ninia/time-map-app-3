@@ -42,6 +42,8 @@ export class MergeFeatureCommand implements UndoableCommand {
   private addedVertexIds: string[] = [];
   /** 削除した地物ID（最初の地物以外） */
   private removedFeatureIds: string[] = [];
+  private addedVertices = new Map<string, Vertex>();
+  private mergedFeatureAfter: Feature | null = null;
 
   constructor(
     private readonly featureUseCase: AddFeatureUseCase,
@@ -51,6 +53,11 @@ export class MergeFeatureCommand implements UndoableCommand {
   }
 
   execute(): void {
+    if (this.mergedFeatureAfter) {
+      this.restoreAfter();
+      return;
+    }
+
     const { featureIds, currentTime, mergedName } = this.params;
     const uniqueFeatureIds = [...new Set(featureIds)];
     if (uniqueFeatureIds.length < 2) {
@@ -62,6 +69,9 @@ export class MergeFeatureCommand implements UndoableCommand {
 
     // 元の地物状態を保存
     this.originalFeatures.clear();
+    this.addedVertexIds = [];
+    this.addedVertices.clear();
+    this.removedFeatureIds = [];
     for (const fid of uniqueFeatureIds) {
       const f = features.get(fid);
       if (f) this.originalFeatures.set(fid, f);
@@ -113,10 +123,11 @@ export class MergeFeatureCommand implements UndoableCommand {
       ? anchor.withShape(mergedShape).withProperty({ ...anchor.property, name: mergedName })
       : anchor.withShape(mergedShape);
     const newAnchors = primaryFeature.anchors.map(a => a.id === anchor.id ? updatedAnchor : a);
-    features.set(primaryId, primaryFeature.withAnchors(newAnchors));
+    const mergedFeature = primaryFeature.withAnchors(newAnchors);
+    features.set(primaryId, mergedFeature);
+    this.mergedFeatureAfter = mergedFeature;
 
     // 残りの地物を削除
-    this.removedFeatureIds = [];
     for (let i = 1; i < uniqueFeatureIds.length; i++) {
       features.delete(uniqueFeatureIds[i]);
       this.removedFeatureIds.push(uniqueFeatureIds[i]);
@@ -127,6 +138,10 @@ export class MergeFeatureCommand implements UndoableCommand {
     for (const id of vertices.keys()) {
       if (!verticesBefore.has(id)) {
         this.addedVertexIds.push(id);
+        const vertex = vertices.get(id);
+        if (vertex) {
+          this.addedVertices.set(id, vertex);
+        }
       }
     }
 
@@ -146,6 +161,23 @@ export class MergeFeatureCommand implements UndoableCommand {
     for (const vid of this.addedVertexIds) {
       vertices.delete(vid);
     }
+  }
+
+  private restoreAfter(): void {
+    if (!this.mergedFeatureAfter) return;
+
+    const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
+    const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
+
+    for (const [vertexId, vertex] of this.addedVertices) {
+      vertices.set(vertexId, vertex);
+    }
+    features.set(this.mergedFeatureAfter.id, this.mergedFeatureAfter);
+    for (const featureId of this.removedFeatureIds) {
+      features.delete(featureId);
+    }
+
+    eventBus.emit('feature:added', { featureId: this.mergedFeatureAfter.id });
   }
 
   private createPolygonShape(

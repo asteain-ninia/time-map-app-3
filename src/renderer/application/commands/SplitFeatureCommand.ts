@@ -54,7 +54,11 @@ export class SplitFeatureCommand implements UndoableCommand {
   private originalSharedGroups = new Map<string, SharedVertexGroup>();
   private newFeatureId: string | null = null;
   private addedVertexIds: string[] = [];
+  private addedVertices = new Map<string, Vertex>();
   private splitVertexRecords: SplitVertexRecord[] = [];
+  private updatedFeatureAfter: Feature | null = null;
+  private newFeatureAfter: Feature | null = null;
+  private sharedGroupsAfter: Map<string, SharedVertexGroup> | null = null;
 
   constructor(
     private readonly featureUseCase: AddFeatureUseCase,
@@ -63,13 +67,26 @@ export class SplitFeatureCommand implements UndoableCommand {
     this.description = `地物 ${params.featureId} を分割`;
   }
 
+  get createdFeatureId(): string | null {
+    return this.newFeatureId;
+  }
+
   execute(): void {
+    if (this.updatedFeatureAfter && this.newFeatureAfter && this.sharedGroupsAfter) {
+      this.restoreAfter();
+      return;
+    }
+
     const { featureId, cuttingLine, isClosed, currentTime, newFeatureName } = this.params;
     this.originalAnchors = null;
     this.originalSharedGroups = new Map();
     this.newFeatureId = null;
     this.addedVertexIds = [];
+    this.addedVertices.clear();
     this.splitVertexRecords = [];
+    this.updatedFeatureAfter = null;
+    this.newFeatureAfter = null;
+    this.sharedGroupsAfter = null;
 
     const feature = this.featureUseCase.getFeatureById(featureId);
     if (!feature) return;
@@ -98,6 +115,7 @@ export class SplitFeatureCommand implements UndoableCommand {
     const newAnchors = feature.anchors.map(a => a.id === anchor.id ? updatedAnchor : a);
     const updatedFeature = feature.withAnchors(newAnchors);
     (this.featureUseCase.getFeaturesMap() as Map<string, Feature>).set(featureId, updatedFeature);
+    this.updatedFeatureAfter = updatedFeature;
 
     // pieceB → 新しい地物として追加
     const pieceBShape = this.createPolygonShape(result.pieceBPolygons, 'b');
@@ -108,6 +126,7 @@ export class SplitFeatureCommand implements UndoableCommand {
       newFeatureName ?? `${anchor.property.name}(分割)`
     );
     this.newFeatureId = newFeature.id;
+    this.newFeatureAfter = newFeature;
 
     // 追加された頂点IDを記録
     this.addedVertexIds = [];
@@ -118,6 +137,13 @@ export class SplitFeatureCommand implements UndoableCommand {
     }
 
     this.createSplitSharedGroups(sharedGroups);
+    for (const id of this.addedVertexIds) {
+      const vertex = vertices.get(id);
+      if (vertex) {
+        this.addedVertices.set(id, vertex);
+      }
+    }
+    this.sharedGroupsAfter = new Map(sharedGroups);
 
     eventBus.emit('feature:added', { featureId: newFeature.id });
   }
@@ -150,6 +176,27 @@ export class SplitFeatureCommand implements UndoableCommand {
     for (const [groupId, group] of this.originalSharedGroups) {
       sharedGroups.set(groupId, group);
     }
+  }
+
+  private restoreAfter(): void {
+    if (!this.updatedFeatureAfter || !this.newFeatureAfter || !this.sharedGroupsAfter) return;
+
+    const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
+    const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
+    const sharedGroups = this.featureUseCase.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+
+    for (const [vertexId, vertex] of this.addedVertices) {
+      vertices.set(vertexId, vertex);
+    }
+    features.set(this.updatedFeatureAfter.id, this.updatedFeatureAfter);
+    features.set(this.newFeatureAfter.id, this.newFeatureAfter);
+
+    sharedGroups.clear();
+    for (const [groupId, group] of this.sharedGroupsAfter) {
+      sharedGroups.set(groupId, group);
+    }
+
+    eventBus.emit('feature:added', { featureId: this.newFeatureAfter.id });
   }
 
   private createPolygonShape(
