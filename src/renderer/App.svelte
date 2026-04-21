@@ -107,7 +107,7 @@
   import { DEFAULT_SETTINGS, DEFAULT_METADATA, type WorldSettings, type WorldMetadata } from '@domain/entities/World';
   import { Vertex } from '@domain/entities/Vertex';
   import type { AppConfig } from '@infrastructure/ConfigManager';
-  import { serialize as serializeWorld } from '@infrastructure/persistence/JSONSerializer';
+  import { SerializationError, serialize as serializeWorld } from '@infrastructure/persistence/JSONSerializer';
   import {
     validatePolygonOrThrow,
   } from '@application/polygonValidation';
@@ -365,13 +365,35 @@
     dirtyState = markDirty(dirtyState);
   }
 
-  function showOperationError(actionLabel: string): void {
+  function showOperationError(actionLabel: string, error: unknown): void {
     if (typeof window !== 'undefined' && typeof window.alert === 'function') {
       window.alert(
         `${actionLabel}に失敗しました。\n` +
-        'ファイル形式や保存先を確認してください。解決しない場合は開発者へ報告してください。'
+        `${formatOperationError(error)}\n` +
+        '解決しない場合は開発者へ報告してください。'
       );
     }
+  }
+
+  function formatOperationError(error: unknown): string {
+    if (error instanceof SerializationError) {
+      return `保存データの形式または互換性に問題があります。\n${error.message}`;
+    }
+    if (error instanceof Error && error.message.trim().length > 0) {
+      return error.message;
+    }
+    return 'ファイル形式や保存先を確認してください。';
+  }
+
+  function showCompatibilityWarnings(warnings: readonly string[]): void {
+    if (warnings.length === 0) return;
+    if (typeof window === 'undefined' || typeof window.alert !== 'function') return;
+
+    window.alert(
+      '保存データを現在の形式に変換して読み込みました。\n' +
+      '次回保存すると現在の形式で上書きされます。\n\n' +
+      warnings.map((warning) => `・${warning}`).join('\n')
+    );
   }
 
   function runFileOperation(
@@ -384,8 +406,8 @@
         currentFilePath: saveLoad.getCurrentFilePath(),
         ...extraData,
       })
-    ).catch(() => {
-      showOperationError(actionLabel);
+    ).catch((error: unknown) => {
+      showOperationError(actionLabel, error);
       return false;
     });
   }
@@ -801,7 +823,7 @@
     markAsDirty();
   });
 
-  const unsubWorldLoaded = eventBus.on('world:loaded', () => {
+  const unsubWorldLoaded = eventBus.on('world:loaded', (event) => {
     refreshFeatureData();
     refreshLayerData();
     resetInteractionState();
@@ -813,6 +835,7 @@
     projectSettings = normalizeWorldSettings(loaded.settings);
     projectMetadata = { ...loaded, settings: projectSettings };
     lastBackupTime = Date.now();
+    showCompatibilityWarnings(event.compatibilityWarnings);
   });
 
   const unsubWorldSaved = eventBus.on('world:saved', () => {

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { serialize, deserialize, SerializationError } from '@infrastructure/persistence/JSONSerializer';
+import {
+  serialize,
+  deserialize,
+  deserializeWithReport,
+  SerializationError,
+} from '@infrastructure/persistence/JSONSerializer';
 import { World, DEFAULT_METADATA, DEFAULT_SETTINGS } from '@domain/entities/World';
 import { Feature } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
@@ -448,9 +453,32 @@ describe('JSONSerializer', () => {
   });
 
   describe('バージョン検証', () => {
-    it('バージョンフィールドがない場合エラー', () => {
+    it('バージョンフィールドがなくプロジェクト構造も不完全な場合エラー', () => {
       expect(() => deserialize('{"layers":[]}')).toThrow(SerializationError);
       expect(() => deserialize('{"layers":[]}')).toThrow('Missing version field');
+    });
+
+    it('バージョンフィールドがない旧形式プロジェクトを現在形式へ移行できる', () => {
+      const world = createValidJsonWorld();
+      delete world.version;
+
+      const result = deserializeWithReport(JSON.stringify(world));
+
+      expect(result.world.version).toBe('1.0.0');
+      expect(result.compatibilityWarnings).toContain(
+        '形式バージョンがない旧形式を 1.0.0 として読み込みました。'
+      );
+    });
+
+    it('0.x系の旧バージョンを現在形式へ移行できる', () => {
+      const world = createValidJsonWorld({ version: '0.9.0' });
+
+      const result = deserializeWithReport(JSON.stringify(world));
+
+      expect(result.world.version).toBe('1.0.0');
+      expect(result.compatibilityWarnings).toContain(
+        '形式バージョン 0.9.0 を 1.0.0 へ変換しました。'
+      );
     });
 
     it('サポートされないバージョンの場合エラー', () => {
@@ -611,6 +639,71 @@ describe('JSONSerializer', () => {
       const restored = deserialize(JSON.stringify(world));
 
       expect(restored.sharedVertexGroups.size).toBe(0);
+    });
+
+    it('旧形式の単一形状地物をanchors形式へ移行できる', () => {
+      const world = createValidJsonWorld({
+        version: '0.8.0',
+        vertices: [
+          { id: 'v1', x: 0, y: 0 },
+          { id: 'v2', x: 10, y: 0 },
+          { id: 'v3', x: 0, y: 10 },
+        ],
+        features: [{
+          id: 'f-legacy',
+          featureType: 'polygon',
+          name: '旧国家',
+          description: '旧形式の地物',
+          type: 'Polygon',
+          vertexIds: ['v1', 'v2', 'v3'],
+          layerId: 'l1',
+          startYear: 1200,
+        }],
+      });
+
+      const result = deserializeWithReport(JSON.stringify(world));
+      const feature = result.world.features.get('f-legacy');
+      const anchor = feature?.anchors[0];
+
+      expect(feature?.featureType).toBe('Polygon');
+      expect(anchor?.property.name).toBe('旧国家');
+      expect(anchor?.timeRange.start.year).toBe(1200);
+      expect(anchor?.placement.layerId).toBe('l1');
+      expect(anchor?.shape.type).toBe('Polygon');
+      if (anchor?.shape.type === 'Polygon') {
+        expect(anchor.shape.rings[0].vertexIds).toEqual(['v1', 'v2', 'v3']);
+      }
+      expect(result.compatibilityWarnings).toContain(
+        'anchors がない旧形式の地物を、単一の歴史の錨へ変換しました。'
+      );
+      expect(result.compatibilityWarnings).toContain(
+        '旧形式の Polygon.vertexIds を territory リングに変換しました。'
+      );
+    });
+
+    it('旧形式の欠損した追加フィールドを補完し警告を返す', () => {
+      const world = createValidJsonWorld({
+        metadata: {
+          ...DEFAULT_METADATA,
+          settings: { ...DEFAULT_SETTINGS },
+        },
+      });
+      delete world.sharedVertexGroups;
+      delete world.timelineMarkers;
+      const metadata = world.metadata as Record<string, unknown>;
+      const settings = metadata.settings as Record<string, unknown>;
+      delete settings.baseMap;
+
+      const result = deserializeWithReport(JSON.stringify(world));
+
+      expect(result.world.sharedVertexGroups.size).toBe(0);
+      expect(result.world.timelineMarkers).toHaveLength(0);
+      expect(result.world.metadata.settings.baseMap.fileName).toBe('base-map.svg');
+      expect(result.compatibilityWarnings).toEqual(expect.arrayContaining([
+        'sharedVertexGroups がない旧形式を読み込んだため、空配列として補完しました。',
+        'timelineMarkers がない旧形式を読み込んだため、空配列として補完しました。',
+        'metadata.settings.baseMap がない旧形式を読み込んだため、プリセット地図設定を補完しました。',
+      ]));
     });
 
     it('共有頂点グループが存在しない頂点を参照するとエラー', () => {

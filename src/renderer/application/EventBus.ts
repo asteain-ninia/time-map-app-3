@@ -53,6 +53,7 @@ export interface FeatureRemovedEvent {
 /** ワールド読み込み完了 */
 export interface WorldLoadedEvent {
   filePath: string;
+  compatibilityWarnings: readonly string[];
 }
 
 /** ワールド保存完了 */

@@ -16,6 +16,7 @@ import { eventBus } from '@application/EventBus';
 
 function createMockRepository(): WorldRepository & {
   load: ReturnType<typeof vi.fn>;
+  loadWithReport?: ReturnType<typeof vi.fn>;
   save: ReturnType<typeof vi.fn>;
 } {
   return {
@@ -175,7 +176,28 @@ describe('SaveLoadUseCase', () => {
       repo.load.mockResolvedValue(createTestWorld());
       await useCase.open();
 
-      expect(listener).toHaveBeenCalledWith({ filePath: '/test/file.json' });
+      expect(listener).toHaveBeenCalledWith({
+        filePath: '/test/file.json',
+        compatibilityWarnings: [],
+      });
+    });
+
+    it('読み込み時の互換性警告がworld:loadedイベントに含まれる', async () => {
+      const listener = vi.fn();
+      eventBus.on('world:loaded', listener);
+      repo.loadWithReport = vi.fn().mockResolvedValue({
+        world: createTestWorld(),
+        compatibilityWarnings: ['旧形式を変換しました。'],
+      });
+
+      dialog.showOpenDialog.mockResolvedValue('/test/file.json');
+      await useCase.open();
+
+      expect(repo.load).not.toHaveBeenCalled();
+      expect(listener).toHaveBeenCalledWith({
+        filePath: '/test/file.json',
+        compatibilityWarnings: ['旧形式を変換しました。'],
+      });
     });
 
     it('ダイアログキャンセル時はfalseを返す', async () => {

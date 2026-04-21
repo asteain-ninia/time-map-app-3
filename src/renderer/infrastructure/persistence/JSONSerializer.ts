@@ -6,11 +6,17 @@
 
 import { World } from '@domain/entities/World';
 import { SerializationError } from './jsonSerializerErrors';
+import { migrateJsonWorld } from './jsonSerializerMigration';
 import { deserializeJsonWorld, serializeWorldToJson } from './jsonSerializerTransforms';
-import { SUPPORTED_VERSION, type JsonWorld } from './jsonSerializerTypes';
+import type { JsonWorld } from './jsonSerializerTypes';
 import { validateJsonWorld } from './jsonSerializerValidation';
 
 export { SerializationError } from './jsonSerializerErrors';
+
+export interface DeserializeWorldResult {
+  readonly world: World;
+  readonly compatibilityWarnings: readonly string[];
+}
 
 /**
  * WorldをJSON文字列にシリアライズする
@@ -26,26 +32,35 @@ export function serialize(world: World): string {
  * @throws SerializationError バージョン不一致、データ不整合時
  */
 export function deserialize(jsonString: string): World {
-  let json: JsonWorld;
+  return deserializeWithReport(jsonString).world;
+}
+
+/**
+ * JSON文字列からWorldを復元し、旧形式から補完した差分警告も返す
+ */
+export function deserializeWithReport(jsonString: string): DeserializeWorldResult {
   try {
-    json = JSON.parse(jsonString) as JsonWorld;
-  } catch {
+    const raw = JSON.parse(jsonString) as unknown;
+    const migration = migrateJsonWorld(raw);
+    const json: JsonWorld = migration.json;
+
+    const errors = validateJsonWorld(json);
+    if (errors.length > 0) {
+      throw new SerializationError(`Data validation failed:\n${errors.join('\n')}`);
+    }
+
+    return {
+      world: deserializeJsonWorld(json),
+      compatibilityWarnings: migration.compatibilityWarnings,
+    };
+  } catch (error) {
+    if (isSerializationError(error)) {
+      throw error;
+    }
     throw new SerializationError('Invalid JSON format');
   }
+}
 
-  if (!json.version) {
-    throw new SerializationError('Missing version field');
-  }
-  if (json.version !== SUPPORTED_VERSION) {
-    throw new SerializationError(
-      `Unsupported version "${json.version}" (expected "${SUPPORTED_VERSION}")`
-    );
-  }
-
-  const errors = validateJsonWorld(json);
-  if (errors.length > 0) {
-    throw new SerializationError(`Data validation failed:\n${errors.join('\n')}`);
-  }
-
-  return deserializeJsonWorld(json);
+function isSerializationError(error: unknown): error is SerializationError {
+  return error instanceof SerializationError;
 }

@@ -3,7 +3,10 @@ import { JSONWorldRepository, type FileSystemPort } from '@infrastructure/persis
 import { serialize } from '@infrastructure/persistence/JSONSerializer';
 import {
   base64ToBytes,
+  bytesToBase64,
+  createStoredZip,
   decodeUtf8,
+  encodeUtf8,
   readStoredZipEntries,
 } from '@infrastructure/persistence/zipArchive';
 import { World, DEFAULT_METADATA } from '@domain/entities/World';
@@ -146,6 +149,21 @@ describe('JSONWorldRepository', () => {
       expect(loaded.vertices.size).toBe(1);
     });
 
+    it('JSONファイルの互換性警告をloadWithReportで返す', async () => {
+      const fs = createMockFs();
+      const legacy = JSON.parse(serialize(createTestWorld())) as Record<string, unknown>;
+      delete legacy.version;
+      fs.readFile.mockResolvedValue(JSON.stringify(legacy));
+      const repo = new JSONWorldRepository(fs);
+
+      const result = await repo.loadWithReport('/path/to/file.json');
+
+      expect(result.world.version).toBe('1.0.0');
+      expect(result.compatibilityWarnings).toContain(
+        '形式バージョンがない旧形式を 1.0.0 として読み込みました。'
+      );
+    });
+
     it('不正なJSONでエラーを投げる', async () => {
       const fs = createMockFs();
       fs.readFile.mockResolvedValue('not valid json');
@@ -223,6 +241,48 @@ describe('JSONWorldRepository', () => {
       const loaded = await new JSONWorldRepository(loadFs).load('/test.gimoza');
 
       expect(loaded.metadata.settings.baseMap.svgText).toBe(customSvg);
+    });
+
+    it('.gimozaにベースマップアセットがなくてもproject.json側に埋め込みSVGがあれば警告しない', async () => {
+      const customSvg = '<svg viewBox="0 0 720 360"><path d="M2 2" /></svg>';
+      const legacyArchive = createStoredZip([
+        { name: 'project.json', data: encodeUtf8(serialize(createTestWorldWithBaseMap(customSvg))) },
+      ]);
+      const fs = createMockFs();
+      fs.readBinaryFile.mockResolvedValue(bytesToBase64(legacyArchive));
+
+      const result = await new JSONWorldRepository(fs).loadWithReport('/legacy.gimoza');
+
+      expect(result.world.metadata.settings.baseMap.svgText).toBe(customSvg);
+      expect(result.compatibilityWarnings).not.toContain(
+        '.gimoza 内にベースマップアセットがないため、プリセット地図設定で読み込みました。'
+      );
+    });
+
+    it('.gimozaの互換性警告をloadWithReportで返す', async () => {
+      const saveFs = createMockFs();
+      saveFs.writeBinaryFile.mockResolvedValue(undefined);
+      const original = createTestWorld();
+
+      await new JSONWorldRepository(saveFs).save('/test.gimoza', original);
+
+      const entries = readStoredZipEntries(base64ToBytes(saveFs.writeBinaryFile.mock.calls[0][1]));
+      const projectEntry = entries.find((entry) => entry.name === 'project.json');
+      const legacy = JSON.parse(decodeUtf8(projectEntry!.data)) as Record<string, unknown>;
+      delete legacy.version;
+      const legacyArchive = createStoredZip([
+        { name: 'project.json', data: encodeUtf8(JSON.stringify(legacy)) },
+      ]);
+
+      const loadFs = createMockFs();
+      loadFs.readBinaryFile.mockResolvedValue(bytesToBase64(legacyArchive));
+      const result = await new JSONWorldRepository(loadFs).loadWithReport('/test.gimoza');
+
+      expect(result.world.version).toBe('1.0.0');
+      expect(result.compatibilityWarnings).toEqual(expect.arrayContaining([
+        '形式バージョンがない旧形式を 1.0.0 として読み込みました。',
+        '.gimoza 内にベースマップアセットがないため、プリセット地図設定で読み込みました。',
+      ]));
     });
   });
 });

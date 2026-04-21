@@ -7,7 +7,7 @@
  */
 
 import { World, DEFAULT_METADATA, type WorldMetadata, type WorldSettings } from '@domain/entities/World';
-import type { WorldRepository } from '@domain/repositories/WorldRepository';
+import type { LoadWorldResult, WorldRepository } from '@domain/repositories/WorldRepository';
 import type { AddFeatureUseCase } from './AddFeatureUseCase';
 import type { ManageLayersUseCase } from './ManageLayersUseCase';
 import type { NavigateTimeUseCase } from './NavigateTimeUseCase';
@@ -96,10 +96,13 @@ export class SaveLoadUseCase {
    * 指定パスから読み込む（最近使ったファイル等）
    */
   async loadFromPath(filePath: string): Promise<boolean> {
-    const world = await this.repository.load(filePath);
-    this.distributeWorld(world);
+    const result = await this.loadWorld(filePath);
+    this.distributeWorld(result.world);
     this.currentFilePath = filePath;
-    eventBus.emit('world:loaded', { filePath });
+    eventBus.emit('world:loaded', {
+      filePath,
+      compatibilityWarnings: result.compatibilityWarnings,
+    });
     return true;
   }
 
@@ -129,6 +132,16 @@ export class SaveLoadUseCase {
     this.currentFilePath = filePath;
     eventBus.emit('world:saved', { filePath });
     return true;
+  }
+
+  private async loadWorld(filePath: string): Promise<LoadWorldResult> {
+    if (this.repository.loadWithReport) {
+      return this.repository.loadWithReport(filePath);
+    }
+    return {
+      world: await this.repository.load(filePath),
+      compatibilityWarnings: [],
+    };
   }
 
   /** 読み込んだWorldの内容を各ユースケースに分配する */

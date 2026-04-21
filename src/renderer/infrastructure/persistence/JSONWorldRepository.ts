@@ -4,10 +4,10 @@
  * §2.5: IPC経由でファイル読み書きを行う
  */
 
-import type { WorldRepository } from '@domain/repositories/WorldRepository';
+import type { LoadWorldResult, WorldRepository } from '@domain/repositories/WorldRepository';
 import type { World } from '@domain/entities/World';
 import { World as WorldEntity } from '@domain/entities/World';
-import { serialize, deserialize, SerializationError } from './JSONSerializer';
+import { serialize, deserializeWithReport, SerializationError } from './JSONSerializer';
 import {
   base64ToBytes,
   bytesToBase64,
@@ -37,11 +37,15 @@ export class JSONWorldRepository implements WorldRepository {
   }
 
   async load(filePath: string): Promise<World> {
+    return (await this.loadWithReport(filePath)).world;
+  }
+
+  async loadWithReport(filePath: string): Promise<LoadWorldResult> {
     if (isGimozaFile(filePath)) {
       return this.loadGimoza(filePath);
     }
     const content = await this.fs.readFile(filePath);
-    return deserialize(content);
+    return deserializeWithReport(content);
   }
 
   async save(filePath: string, world: World): Promise<void> {
@@ -53,7 +57,7 @@ export class JSONWorldRepository implements WorldRepository {
     await this.fs.writeFile(filePath, json);
   }
 
-  private async loadGimoza(filePath: string): Promise<World> {
+  private async loadGimoza(filePath: string): Promise<LoadWorldResult> {
     if (!this.fs.readBinaryFile) {
       throw new SerializationError('.gimoza ファイルを読み込める環境ではありません');
     }
@@ -64,11 +68,20 @@ export class JSONWorldRepository implements WorldRepository {
     if (!projectEntry) {
       throw new SerializationError('.gimoza に project.json が含まれていません');
     }
-    const world = deserialize(decodeUtf8(projectEntry.data));
+    const result = deserializeWithReport(decodeUtf8(projectEntry.data));
     const baseMapEntry = entries.find((entry) => entry.name === GIMOZA_BASE_MAP_ENTRY);
-    return baseMapEntry
-      ? withBaseMapSvgText(world, decodeUtf8(baseMapEntry.data))
-      : world;
+    const compatibilityWarnings = [...result.compatibilityWarnings];
+    if (!baseMapEntry && !hasEmbeddedBaseMap(result.world)) {
+      compatibilityWarnings.push(
+        '.gimoza 内にベースマップアセットがないため、プリセット地図設定で読み込みました。'
+      );
+    }
+    return {
+      world: baseMapEntry
+        ? withBaseMapSvgText(result.world, decodeUtf8(baseMapEntry.data))
+        : result.world,
+      compatibilityWarnings,
+    };
   }
 
   private async saveGimoza(filePath: string, world: World): Promise<void> {
@@ -110,6 +123,10 @@ export class JSONWorldRepository implements WorldRepository {
 
 function isGimozaFile(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.gimoza');
+}
+
+function hasEmbeddedBaseMap(world: World): boolean {
+  return (world.metadata.settings.baseMap.svgText?.trim().length ?? 0) > 0;
 }
 
 function withBaseMapSvgText(world: World, svgText: string | null): World {
