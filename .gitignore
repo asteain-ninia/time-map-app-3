@@ -1,6 +1,9 @@
 node_modules/
 out/
 dist/
+build/*
+!build/icon.ico
+!build/icon.svg
 *.tsbuildinfo
 .svelte-kit/
 .claude/settings.local.json

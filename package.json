@@ -5,9 +5,20 @@
   "author": "asteain-ninia",
   "license": "MIT",
   "main": "./out/main/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asteain-ninia/time-map-app-3.git"
+  },
+  "bugs": {
+    "url": "https://github.com/asteain-ninia/time-map-app-3/issues"
+  },
+  "homepage": "https://github.com/asteain-ninia/time-map-app-3#readme",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
     "preview": "electron-vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
@@ -24,11 +35,65 @@
     "@tsconfig/svelte": "^5.0.4",
     "@vitest/coverage-v8": "^2.1.9",
     "electron": "^41.0.3",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "svelte": "^5.16.0",
     "svelte-check": "^4.1.1",
     "typescript": "^5.7.2",
     "vite": "^6.4.2",
     "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.github.asteain-ninia.gimoza",
+    "productName": "gimoza",
+    "asar": true,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "src/renderer/public/assets/maps/base-map.svg",
+        "to": "assets/maps/base-map.svg"
+      }
+    ],
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "gimoza"
+    },
+    "fileAssociations": [
+      {
+        "ext": "gimoza",
+        "name": "gimoza Project",
+        "description": "gimoza project file",
+        "role": "Editor",
+        "icon": "icon.ico"
+      }
+    ]
   }
 }
