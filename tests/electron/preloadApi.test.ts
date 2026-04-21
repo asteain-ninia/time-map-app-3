@@ -33,4 +33,25 @@ describe('createPreloadApi', () => {
 
     expect(send).toHaveBeenCalledWith('app:setDirtyState', true);
   });
+
+  it('onOpenProjectPath はmainから渡されたプロジェクトパスを購読する', () => {
+    const on = vi.fn();
+    const removeListener = vi.fn();
+    const listener = vi.fn();
+    const api = createPreloadApi({ invoke: vi.fn(), on, removeListener });
+
+    const unsubscribe = api.onOpenProjectPath(listener);
+
+    expect(on).toHaveBeenCalledTimes(1);
+    expect(on.mock.calls[0][0]).toBe('app:openProjectPath');
+    const wrappedListener = on.mock.calls[0][1] as (event: unknown, filePath: unknown) => void;
+    wrappedListener({}, 'C:\\worlds\\test.gimoza');
+    wrappedListener({}, 123);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith('C:\\worlds\\test.gimoza');
+
+    unsubscribe();
+    expect(removeListener).toHaveBeenCalledWith('app:openProjectPath', wrappedListener);
+  });
 });

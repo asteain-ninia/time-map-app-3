@@ -834,6 +834,14 @@
     markAsDirty();
   });
 
+  const unsubscribeOpenProjectPath = typeof window !== 'undefined'
+    ? window.api?.onOpenProjectPath?.((filePath) => {
+        if (!isSupportedProjectFilePath(filePath)) return;
+        if (!confirmUnsavedChanges()) return;
+        void loadProjectFromPath(filePath);
+      }) ?? null
+    : null;
+
   function onUnhandledRendererError(event: ErrorEvent): void {
     appLogger.error('Unhandled renderer error', {
       message: event.message,
@@ -864,6 +872,7 @@
     unsubFeatureChanged();
     unsubFeatureRemoved();
     unsubUndoRedo();
+    unsubscribeOpenProjectPath?.();
     toolStore.stop();
     if (backupIntervalId) clearInterval(backupIntervalId);
     if (typeof window !== 'undefined') {
@@ -1965,6 +1974,11 @@
     return confirm('未保存の変更があります。続行しますか？');
   }
 
+  function isSupportedProjectFilePath(filePath: string): boolean {
+    const lowerName = filePath.toLowerCase();
+    return lowerName.endsWith('.json') || lowerName.endsWith('.gimoza');
+  }
+
   /** 新規プロジェクト */
   function newProject(): void {
     if (!confirmUnsavedChanges()) return;
@@ -1998,8 +2012,7 @@
     e.preventDefault();
     const file = e.dataTransfer?.files[0];
     if (!file) return;
-    const lowerName = file.name.toLowerCase();
-    if (!lowerName.endsWith('.json') && !lowerName.endsWith('.gimoza')) return;
+    if (!isSupportedProjectFilePath(file.name)) return;
     if (!confirmUnsavedChanges()) return;
     // Electronのfile.pathでファイルパスを取得
     const filePath = (file as File & { path?: string }).path;

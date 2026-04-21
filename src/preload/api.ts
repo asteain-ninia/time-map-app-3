@@ -12,11 +12,14 @@ export interface FileAPI {
   showOpenDialog(): Promise<string | null>;
   showSaveDialog(): Promise<string | null>;
   setUnsavedChanges(isDirty: boolean): void;
+  onOpenProjectPath(listener: (filePath: string) => void): () => void;
 }
 
 interface IpcRendererLike {
   invoke(channel: string, ...args: unknown[]): Promise<unknown>;
   send?(channel: string, ...args: unknown[]): void;
+  on?(channel: string, listener: (event: unknown, ...args: unknown[]) => void): void;
+  removeListener?(channel: string, listener: (event: unknown, ...args: unknown[]) => void): void;
 }
 
 export function createPreloadApi(ipcRenderer: IpcRendererLike): FileAPI {
@@ -47,6 +50,17 @@ export function createPreloadApi(ipcRenderer: IpcRendererLike): FileAPI {
       ipcRenderer.invoke('dialog:save') as Promise<string | null>,
     setUnsavedChanges: (isDirty: boolean) => {
       ipcRenderer.send?.('app:setDirtyState', isDirty);
+    },
+    onOpenProjectPath: (listener: (filePath: string) => void) => {
+      const wrappedListener = (_event: unknown, filePath: unknown): void => {
+        if (typeof filePath === 'string') {
+          listener(filePath);
+        }
+      };
+      ipcRenderer.on?.('app:openProjectPath', wrappedListener);
+      return () => {
+        ipcRenderer.removeListener?.('app:openProjectPath', wrappedListener);
+      };
     },
   };
 }
