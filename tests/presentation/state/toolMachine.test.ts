@@ -211,6 +211,33 @@ describe('toolMachine', () => {
       expect(actor.getSnapshot().context.drawingCoords).toHaveLength(1);
       actor.stop();
     });
+
+    it('プロジェクト読み込み用リセットで描画中座標を破棄してidle状態に戻る', () => {
+      const actor = startActor();
+      actor.send({ type: 'MODE_CHANGE', mode: 'add' });
+      actor.send({ type: 'SET_ADD_TOOL', toolType: 'line' });
+      actor.send({ type: 'MAP_CLICK', coord: new Coordinate(0, 0) });
+      actor.send({ type: 'MAP_CLICK', coord: new Coordinate(10, 10) });
+
+      actor.send({ type: 'RESET_INTERACTION' });
+
+      expect(actor.getSnapshot().value).toEqual({ add: 'idle' });
+      expect(actor.getSnapshot().context.drawingCoords).toEqual([]);
+      actor.stop();
+    });
+
+    it('プロジェクト読み込み用リセットで追加モードのパン中座標も破棄する', () => {
+      const actor = startActor();
+      actor.send({ type: 'MODE_CHANGE', mode: 'add' });
+      actor.send({ type: 'MAP_CLICK', coord: new Coordinate(0, 0) });
+      actor.send({ type: 'PAN_START' });
+
+      actor.send({ type: 'RESET_INTERACTION' });
+
+      expect(actor.getSnapshot().value).toEqual({ add: 'idle' });
+      expect(actor.getSnapshot().context.drawingCoords).toEqual([]);
+      actor.stop();
+    });
   });
 
   describe('追加モード: ツール種別切替', () => {

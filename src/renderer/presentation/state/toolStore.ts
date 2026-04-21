@@ -74,7 +74,8 @@ export function createToolStore(onShapeConfirmed?: OnShapeConfirmed) {
       snap.matches({ add: 'idle' }) &&
       prevSnapshot.matches({ add: 'drawing' }) &&
       prevSnapshot.context.drawingCoords.length > 0 &&
-      lastEvent?.type !== 'KEY_ESCAPE'
+      lastEvent?.type !== 'KEY_ESCAPE' &&
+      lastEvent?.type !== 'RESET_INTERACTION'
     ) {
       onShapeConfirmed?.(
         prevSnapshot.context.addToolType,

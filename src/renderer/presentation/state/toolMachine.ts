@@ -37,7 +37,8 @@ export type ToolEvent =
   | { type: 'PAN_END' }
   | { type: 'KEY_ESCAPE' }
   | { type: 'CONFIRM' }
-  | { type: 'UNDO_VERTEX' };
+  | { type: 'UNDO_VERTEX' }
+  | { type: 'RESET_INTERACTION' };
 
 // --- マシン定義 ---
 
@@ -97,11 +98,18 @@ export const toolMachine = setup({
         idle: {
           on: {
             PAN_START: 'panning',
+            RESET_INTERACTION: {
+              actions: 'clearDrawing',
+            },
           },
         },
         panning: {
           on: {
             PAN_END: 'idle',
+            RESET_INTERACTION: {
+              target: 'idle',
+              actions: 'clearDrawing',
+            },
           },
         },
       },
@@ -134,6 +142,9 @@ export const toolMachine = setup({
               },
             ],
             PAN_START: 'panning',
+            RESET_INTERACTION: {
+              actions: 'clearDrawing',
+            },
           },
         },
         drawing: {
@@ -163,6 +174,10 @@ export const toolMachine = setup({
               actions: 'clearDrawing',
             },
             PAN_START: 'panning',
+            RESET_INTERACTION: {
+              target: 'idle',
+              actions: 'clearDrawing',
+            },
           },
         },
         panning: {
@@ -174,6 +189,10 @@ export const toolMachine = setup({
               },
               { target: 'idle' },
             ],
+            RESET_INTERACTION: {
+              target: 'idle',
+              actions: 'clearDrawing',
+            },
           },
         },
       },
@@ -196,11 +215,18 @@ export const toolMachine = setup({
         idle: {
           on: {
             PAN_START: 'panning',
+            RESET_INTERACTION: {
+              actions: 'clearDrawing',
+            },
           },
         },
         panning: {
           on: {
             PAN_END: 'idle',
+            RESET_INTERACTION: {
+              target: 'idle',
+              actions: 'clearDrawing',
+            },
           },
         },
       },
@@ -220,11 +246,18 @@ export const toolMachine = setup({
         idle: {
           on: {
             PAN_START: 'panning',
+            RESET_INTERACTION: {
+              actions: 'clearDrawing',
+            },
           },
         },
         panning: {
           on: {
             PAN_END: 'idle',
+            RESET_INTERACTION: {
+              target: 'idle',
+              actions: 'clearDrawing',
+            },
           },
         },
       },

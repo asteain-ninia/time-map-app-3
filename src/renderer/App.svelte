@@ -760,10 +760,30 @@
     return layerList.find((layer) => layer.visible) ?? layerList[0] ?? null;
   }
 
+  function resetInteractionState(): void {
+    toolStore.send({ type: 'RESET_INTERACTION' });
+    syncToolState();
+    selectedFeatureId = null;
+    selectedVertexIds = new Set();
+    dragState = null;
+    boxSelectState = null;
+    snapIndicators = [];
+    ringDrawingState = null;
+    featureDragState = null;
+    knifeDrawingState = null;
+    showSplitModal = false;
+    showMergeModal = false;
+    mergeTargetIds = [];
+    validationMessage = '';
+    resetFeatureDragContext();
+    resetVertexDragContext();
+  }
+
   // --- 初期レイヤー（デフォルト1つ） ---
   if (layerQueries.getLayers().length === 0) {
     manageLayers.addLayer('default', 'レイヤー1');
   }
+  refreshFeatureData();
   refreshLayerData();
 
   // --- イベントバス購読 ---
@@ -784,9 +804,9 @@
   const unsubWorldLoaded = eventBus.on('world:loaded', () => {
     refreshFeatureData();
     refreshLayerData();
-    selectedFeatureId = null;
-    selectedVertexIds = new Set();
+    resetInteractionState();
     clearSurveyMeasurements();
+    undoRedo.clear();
     dirtyState = resetDirty();
     // メタデータ・設定を復元
     const loaded = projectQueries.getMetadata();
@@ -857,24 +877,12 @@
 
   function onModeChange(mode: ToolMode): void {
     toolStore.send({ type: 'MODE_CHANGE', mode });
-    selectedFeatureId = null;
-    selectedVertexIds = new Set();
-    dragState = null;
-    boxSelectState = null;
-    snapIndicators = [];
     restoreFeatureDragPreview();
     refreshFeatureData();
-    resetFeatureDragContext();
-    resetVertexDragContext();
+    resetInteractionState();
     if (mode !== 'edit') {
       editInteractionMode = 'vertex';
-      ringDrawingState = null;
-      knifeDrawingState = null;
-      showSplitModal = false;
-      showMergeModal = false;
-      mergeTargetIds = [];
     }
-    validationMessage = '';
     syncToolState();
   }
 
@@ -1966,9 +1974,9 @@
     manageLayers.addLayer('default', 'レイヤー1');
     refreshFeatureData();
     refreshLayerData();
-    selectedFeatureId = null;
-    selectedVertexIds = new Set();
+    resetInteractionState();
     clearSurveyMeasurements();
+    undoRedo.clear();
     dirtyState = resetDirty();
     const resetMetadata = projectQueries.getMetadata();
     projectSettings = normalizeWorldSettings(resetMetadata.settings);

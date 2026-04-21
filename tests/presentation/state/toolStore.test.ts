@@ -107,6 +107,23 @@ describe('createToolStore', () => {
       expect(cb).not.toHaveBeenCalled();
     });
 
+    it('プロジェクト読み込み用リセット時には描画座標を破棄してコールバックを呼ばない', () => {
+      const cb = vi.fn();
+      store = createToolStore(cb);
+      store.send({ type: 'MODE_CHANGE', mode: 'add' });
+      store.send({ type: 'MAP_CLICK', coord: new Coordinate(0, 0) });
+      store.send({ type: 'MAP_CLICK', coord: new Coordinate(10, 0) });
+      store.send({ type: 'MAP_CLICK', coord: new Coordinate(10, 10) });
+
+      store.send({ type: 'RESET_INTERACTION' });
+
+      const snap = store.getSnapshot();
+      expect(snap.mode).toBe('add');
+      expect(snap.isDrawing).toBe(false);
+      expect(snap.drawingCoords).toEqual([]);
+      expect(cb).not.toHaveBeenCalled();
+    });
+
     it('モード切替時にはコールバックが呼ばれない', () => {
       const cb = vi.fn();
       store = createToolStore(cb);
