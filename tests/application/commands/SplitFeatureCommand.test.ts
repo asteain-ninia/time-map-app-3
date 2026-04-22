@@ -137,6 +137,332 @@ describe('SplitFeatureCommand', () => {
       }
     });
 
+    it('既存共有頂点を跨ぐ分割では共有先地物との共有グループを新頂点へ引き継ぐ', () => {
+      const featureA = createSquarePolygon();
+      const shapeA = featureA.getActiveAnchor(time)?.shape;
+      if (shapeA?.type !== 'Polygon') {
+        throw new Error('polygon expected');
+      }
+      const oldStartVertexId = shapeA.rings[0].vertexIds[0];
+      const oldEndVertexId = shapeA.rings[0].vertexIds[2];
+
+      const featureB = addFeature.addPolygon(
+        [
+          new Coordinate(0, 0),
+          new Coordinate(10, 10),
+          new Coordinate(20, 0),
+        ],
+        'l1',
+        time,
+        '共有先面'
+      );
+      const shapeB = featureB.getActiveAnchor(time)?.shape;
+      if (shapeB?.type !== 'Polygon') {
+        throw new Error('polygon expected');
+      }
+      const sharedStartVertexId = shapeB.rings[0].vertexIds[0];
+      const sharedEndVertexId = shapeB.rings[0].vertexIds[1];
+
+      const sharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+      sharedGroups.set(
+        'sg-start',
+        new SharedVertexGroup(
+          'sg-start',
+          [oldStartVertexId, sharedStartVertexId],
+          new Coordinate(0, 0)
+        )
+      );
+      sharedGroups.set(
+        'sg-end',
+        new SharedVertexGroup(
+          'sg-end',
+          [oldEndVertexId, sharedEndVertexId],
+          new Coordinate(10, 10)
+        )
+      );
+
+      new SplitFeatureCommand(addFeature, {
+        featureId: featureA.id,
+        cuttingLine: [{ x: -1, y: -1 }, { x: 11, y: 11 }],
+        isClosed: false,
+        currentTime: time,
+      }).execute();
+
+      expect(addFeature.getSharedVertexGroups().size).toBe(2);
+      assertTransferredSharedGroup('sg-start', sharedStartVertexId, oldStartVertexId, new Coordinate(0, 0));
+      assertTransferredSharedGroup('sg-end', sharedEndVertexId, oldEndVertexId, new Coordinate(10, 10));
+    });
+
+    it('共有辺の途中で分割される場合は共有先地物にも対応頂点を挿入する', () => {
+      const { featureA, featureB } = createSharedLeftEdgeFixture();
+      const originalBVertexIds = getPolygonVertexIds(featureB.id);
+      const command = new SplitFeatureCommand(addFeature, {
+        featureId: featureA.id,
+        cuttingLine: [{ x: -1, y: 5 }, { x: 11, y: 5 }],
+        isClosed: false,
+        currentTime: time,
+      });
+      undoRedo.execute(command);
+
+      const insertedBVertexId = findPolygonVertexIdAt(featureB.id, new Coordinate(0, 5));
+      expect(insertedBVertexId).not.toBeNull();
+      expect(getPolygonVertexIds(featureB.id)).toContain(insertedBVertexId!);
+
+      const sharedGroupAtCutPoint = findSharedGroupAt(new Coordinate(0, 5));
+      expect(sharedGroupAtCutPoint).toBeDefined();
+      expect(sharedGroupAtCutPoint?.vertexIds).toContain(insertedBVertexId!);
+      expect(sharedGroupAtCutPoint?.vertexIds).toHaveLength(3);
+
+      const splitVertexIds = sharedGroupAtCutPoint?.vertexIds.filter((vertexId) =>
+        vertexId !== insertedBVertexId
+      ) ?? [];
+      expect(splitVertexIds.every((vertexId) =>
+        getPolygonVertexIds(featureA.id).includes(vertexId) ||
+        addFeature.getFeatures()
+          .filter((candidate) => candidate.id !== featureA.id && candidate.id !== featureB.id)
+          .some((candidate) => getPolygonVertexIds(candidate.id).includes(vertexId))
+      )).toBe(true);
+
+      undoRedo.undo();
+      expect(getPolygonVertexIds(featureB.id)).toEqual(originalBVertexIds);
+      expect(addFeature.getVertices().has(insertedBVertexId!)).toBe(false);
+
+      undoRedo.redo();
+      expect(findPolygonVertexIdAt(featureB.id, new Coordinate(0, 5))).toBe(insertedBVertexId);
+      expect(addFeature.getSharedVertexGroups().get(sharedGroupAtCutPoint!.id)?.vertexIds)
+        .toContain(insertedBVertexId!);
+    });
+
+    it('共有辺の途中に複数の切断点がある場合は共有先地物へ同順で頂点を挿入する', () => {
+      const {
+        featureA,
+        featureB,
+        bBottomSharedVertexId,
+        bTopSharedVertexId,
+      } = createSharedLeftEdgeFixture();
+      const originalBVertexIds = getPolygonVertexIds(featureB.id);
+      const command = new SplitFeatureCommand(addFeature, {
+        featureId: featureA.id,
+        cuttingLine: [
+          { x: -1, y: 2 },
+          { x: 4, y: 2 },
+          { x: 4, y: 8 },
+          { x: -1, y: 8 },
+        ],
+        isClosed: false,
+        currentTime: time,
+      });
+      undoRedo.execute(command);
+
+      const lowerInsertedBVertexId = findPolygonVertexIdAt(featureB.id, new Coordinate(0, 2));
+      const upperInsertedBVertexId = findPolygonVertexIdAt(featureB.id, new Coordinate(0, 8));
+      expect(lowerInsertedBVertexId).not.toBeNull();
+      expect(upperInsertedBVertexId).not.toBeNull();
+
+      const bVertexIdsAfterSplit = getPolygonVertexIds(featureB.id);
+      const bottomIndex = bVertexIdsAfterSplit.indexOf(bBottomSharedVertexId);
+      expect(bVertexIdsAfterSplit.slice(bottomIndex, bottomIndex + 4)).toEqual([
+        bBottomSharedVertexId,
+        lowerInsertedBVertexId,
+        upperInsertedBVertexId,
+        bTopSharedVertexId,
+      ]);
+
+      for (const coordinate of [new Coordinate(0, 2), new Coordinate(0, 8)]) {
+        const insertedBVertexId = findPolygonVertexIdAt(featureB.id, coordinate);
+        const sharedGroup = findSharedGroupAt(coordinate);
+        expect(sharedGroup).toBeDefined();
+        expect(sharedGroup?.vertexIds).toContain(insertedBVertexId!);
+        expect(sharedGroup?.vertexIds).toHaveLength(3);
+      }
+
+      undoRedo.undo();
+      expect(getPolygonVertexIds(featureB.id)).toEqual(originalBVertexIds);
+      expect(addFeature.getVertices().has(lowerInsertedBVertexId!)).toBe(false);
+      expect(addFeature.getVertices().has(upperInsertedBVertexId!)).toBe(false);
+
+      undoRedo.redo();
+      expect(findPolygonVertexIdAt(featureB.id, new Coordinate(0, 2))).toBe(lowerInsertedBVertexId);
+      expect(findPolygonVertexIdAt(featureB.id, new Coordinate(0, 8))).toBe(upperInsertedBVertexId);
+    });
+
+    it('共有辺上の既存中間頂点は切断線が通らない限り共有先地物へ挿入しない', () => {
+      const {
+        featureA,
+        featureB,
+        bBottomSharedVertexId,
+        bTopSharedVertexId,
+      } = createSharedLeftEdgeFixture([
+        new Coordinate(0, 0),
+        new Coordinate(10, 0),
+        new Coordinate(10, 10),
+        new Coordinate(0, 10),
+        new Coordinate(0, 5),
+      ]);
+      const command = new SplitFeatureCommand(addFeature, {
+        featureId: featureA.id,
+        cuttingLine: [{ x: -1, y: 2 }, { x: 11, y: 2 }],
+        isClosed: false,
+        currentTime: time,
+      });
+      undoRedo.execute(command);
+
+      const insertedCutVertexId = findPolygonVertexIdAt(featureB.id, new Coordinate(0, 2));
+      expect(insertedCutVertexId).not.toBeNull();
+      expect(findPolygonVertexIdAt(featureB.id, new Coordinate(0, 5))).toBeNull();
+      expect(findSharedGroupAt(new Coordinate(0, 5))).toBeUndefined();
+
+      const bVertexIdsAfterSplit = getPolygonVertexIds(featureB.id);
+      const bottomIndex = bVertexIdsAfterSplit.indexOf(bBottomSharedVertexId);
+      expect(bVertexIdsAfterSplit.slice(bottomIndex, bottomIndex + 3)).toEqual([
+        bBottomSharedVertexId,
+        insertedCutVertexId,
+        bTopSharedVertexId,
+      ]);
+    });
+
+    it('共有先地物Bだけが共有辺上に中間頂点を持つ場合も切断点をB側へ挿入する', () => {
+      const {
+        featureA,
+        featureB,
+        bBottomSharedVertexId,
+        bTopSharedVertexId,
+      } = createSharedLeftEdgeFixture({
+        featureBCoordinates: [
+          new Coordinate(-10, 0),
+          new Coordinate(0, 0),
+          new Coordinate(0, 5),
+          new Coordinate(0, 10),
+          new Coordinate(-10, 10),
+        ],
+      });
+      const command = new SplitFeatureCommand(addFeature, {
+        featureId: featureA.id,
+        cuttingLine: [{ x: -1, y: 2 }, { x: 11, y: 2 }],
+        isClosed: false,
+        currentTime: time,
+      });
+      undoRedo.execute(command);
+
+      const insertedCutVertexId = findPolygonVertexIdAt(featureB.id, new Coordinate(0, 2));
+      const existingMiddleVertexId = findPolygonVertexIdAt(featureB.id, new Coordinate(0, 5));
+      expect(insertedCutVertexId).not.toBeNull();
+      expect(existingMiddleVertexId).not.toBeNull();
+
+      const bVertexIdsAfterSplit = getPolygonVertexIds(featureB.id);
+      const bottomIndex = bVertexIdsAfterSplit.indexOf(bBottomSharedVertexId);
+      expect(bVertexIdsAfterSplit.slice(bottomIndex, bottomIndex + 4)).toEqual([
+        bBottomSharedVertexId,
+        insertedCutVertexId,
+        existingMiddleVertexId,
+        bTopSharedVertexId,
+      ]);
+    });
+
+    it('共有先地物Bに切断点と同座標の既存中間頂点がある場合はその頂点を共有する', () => {
+      const {
+        featureA,
+        featureB,
+      } = createSharedLeftEdgeFixture({
+        featureBCoordinates: [
+          new Coordinate(-10, 0),
+          new Coordinate(0, 0),
+          new Coordinate(0, 2),
+          new Coordinate(0, 10),
+          new Coordinate(-10, 10),
+        ],
+      });
+      const originalBVertexIds = getPolygonVertexIds(featureB.id);
+      const existingCutVertexId = findPolygonVertexIdAt(featureB.id, new Coordinate(0, 2));
+      expect(existingCutVertexId).not.toBeNull();
+
+      const command = new SplitFeatureCommand(addFeature, {
+        featureId: featureA.id,
+        cuttingLine: [{ x: -1, y: 2 }, { x: 11, y: 2 }],
+        isClosed: false,
+        currentTime: time,
+      });
+      undoRedo.execute(command);
+
+      expect(getPolygonVertexIds(featureB.id)).toEqual(originalBVertexIds);
+      const sharedGroup = findSharedGroupAt(new Coordinate(0, 2));
+      expect(sharedGroup).toBeDefined();
+      expect(sharedGroup?.vertexIds).toContain(existingCutVertexId!);
+      expect(sharedGroup?.vertexIds).toHaveLength(3);
+    });
+
+    it('共有先地物Bの既存切断点頂点が別グループ所属の場合はそのグループへ分割側頂点を統合する', () => {
+      const {
+        featureA,
+        featureB,
+      } = createSharedLeftEdgeFixture({
+        featureBCoordinates: [
+          new Coordinate(-10, 0),
+          new Coordinate(0, 0),
+          new Coordinate(0, 2),
+          new Coordinate(0, 10),
+          new Coordinate(-10, 10),
+        ],
+      });
+      const existingCutVertexId = findPolygonVertexIdAt(featureB.id, new Coordinate(0, 2));
+      if (!existingCutVertexId) {
+        throw new Error('existing cut vertex expected');
+      }
+
+      const featureC = addFeature.addPoint(new Coordinate(0, 2), 'l1', time, '共有先点C');
+      const shapeC = featureC.getActiveAnchor(time)?.shape;
+      if (shapeC?.type !== 'Point') {
+        throw new Error('point expected');
+      }
+
+      const sharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+      sharedGroups.set(
+        'sg-bc-cut',
+        new SharedVertexGroup(
+          'sg-bc-cut',
+          [existingCutVertexId, shapeC.vertexId],
+          new Coordinate(0, 2)
+        )
+      );
+
+      const command = new SplitFeatureCommand(addFeature, {
+        featureId: featureA.id,
+        cuttingLine: [{ x: -1, y: 2 }, { x: 11, y: 2 }],
+        isClosed: false,
+        currentTime: time,
+      });
+      undoRedo.execute(command);
+
+      const mergedGroup = addFeature.getSharedVertexGroups().get('sg-bc-cut');
+      expect(addFeature.getSharedVertexGroups().size).toBe(4);
+      expect(mergedGroup).toBeDefined();
+      expect(mergedGroup?.vertexIds).toContain(existingCutVertexId);
+      expect(mergedGroup?.vertexIds).toContain(shapeC.vertexId);
+      expect(mergedGroup?.vertexIds).toHaveLength(4);
+      expect(getGroupsContainingVertex(existingCutVertexId)).toHaveLength(1);
+      expect(getSharedGroupsAt(new Coordinate(0, 2))).toHaveLength(1);
+
+      const splitVertexIds = mergedGroup?.vertexIds.filter((vertexId) =>
+        vertexId !== existingCutVertexId && vertexId !== shapeC.vertexId
+      ) ?? [];
+      expect(splitVertexIds).toHaveLength(2);
+      for (const vertexId of splitVertexIds) {
+        const vertex = addFeature.getVertices().get(vertexId);
+        expect(vertex?.coordinate.x).toBeCloseTo(0);
+        expect(vertex?.coordinate.y).toBeCloseTo(2);
+      }
+
+      undoRedo.undo();
+      expect(addFeature.getSharedVertexGroups().get('sg-bc-cut')?.vertexIds)
+        .toEqual([existingCutVertexId, shapeC.vertexId]);
+
+      undoRedo.redo();
+      expect(addFeature.getSharedVertexGroups().get('sg-bc-cut')?.vertexIds)
+        .toHaveLength(4);
+      expect(getGroupsContainingVertex(existingCutVertexId)).toHaveLength(1);
+      expect(getSharedGroupsAt(new Coordinate(0, 2))).toHaveLength(1);
+    });
+
     it('Undoで分割時に追加された共有頂点グループだけを戻す', () => {
       const pointA = addFeature.addPoint(new Coordinate(100, 0), 'l1', time, '点A');
       const pointB = addFeature.addPoint(new Coordinate(100, 0), 'l1', time, '点B');
@@ -467,5 +793,135 @@ describe('SplitFeatureCommand', () => {
       .map((vertexId) => addFeature.getVertices().get(vertexId))
       .filter((vertex): vertex is Vertex => vertex !== undefined);
     return Math.min(...vertices.map((vertex) => vertex.coordinate.x));
+  }
+
+  function findPolygonVertexIdAt(featureId: string, coordinate: Coordinate): string | null {
+    const vertexId = getPolygonVertexIds(featureId).find((candidate) => {
+      const vertex = addFeature.getVertices().get(candidate);
+      return vertex?.coordinate.x === coordinate.x && vertex.coordinate.y === coordinate.y;
+    });
+    return vertexId ?? null;
+  }
+
+  function findSharedGroupAt(coordinate: Coordinate): SharedVertexGroup | undefined {
+    return getSharedGroupsAt(coordinate)[0];
+  }
+
+  function getSharedGroupsAt(coordinate: Coordinate): SharedVertexGroup[] {
+    return [...addFeature.getSharedVertexGroups().values()]
+      .filter((group) =>
+        group.representativeCoordinate.x === coordinate.x &&
+        group.representativeCoordinate.y === coordinate.y
+      );
+  }
+
+  function getGroupsContainingVertex(vertexId: string): SharedVertexGroup[] {
+    return [...addFeature.getSharedVertexGroups().values()]
+      .filter((group) => group.vertexIds.includes(vertexId));
+  }
+
+  function createSharedLeftEdgeFixture(
+    params: readonly Coordinate[] | {
+      readonly featureACoordinates?: readonly Coordinate[];
+      readonly featureBCoordinates?: readonly Coordinate[];
+    } = {}
+  ) {
+    const featureACoordinates = Array.isArray(params)
+      ? params
+      : params.featureACoordinates ?? [
+      new Coordinate(0, 0),
+      new Coordinate(10, 0),
+      new Coordinate(10, 10),
+      new Coordinate(0, 10),
+    ];
+    const featureBCoordinates = !Array.isArray(params) && params.featureBCoordinates
+      ? params.featureBCoordinates
+      : [
+        new Coordinate(-10, 0),
+        new Coordinate(0, 0),
+        new Coordinate(0, 10),
+        new Coordinate(-10, 10),
+      ];
+
+    const featureA = addFeature.addPolygon(
+      featureACoordinates,
+      'l1',
+      time,
+      'テスト面'
+    );
+    const shapeA = featureA.getActiveAnchor(time)?.shape;
+    if (shapeA?.type !== 'Polygon') {
+      throw new Error('polygon expected');
+    }
+    const oldBottomLeftVertexId = findPolygonVertexIdAt(featureA.id, new Coordinate(0, 0));
+    const oldTopLeftVertexId = findPolygonVertexIdAt(featureA.id, new Coordinate(0, 10));
+    if (!oldBottomLeftVertexId || !oldTopLeftVertexId) {
+      throw new Error('shared source vertices expected');
+    }
+
+    const featureB = addFeature.addPolygon(
+      featureBCoordinates,
+      'l1',
+      time,
+      '左隣面'
+    );
+    const shapeB = featureB.getActiveAnchor(time)?.shape;
+    if (shapeB?.type !== 'Polygon') {
+      throw new Error('polygon expected');
+    }
+    const bBottomSharedVertexId = findPolygonVertexIdAt(featureB.id, new Coordinate(0, 0));
+    const bTopSharedVertexId = findPolygonVertexIdAt(featureB.id, new Coordinate(0, 10));
+    if (!bBottomSharedVertexId || !bTopSharedVertexId) {
+      throw new Error('shared target vertices expected');
+    }
+
+    const sharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+    sharedGroups.set(
+      'sg-bottom-left',
+      new SharedVertexGroup(
+        'sg-bottom-left',
+        [oldBottomLeftVertexId, bBottomSharedVertexId],
+        new Coordinate(0, 0)
+      )
+    );
+    sharedGroups.set(
+      'sg-top-left',
+      new SharedVertexGroup(
+        'sg-top-left',
+        [oldTopLeftVertexId, bTopSharedVertexId],
+        new Coordinate(0, 10)
+      )
+    );
+
+    return {
+      featureA,
+      featureB,
+      bBottomSharedVertexId,
+      bTopSharedVertexId,
+    };
+  }
+
+  function assertTransferredSharedGroup(
+    groupId: string,
+    externalVertexId: string,
+    oldSplitFeatureVertexId: string,
+    expectedCoordinate: Coordinate
+  ): void {
+    const group = addFeature.getSharedVertexGroups().get(groupId);
+    expect(group).toBeDefined();
+    expect(group?.vertexIds).toContain(externalVertexId);
+    expect(group?.vertexIds).not.toContain(oldSplitFeatureVertexId);
+    expect(group?.vertexIds.length).toBeGreaterThanOrEqual(3);
+    expect(group?.representativeCoordinate.x).toBeCloseTo(expectedCoordinate.x);
+    expect(group?.representativeCoordinate.y).toBeCloseTo(expectedCoordinate.y);
+
+    const splitVertexIds = group?.vertexIds.filter((vertexId) => vertexId !== externalVertexId) ?? [];
+    const allGroups = [...addFeature.getSharedVertexGroups().values()];
+    for (const vertexId of splitVertexIds) {
+      const vertex = addFeature.getVertices().get(vertexId);
+      expect(vertex?.coordinate.x).toBeCloseTo(expectedCoordinate.x);
+      expect(vertex?.coordinate.y).toBeCloseTo(expectedCoordinate.y);
+      expect(allGroups.filter((candidate) => candidate.vertexIds.includes(vertexId))).toHaveLength(1);
+    }
   }
 });
