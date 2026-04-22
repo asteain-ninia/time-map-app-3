@@ -15,7 +15,31 @@ import { polygonArea, segmentsIntersect, isPointInPolygon } from './GeometryServ
 import {
   polygonDifference,
   polygonIntersection,
+  polygonUnionAll,
 } from './BooleanOperationService';
+
+const GEOMETRY_EPSILON = 1e-7;
+
+type HalfPlanePiece = 'a' | 'b';
+
+interface SplitPolygonPiece {
+  readonly side: HalfPlanePiece;
+  readonly polygon: readonly RingCoords[];
+  readonly realCutContactLength: number;
+}
+
+interface CutSegment {
+  readonly index: number;
+  readonly start: { x: number; y: number };
+  readonly end: { x: number; y: number };
+}
+
+interface CutInterval {
+  readonly segmentIndex: number;
+  readonly start: number;
+  readonly end: number;
+  readonly segmentLength: number;
+}
 
 /** 分割結果 */
 export interface KnifeSplitResult {
@@ -193,12 +217,14 @@ export function splitPolygonsByLine(
       continue;
     }
 
-    if (!pieceAResult.isEmpty) {
-      pieceAPolygons.push(...pieceAResult.polygons.map((piece) => piece.map((ring) => [...ring])));
-    }
-    if (!pieceBResult.isEmpty) {
-      pieceBPolygons.push(...pieceBResult.polygons.map((piece) => piece.map((ring) => [...ring])));
-    }
+    const mergedPieces = mergeArtificialExtensionSplits(
+      pieceAResult.polygons,
+      pieceBResult.polygons,
+      extendedLine,
+      cuttingLine
+    );
+    pieceAPolygons.push(...mergedPieces.pieceAPolygons);
+    pieceBPolygons.push(...mergedPieces.pieceBPolygons);
   }
 
   if (pieceAPolygons.length === 0 || pieceBPolygons.length === 0) {
@@ -206,6 +232,233 @@ export function splitPolygonsByLine(
   }
 
   return createSuccessResult(pieceAPolygons, pieceBPolygons);
+}
+
+function mergeArtificialExtensionSplits(
+  pieceAPolygons: readonly (readonly RingCoords[])[],
+  pieceBPolygons: readonly (readonly RingCoords[])[],
+  extendedLine: readonly { x: number; y: number }[],
+  cuttingLine: readonly { x: number; y: number }[]
+): { pieceAPolygons: RingCoords[][]; pieceBPolygons: RingCoords[][] } {
+  const artificialSegments = getArtificialExtensionSegments(extendedLine, cuttingLine);
+  if (artificialSegments.length === 0) {
+    return {
+      pieceAPolygons: clonePolygons(pieceAPolygons),
+      pieceBPolygons: clonePolygons(pieceBPolygons),
+    };
+  }
+
+  const pieces: SplitPolygonPiece[] = [
+    ...pieceAPolygons.map((polygon) => createSplitPolygonPiece('a', polygon, cuttingLine)),
+    ...pieceBPolygons.map((polygon) => createSplitPolygonPiece('b', polygon, cuttingLine)),
+  ];
+  const parents = pieces.map((_, index) => index);
+  const intervals = pieces.map((piece) => collectCutIntervals(piece.polygon, artificialSegments));
+
+  for (let i = 0; i < pieces.length; i++) {
+    for (let j = i + 1; j < pieces.length; j++) {
+      if (pieces[i].side === pieces[j].side) continue;
+      if (hasOverlappingInterval(intervals[i], intervals[j])) {
+        unionParents(parents, i, j);
+      }
+    }
+  }
+
+  return collectMergedPieces(pieces, parents);
+}
+
+function createSplitPolygonPiece(
+  side: HalfPlanePiece,
+  polygon: readonly RingCoords[],
+  cuttingLine: readonly { x: number; y: number }[]
+): SplitPolygonPiece {
+  return {
+    side,
+    polygon,
+    realCutContactLength: sumCutIntervalLengths(collectCutIntervals(polygon, createCutSegments(cuttingLine))),
+  };
+}
+
+function createCutSegments(line: readonly { x: number; y: number }[]): CutSegment[] {
+  const segments: CutSegment[] = [];
+  for (let i = 0; i < line.length - 1; i++) {
+    segments.push({ index: i, start: line[i], end: line[i + 1] });
+  }
+  return segments;
+}
+
+function getArtificialExtensionSegments(
+  extendedLine: readonly { x: number; y: number }[],
+  cuttingLine: readonly { x: number; y: number }[]
+): CutSegment[] {
+  if (extendedLine.length < 4 || cuttingLine.length < 2) return [];
+
+  return [
+    { index: 0, start: extendedLine[0], end: extendedLine[1] },
+    {
+      index: 1,
+      start: extendedLine[extendedLine.length - 2],
+      end: extendedLine[extendedLine.length - 1],
+    },
+  ].filter((segment) => segmentLength(segment.start, segment.end) > GEOMETRY_EPSILON);
+}
+
+function collectMergedPieces(
+  pieces: readonly SplitPolygonPiece[],
+  parents: readonly number[]
+): { pieceAPolygons: RingCoords[][]; pieceBPolygons: RingCoords[][] } {
+  const components = new Map<number, SplitPolygonPiece[]>();
+  for (let index = 0; index < pieces.length; index++) {
+    const root = findParent(parents, index);
+    components.set(root, [...(components.get(root) ?? []), pieces[index]]);
+  }
+
+  const pieceAPolygons: RingCoords[][] = [];
+  const pieceBPolygons: RingCoords[][] = [];
+  for (const component of components.values()) {
+    const target = chooseComponentSide(component) === 'a' ? pieceAPolygons : pieceBPolygons;
+    target.push(...mergeComponentPolygons(component));
+  }
+  return { pieceAPolygons, pieceBPolygons };
+}
+
+function chooseComponentSide(component: readonly SplitPolygonPiece[]): HalfPlanePiece {
+  const realContactA = component
+    .filter((piece) => piece.side === 'a')
+    .reduce((sum, piece) => sum + piece.realCutContactLength, 0);
+  const realContactB = component
+    .filter((piece) => piece.side === 'b')
+    .reduce((sum, piece) => sum + piece.realCutContactLength, 0);
+  if (realContactA > GEOMETRY_EPSILON || realContactB > GEOMETRY_EPSILON) {
+    return realContactA >= realContactB ? 'a' : 'b';
+  }
+
+  const areaA = sumPolygonsArea(component.filter((piece) => piece.side === 'a').map((piece) => piece.polygon));
+  const areaB = sumPolygonsArea(component.filter((piece) => piece.side === 'b').map((piece) => piece.polygon));
+  return areaA >= areaB ? 'a' : 'b';
+}
+
+function mergeComponentPolygons(component: readonly SplitPolygonPiece[]): RingCoords[][] {
+  const polygons = component.map((piece) => piece.polygon);
+  if (polygons.length === 1) {
+    return clonePolygons(polygons);
+  }
+
+  const unionResult = polygonUnionAll(polygons);
+  return unionResult.isEmpty ? clonePolygons(polygons) : clonePolygons(unionResult.polygons);
+}
+
+function unionParents(parents: number[], a: number, b: number): void {
+  const rootA = findParent(parents, a);
+  const rootB = findParent(parents, b);
+  if (rootA !== rootB) {
+    parents[rootB] = rootA;
+  }
+}
+
+function findParent(parents: readonly number[], index: number): number {
+  let current = index;
+  while (parents[current] !== current) {
+    current = parents[current];
+  }
+  return current;
+}
+
+function collectCutIntervals(
+  polygon: readonly RingCoords[],
+  artificialSegments: readonly CutSegment[]
+): CutInterval[] {
+  const intervals: CutInterval[] = [];
+  for (const ring of polygon) {
+    for (let i = 0; i < ring.length; i++) {
+      const start = ring[i];
+      const end = ring[(i + 1) % ring.length];
+      for (const segment of artificialSegments) {
+        const interval = getSegmentOverlapInterval(start, end, segment);
+        if (interval) {
+          intervals.push(interval);
+        }
+      }
+    }
+  }
+  return intervals;
+}
+
+function sumCutIntervalLengths(intervals: readonly CutInterval[]): number {
+  return intervals.reduce(
+    (sum, interval) => sum + (interval.end - interval.start) * interval.segmentLength,
+    0
+  );
+}
+
+function getSegmentOverlapInterval(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  segment: CutSegment
+): CutInterval | null {
+  if (!isPointOnLine(start, segment.start, segment.end) || !isPointOnLine(end, segment.start, segment.end)) {
+    return null;
+  }
+
+  const tStart = projectOntoSegment(start, segment.start, segment.end);
+  const tEnd = projectOntoSegment(end, segment.start, segment.end);
+  const overlapStart = Math.max(0, Math.min(tStart, tEnd));
+  const overlapEnd = Math.min(1, Math.max(tStart, tEnd));
+  if (overlapEnd - overlapStart <= GEOMETRY_EPSILON) {
+    return null;
+  }
+
+  return {
+    segmentIndex: segment.index,
+    start: overlapStart,
+    end: overlapEnd,
+    segmentLength: segmentLength(segment.start, segment.end),
+  };
+}
+
+function hasOverlappingInterval(
+  intervalsA: readonly CutInterval[],
+  intervalsB: readonly CutInterval[]
+): boolean {
+  return intervalsA.some((intervalA) =>
+    intervalsB.some((intervalB) =>
+      intervalA.segmentIndex === intervalB.segmentIndex &&
+      Math.min(intervalA.end, intervalB.end) - Math.max(intervalA.start, intervalB.start) > GEOMETRY_EPSILON
+    )
+  );
+}
+
+function isPointOnLine(
+  point: { x: number; y: number },
+  lineStart: { x: number; y: number },
+  lineEnd: { x: number; y: number }
+): boolean {
+  const length = segmentLength(lineStart, lineEnd);
+  if (length <= GEOMETRY_EPSILON) return false;
+  const crossProduct = (lineEnd.x - lineStart.x) * (point.y - lineStart.y) -
+    (lineEnd.y - lineStart.y) * (point.x - lineStart.x);
+  return Math.abs(crossProduct) / length <= GEOMETRY_EPSILON;
+}
+
+function projectOntoSegment(
+  point: { x: number; y: number },
+  lineStart: { x: number; y: number },
+  lineEnd: { x: number; y: number }
+): number {
+  const dx = lineEnd.x - lineStart.x;
+  const dy = lineEnd.y - lineStart.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq <= GEOMETRY_EPSILON) return 0;
+  return ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lengthSq;
+}
+
+function segmentLength(
+  start: { x: number; y: number },
+  end: { x: number; y: number }
+): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 /**

@@ -45,6 +45,20 @@ const cShape: RingCoords[] = [
   ],
 ];
 
+/** 右側に細い接続部を持つC字形ポリゴン */
+const rightConnectedCShape: RingCoords[] = [
+  [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+    { x: 0, y: 8 },
+    { x: 9, y: 8 },
+    { x: 9, y: 2 },
+    { x: 0, y: 2 },
+  ],
+];
+
 describe('KnifeService', () => {
   describe('validateCuttingLine', () => {
     it('2点未満の分断線は無効', () => {
@@ -210,6 +224,92 @@ describe('KnifeService', () => {
         maxY: 10,
       });
       expect(result.pieceAPolygons).toContain(untouchedPolygons[0]);
+    });
+
+    it('同一ポリゴン内の延長線上にある未横断部分を分断しない', () => {
+      const result = splitByLine(
+        cShape,
+        [{ x: 5, y: -1 }, { x: 5, y: 3 }]
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.pieceAPolygons).toHaveLength(1);
+      expect(result.pieceBPolygons).toHaveLength(1);
+      expect(sumPolygonsArea([...result.pieceAPolygons, ...result.pieceBPolygons]))
+        .toBeCloseTo(sumPolygonsArea([cShape]), 6);
+
+      const splitOffBounds = getRingBounds(result.pieceBPolygons[0][0]);
+      expect(splitOffBounds).toEqual({
+        minX: 5,
+        maxX: 10,
+        minY: 0,
+        maxY: 2,
+      });
+    });
+
+    it('開線端点が境界に触れるだけの未横断部分を分断しない', () => {
+      const result = splitByLine(
+        cShape,
+        [{ x: 5, y: -1 }, { x: 5, y: 8 }]
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.pieceAPolygons).toHaveLength(1);
+      expect(result.pieceBPolygons).toHaveLength(1);
+      expect(sumPolygonsArea([...result.pieceAPolygons, ...result.pieceBPolygons]))
+        .toBeCloseTo(sumPolygonsArea([cShape]), 6);
+
+      const splitOffBounds = getRingBounds(result.pieceBPolygons[0][0]);
+      expect(splitOffBounds).toEqual({
+        minX: 5,
+        maxX: 10,
+        minY: 0,
+        maxY: 2,
+      });
+    });
+
+    it('開線端点が別の腕の内部で止まる未横断部分を分断しない', () => {
+      const result = splitByLine(
+        cShape,
+        [{ x: 5, y: -1 }, { x: 5, y: 9 }]
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.pieceAPolygons).toHaveLength(1);
+      expect(result.pieceBPolygons).toHaveLength(1);
+      expect(sumPolygonsArea([...result.pieceAPolygons, ...result.pieceBPolygons]))
+        .toBeCloseTo(sumPolygonsArea([cShape]), 6);
+
+      const splitOffBounds = getRingBounds(result.pieceBPolygons[0][0]);
+      expect(splitOffBounds).toEqual({
+        minX: 5,
+        maxX: 10,
+        minY: 0,
+        maxY: 2,
+      });
+    });
+
+    it('人工延長で再結合した大きい未横断部分を反対側へ寄せず分割を成功させる', () => {
+      const result = splitByLine(
+        rightConnectedCShape,
+        [{ x: 8, y: -1 }, { x: 8, y: 3 }]
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.pieceAPolygons.length).toBeGreaterThan(0);
+      expect(result.pieceBPolygons.length).toBeGreaterThan(0);
+      expect(sumPolygonsArea([...result.pieceAPolygons, ...result.pieceBPolygons]))
+        .toBeCloseTo(sumPolygonsArea([rightConnectedCShape]), 6);
+
+      const splitOffBounds = [...result.pieceAPolygons, ...result.pieceBPolygons]
+        .map((polygon) => getRingBounds(polygon[0]))
+        .find((bounds) =>
+          bounds.minX === 0 &&
+          bounds.maxX === 8 &&
+          bounds.minY === 0 &&
+          bounds.maxY === 2
+        );
+      expect(splitOffBounds).toBeDefined();
     });
   });
 
