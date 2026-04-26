@@ -13,3 +13,4 @@ playwright-report/
 savebackup/
 coverage/
 TEST-savedata.gimoza
+logs/
