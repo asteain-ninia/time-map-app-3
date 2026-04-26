@@ -235,6 +235,32 @@ export function getFeatureTimeSpan(
   };
 }
 
+/**
+ * 地物が指定期間を切れ目なく覆っているか判定する
+ */
+export function featureCoversRange(
+  feature: Feature,
+  start: TimePoint,
+  end: TimePoint | undefined
+): boolean {
+  let cursor = start;
+
+  for (let i = 0; i <= feature.anchors.length; i++) {
+    const anchor = feature.getActiveAnchor(cursor);
+    if (!anchor) return false;
+
+    if (!anchor.timeRange.end) {
+      return true;
+    }
+    if (end && !anchor.timeRange.end.isBefore(end)) {
+      return true;
+    }
+    cursor = anchor.timeRange.end;
+  }
+
+  return false;
+}
+
 // ──────────────────────────────────────────
 // タイムステップ計算
 // ──────────────────────────────────────────

@@ -14,6 +14,7 @@ import type { PolygonStyle } from '@domain/value-objects/FeatureAnchor';
 import type { AddFeatureUseCase } from '../AddFeatureUseCase';
 import { eventBus } from '../EventBus';
 import type { UndoableCommand } from '../UndoRedoManager';
+import { ReassignFeatureParentUseCase } from '../ReassignFeatureParentUseCase';
 import {
   createTransientPolygonFeature,
   validatePolygonOrThrow,
@@ -23,18 +24,31 @@ import {
 export type AddFeatureParams =
   | { type: 'point'; coord: Coordinate; layerId: string; time: TimePoint; name?: string }
   | { type: 'line'; coords: readonly Coordinate[]; layerId: string; time: TimePoint; name?: string }
-  | { type: 'polygon'; coords: readonly Coordinate[]; layerId: string; time: TimePoint; name?: string; style?: PolygonStyle };
+  | {
+      type: 'polygon';
+      coords: readonly Coordinate[];
+      layerId: string;
+      time: TimePoint;
+      name?: string;
+      style?: PolygonStyle;
+      parentId?: string | null;
+    };
 
 export class AddFeatureCommand implements UndoableCommand {
   readonly description: string;
+  private readonly parentTransferUseCase: ReassignFeatureParentUseCase;
   private addedFeature: Feature | null = null;
   private addedVertexIds: string[] = [];
   private addedVertices = new Map<string, Vertex>();
+  private modifiedFeaturesBeforeParentAssignment = new Map<string, Feature>();
+  private modifiedFeaturesAfterParentAssignment = new Map<string, Feature>();
 
   constructor(
     private readonly featureUseCase: AddFeatureUseCase,
-    private readonly params: AddFeatureParams
+    private readonly params: AddFeatureParams,
+    parentTransferUseCase: ReassignFeatureParentUseCase
   ) {
+    this.parentTransferUseCase = parentTransferUseCase;
     const typeLabel =
       params.type === 'point' ? '点' :
       params.type === 'line' ? '線' : '面';
@@ -70,6 +84,12 @@ export class AddFeatureCommand implements UndoableCommand {
         this.params.time,
         this.params.layerId
       );
+      if (this.params.parentId) {
+        this.parentTransferUseCase.assertCanAssignNewFeatureToParent(
+          this.params.parentId,
+          this.params.time
+        );
+      }
     }
 
     let feature: Feature;
@@ -105,6 +125,18 @@ export class AddFeatureCommand implements UndoableCommand {
         }
       }
     }
+
+    if (this.params.type === 'polygon' && this.params.parentId) {
+      try {
+        this.assignParent(feature.id, this.params.parentId);
+      } catch (error) {
+        this.removeAddedFeature();
+        this.addedFeature = null;
+        this.addedVertexIds = [];
+        this.addedVertices.clear();
+        throw error;
+      }
+    }
   }
 
   undo(): void {
@@ -117,6 +149,9 @@ export class AddFeatureCommand implements UndoableCommand {
     for (const vid of this.addedVertexIds) {
       vertices.delete(vid);
     }
+    for (const [featureId, feature] of this.modifiedFeaturesBeforeParentAssignment) {
+      features.set(featureId, feature);
+    }
   }
 
   private restoreAddedFeature(): void {
@@ -128,6 +163,47 @@ export class AddFeatureCommand implements UndoableCommand {
       vertices.set(vertexId, vertex);
     }
     features.set(this.addedFeature.id, this.addedFeature);
+    for (const [featureId, feature] of this.modifiedFeaturesAfterParentAssignment) {
+      features.set(featureId, feature);
+    }
     eventBus.emit('feature:added', { featureId: this.addedFeature.id });
+  }
+
+  private assignParent(featureId: string, parentId: string): void {
+    const featuresBefore = new Map(this.featureUseCase.getFeaturesMap());
+    this.parentTransferUseCase.reassignFeatureParent({
+      featureIds: [featureId],
+      newParentId: parentId,
+      effectiveTime: this.params.time,
+      transferType: 'cede',
+    });
+    const featuresAfter = this.featureUseCase.getFeaturesMap();
+
+    this.modifiedFeaturesBeforeParentAssignment.clear();
+    this.modifiedFeaturesAfterParentAssignment.clear();
+    for (const [changedFeatureId, before] of featuresBefore) {
+      const after = featuresAfter.get(changedFeatureId);
+      if (!after || after === before) continue;
+
+      if (changedFeatureId === featureId) {
+        this.addedFeature = after;
+      } else {
+        this.modifiedFeaturesBeforeParentAssignment.set(changedFeatureId, before);
+        this.modifiedFeaturesAfterParentAssignment.set(changedFeatureId, after);
+      }
+    }
+  }
+
+  private removeAddedFeature(): void {
+    if (!this.addedFeature) return;
+    const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
+    const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
+    const removed = features.delete(this.addedFeature.id);
+    for (const vertexId of this.addedVertexIds) {
+      vertices.delete(vertexId);
+    }
+    if (removed) {
+      eventBus.emit('feature:removed', { featureId: this.addedFeature.id });
+    }
   }
 }

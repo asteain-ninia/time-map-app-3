@@ -28,6 +28,7 @@ export interface ContextMenuActions {
   readonly onAddRing: () => void;
   readonly onStartKnife: () => void;
   readonly onAddMergeTarget: () => void;
+  readonly onStartParentTransfer: () => void;
 }
 
 /**
@@ -77,6 +78,10 @@ export function buildContextMenuItems(
       items.push({
         label: '結合対象に追加',
         action: actions.onAddMergeTarget,
+      });
+      items.push({
+        label: '所属変更',
+        action: actions.onStartParentTransfer,
       });
     }
   }

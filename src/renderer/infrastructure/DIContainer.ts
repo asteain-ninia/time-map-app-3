@@ -18,6 +18,7 @@ import { UndoRedoManager } from '@application/UndoRedoManager';
 import { PrepareFeatureAnchorEditUseCase } from '@application/PrepareFeatureAnchorEditUseCase';
 import { ResolveFeatureAnchorConflictsUseCase } from '@application/ResolveFeatureAnchorConflictsUseCase';
 import { CommitFeatureAnchorEditUseCase } from '@application/CommitFeatureAnchorEditUseCase';
+import { ReassignFeatureParentUseCase } from '@application/ReassignFeatureParentUseCase';
 import type { DialogPort } from '@application/SaveLoadUseCase';
 import { SaveLoadUseCase } from '@application/SaveLoadUseCase';
 import {
@@ -52,6 +53,7 @@ export interface ApplicationCommands {
   readonly prepareAnchorEdit: PrepareFeatureAnchorEditUseCase;
   readonly resolveConflicts: ResolveFeatureAnchorConflictsUseCase;
   readonly commitAnchorEdit: CommitFeatureAnchorEditUseCase;
+  readonly reassignParent: ReassignFeatureParentUseCase;
   readonly saveLoad: SaveLoadUseCase;
 }
 
@@ -170,6 +172,7 @@ export class DIContainer {
     const commitAnchorEdit = new CommitFeatureAnchorEditUseCase(
       addFeature, prepareAnchorEdit
     );
+    const reassignParent = new ReassignFeatureParentUseCase(addFeature);
     const saveLoad = new SaveLoadUseCase(
       repository,
       dialog,
@@ -190,6 +193,7 @@ export class DIContainer {
       prepareAnchorEdit,
       resolveConflicts,
       commitAnchorEdit,
+      reassignParent,
       saveLoad,
     };
 

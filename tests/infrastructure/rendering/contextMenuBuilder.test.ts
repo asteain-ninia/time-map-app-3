@@ -13,6 +13,7 @@ function createActions(): ContextMenuActions {
     onAddRing: vi.fn(),
     onStartKnife: vi.fn(),
     onAddMergeTarget: vi.fn(),
+    onStartParentTransfer: vi.fn(),
   };
 }
 
@@ -53,6 +54,7 @@ describe('contextMenuBuilder', () => {
       expect(labels).toContain('穴/飛び地追加');
       expect(labels).toContain('分割');
       expect(labels).toContain('結合対象に追加');
+      expect(labels).toContain('所属変更');
     });
 
     it('LineString地物 → 面固有メニューは出ない', () => {
@@ -66,6 +68,7 @@ describe('contextMenuBuilder', () => {
       const labels = items.filter(i => !('separator' in i && i.separator)).map(i => (i as any).label);
       expect(labels).not.toContain('穴/飛び地追加');
       expect(labels).not.toContain('分割');
+      expect(labels).not.toContain('所属変更');
     });
 
     it('頂点選択あり → 頂点削除メニューが出る', () => {

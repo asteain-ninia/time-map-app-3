@@ -5,6 +5,7 @@
   import MapCanvas from '@presentation/components/MapCanvas.svelte';
   import SplitConfirmModal from '@presentation/components/SplitConfirmModal.svelte';
   import MergeConfirmModal from '@presentation/components/MergeConfirmModal.svelte';
+  import ParentTransferDialog from '@presentation/components/ParentTransferDialog.svelte';
   import ConflictResolutionDialog from '@presentation/components/ConflictResolutionDialog.svelte';
   import ProjectSettingsDialog from '@presentation/components/ProjectSettingsDialog.svelte';
   import AboutDialog from '@presentation/components/AboutDialog.svelte';
@@ -16,7 +17,7 @@
   import StatusBar from '@presentation/components/StatusBar.svelte';
   import { createToolStore } from '@presentation/state/toolStore';
   import { getContainer } from '@infrastructure/DIContainer';
-  import { AddFeatureCommand } from '@application/commands/AddFeatureCommand';
+  import { AddFeatureCommand, type AddFeatureParams } from '@application/commands/AddFeatureCommand';
   import { DeleteFeatureCommand } from '@application/commands/DeleteFeatureCommand';
   import { DeleteVerticesCommand, type DeleteVertexParams } from '@application/commands/DeleteVertexCommand';
   import { InsertVertexCommand } from '@application/commands/InsertVertexCommand';
@@ -95,6 +96,7 @@
   } from '@infrastructure/rendering/knifeDrawingManager';
   import { SplitFeatureCommand } from '@application/commands/SplitFeatureCommand';
   import { MergeFeatureCommand } from '@application/commands/MergeFeatureCommand';
+  import { ReassignFeatureParentCommand } from '@application/commands/ReassignFeatureParentCommand';
   import type { SpatialConflict } from '@domain/services/ConflictDetectionService';
   import type { ConflictResolution } from '@application/AnchorEditDraft';
   import {
@@ -163,6 +165,10 @@
     restoreFeatureDragSnapshot,
     type FeatureDragSnapshot,
   } from '@presentation/app/appFeatureDragging';
+  import {
+    resolveParentTransferSelection,
+    type ParentTransferConfirmDetail,
+  } from '@presentation/components/parentTransferDialogUtils';
 
   const container = getContainer();
   const {
@@ -172,6 +178,7 @@
       deleteFeature,
       manageLayers,
       navigateTime,
+      reassignParent,
       saveLoad,
       undoRedo,
       vertexEdit,
@@ -205,20 +212,19 @@
 
     try {
       if (addToolType === 'point' && coords.length >= 1) {
-        undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'point', coord: coords[0], layerId, time }));
+        executeAddFeatureCommand({ type: 'point', coord: coords[0], layerId, time });
       } else if (addToolType === 'line' && coords.length >= 2) {
-        undoRedo.execute(new AddFeatureCommand(addFeature, { type: 'line', coords, layerId, time }));
+        executeAddFeatureCommand({ type: 'line', coords, layerId, time });
       } else if (addToolType === 'polygon' && coords.length >= 3) {
-        undoRedo.execute(new AddFeatureCommand(addFeature, {
+        const params: Extract<AddFeatureParams, { type: 'polygon' }> = {
           type: 'polygon',
           coords,
           layerId,
           time,
           style: createDefaultPolygonStyle(polygonIndexInLayer, projectSettings),
-        }));
+        };
+        executeAddFeatureCommand(params);
       }
-      validationMessage = '';
-      refreshFeatureData();
     } catch (error) {
       validationMessage = getValidationMessage(error);
     }
@@ -250,6 +256,7 @@
   let showSplitModal = $state(false);
   let mergeTargetIds = $state<string[]>([]);
   let showMergeModal = $state(false);
+  let showParentTransferModal = $state(false);
 
   // --- バージョン情報 ---
   let showAboutDialog = $state(false);
@@ -782,6 +789,12 @@
     return layerList.find((layer) => layer.visible) ?? layerList[0] ?? null;
   }
 
+  function executeAddFeatureCommand(params: AddFeatureParams): void {
+    undoRedo.execute(new AddFeatureCommand(addFeature, params, reassignParent));
+    validationMessage = '';
+    refreshFeatureData();
+  }
+
   function resetInteractionState(): void {
     toolStore.send({ type: 'RESET_INTERACTION' });
     syncToolState();
@@ -795,6 +808,7 @@
     knifeDrawingState = null;
     showSplitModal = false;
     showMergeModal = false;
+    showParentTransferModal = false;
     mergeTargetIds = [];
     validationMessage = '';
     resetFeatureDragContext();
@@ -1017,7 +1031,7 @@
             coord: alignedCoord,
             layerId: targetLayer.id,
             time: timelineQueries.getCurrentTime(),
-          }));
+          }, reassignParent));
           refreshFeatureData();
         }
       }
@@ -1301,6 +1315,47 @@
 
   function clearMergeTargets(): void {
     mergeTargetIds = [];
+  }
+
+  // --- 所属変更 ---
+
+  function onStartParentTransfer(): void {
+    if (!selectedFeatureId || !currentTime) return;
+    showParentTransferModal = true;
+  }
+
+  function onParentTransferConfirm(detail: ParentTransferConfirmDetail): void {
+    if (!currentTime || detail.featureIds.length === 0) return;
+
+    try {
+      undoRedo.execute(
+        new ReassignFeatureParentCommand(reassignParent, addFeature, {
+          featureIds: detail.featureIds,
+          newParentId: detail.newParentId,
+          effectiveTime: currentTime,
+          transferType: detail.scope === 'children' ? 'annex' : 'cede',
+        })
+      );
+    } catch (error) {
+      validationMessage = getValidationMessage(error);
+      return;
+    }
+
+    validationMessage = '';
+    refreshFeatureData();
+    showParentTransferModal = false;
+    selectedVertexIds = new Set();
+    selectedFeatureId = resolveParentTransferSelection({
+      features,
+      time: currentTime,
+      currentSelectedFeatureId: selectedFeatureId,
+      movedFeatureIds: detail.featureIds,
+      newParentId: detail.newParentId,
+    });
+  }
+
+  function onCancelParentTransfer(): void {
+    showParentTransferModal = false;
   }
 
   // --- 競合解決ダイアログ ---
@@ -1875,6 +1930,7 @@
       onAddMergeTarget: () => {
         if (selectedFeatureId) addMergeTarget(selectedFeatureId);
       },
+      onStartParentTransfer,
     };
 
     contextMenuItems = buildContextMenuItems(ctx, actions);
@@ -1920,6 +1976,8 @@
         settingsDialogOpen = false;
       } else if (contextMenuOpen) {
         contextMenuOpen = false;
+      } else if (showParentTransferModal) {
+        showParentTransferModal = false;
       } else if (showSplitModal) {
         showSplitModal = false;
       } else if (knifeDrawingState) {
@@ -2215,6 +2273,15 @@
   })}
   onConfirm={onMergeConfirm}
   onCancel={onCancelMerge}
+/>
+
+<ParentTransferDialog
+  isOpen={showParentTransferModal}
+  feature={getSelectionFeature()}
+  {features}
+  {currentTime}
+  onConfirm={onParentTransferConfirm}
+  onCancel={onCancelParentTransfer}
 />
 
 <ProjectSettingsDialog

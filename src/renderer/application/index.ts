@@ -25,6 +25,12 @@ export type { DeleteFeatureResult } from './DeleteFeatureUseCase';
 export { PrepareFeatureAnchorEditUseCase, PrepareError } from './PrepareFeatureAnchorEditUseCase';
 export { ResolveFeatureAnchorConflictsUseCase, ResolveError } from './ResolveFeatureAnchorConflictsUseCase';
 export { CommitFeatureAnchorEditUseCase, CommitError } from './CommitFeatureAnchorEditUseCase';
+export {
+  ReassignFeatureParentUseCase,
+  FeatureParentTransferError,
+  type ReassignFeatureParentParams,
+  type ReassignFeatureParentResult,
+} from './ReassignFeatureParentUseCase';
 export type {
   EditMode,
   DraftPatch,
@@ -46,6 +52,10 @@ export type {
 export { AddFeatureCommand, type AddFeatureParams } from './commands/AddFeatureCommand';
 export { MoveVertexCommand } from './commands/MoveVertexCommand';
 export { MoveFeatureCommand, type MoveFeatureParams } from './commands/MoveFeatureCommand';
+export {
+  ReassignFeatureParentCommand,
+  type ReassignFeatureParentCommandParams,
+} from './commands/ReassignFeatureParentCommand';
 export {
   FeatureQueryService,
   LayerQueryService,

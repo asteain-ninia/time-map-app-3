@@ -103,6 +103,7 @@ export {
   getEffectiveEnd,
   timeRangesOverlap,
   getFeatureTimeSpan,
+  featureCoversRange,
   stepForward,
   stepBackward,
 } from './TimeService';
