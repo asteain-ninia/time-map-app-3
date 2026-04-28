@@ -69,6 +69,7 @@ interface JsonAnchorProperty {
   labelVisibility?: JsonLabelVisibility;
   style?: JsonPolygonStyle;
   attributes?: Record<string, unknown>;
+  kind?: string;
 }
 
 interface JsonAnchorPlacement {

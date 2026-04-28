@@ -82,4 +82,29 @@ describe('FeatureAnchor', () => {
       expect(anchor.property.name).toBe('テスト国');
     });
   });
+
+  describe('property.kind（種別ラベル）', () => {
+    it('kind は省略可能（旧形式互換）', () => {
+      const a = createAnchor({ property: { name: '無種別', description: '' } });
+      expect(a.property.kind).toBeUndefined();
+    });
+
+    it('kind を指定して保持できる', () => {
+      const a = createAnchor({ property: { name: '東京都', description: '', kind: '都' } });
+      expect(a.property.kind).toBe('都');
+    });
+
+    it('withProperty で kind を変更できる（同一錨内の階級変動）', () => {
+      const a = createAnchor({ property: { name: 'A', description: '', kind: '植民地' } });
+      const updated = a.withProperty({ name: 'A', description: '', kind: '州' });
+      expect(updated.property.kind).toBe('州');
+      expect(a.property.kind).toBe('植民地');
+    });
+
+    it('withProperty で kind を未指定に戻せる', () => {
+      const a = createAnchor({ property: { name: 'A', description: '', kind: '国' } });
+      const cleared = a.withProperty({ name: 'A', description: '' });
+      expect(cleared.property.kind).toBeUndefined();
+    });
+  });
 });

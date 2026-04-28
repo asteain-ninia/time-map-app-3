@@ -349,6 +349,7 @@ function normalizeAnchorProperty(
     ctx.warn('旧形式の properties[0] を歴史の錨の property に変換しました。');
   }
 
+  const kind = optionalString(source, 'kind');
   return {
     name: optionalString(source, 'name') ?? '',
     description: optionalString(source, 'description') ?? '',
@@ -360,6 +361,7 @@ function normalizeAnchorProperty(
       : undefined,
     style: isRecord(source.style) ? normalizePolygonStyle(source.style) : undefined,
     attributes: isRecord(source.attributes) ? { ...source.attributes } : undefined,
+    kind: kind && kind !== '' ? kind : undefined,
   };
 }
 

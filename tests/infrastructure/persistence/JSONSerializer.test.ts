@@ -880,6 +880,58 @@ describe('JSONSerializer', () => {
     });
   });
 
+  describe('property.kind（種別ラベル）', () => {
+    it('kind が指定された錨をラウンドトリップで保持する', () => {
+      const vertices = new Map<string, Vertex>();
+      vertices.set('v1', new Vertex('v1', new Coordinate(10, 20)));
+
+      const anchor = new FeatureAnchor(
+        'a1',
+        { start: new TimePoint(1000) },
+        { name: '東京都', description: '', kind: '都' },
+        { type: 'Point', vertexId: 'v1' },
+        { layerId: 'l1', parentId: null, childIds: [] }
+      );
+      const feature = new Feature('f1', 'Point', [anchor]);
+      const features = new Map<string, Feature>();
+      features.set('f1', feature);
+
+      const layers = [new Layer('l1', 'L1', 0)];
+      const world = new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+
+      const json = serialize(world);
+      expect(JSON.parse(json).features[0].anchors[0].property.kind).toBe('都');
+
+      const restored = deserialize(json);
+      expect(restored.features.get('f1')!.anchors[0].property.kind).toBe('都');
+    });
+
+    it('kind 未設定の錨は kind を JSON に出力しない', () => {
+      const world = createWorldWithPoint();
+      const json = serialize(world);
+      const parsed = JSON.parse(json);
+      expect(parsed.features[0].anchors[0].property.kind).toBeUndefined();
+      expect('kind' in parsed.features[0].anchors[0].property).toBe(false);
+    });
+
+    it('旧形式（kind フィールドなし）を読み込むと kind は undefined になる', () => {
+      const json = createValidJsonWorld();
+      const restored = deserialize(JSON.stringify(json));
+      expect(restored.features.get('f1')!.anchors[0].property.kind).toBeUndefined();
+    });
+
+    it('空文字列の kind は読み込み時に undefined へ正規化する', () => {
+      const json = createValidJsonWorld();
+      ((json.features as Array<Record<string, unknown>>)[0].anchors as Array<Record<string, unknown>>)[0].property = {
+        name: 'test',
+        description: '',
+        kind: '',
+      };
+      const restored = deserialize(JSON.stringify(json));
+      expect(restored.features.get('f1')!.anchors[0].property.kind).toBeUndefined();
+    });
+  });
+
   describe('穴あきポリゴン', () => {
     it('ホールリングを含むポリゴンをラウンドトリップできる', () => {
       const vertices = new Map<string, Vertex>();

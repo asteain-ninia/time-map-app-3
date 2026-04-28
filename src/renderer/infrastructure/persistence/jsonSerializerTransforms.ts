@@ -124,6 +124,7 @@ function serializeAnchorProperty(p: AnchorProperty): JsonAnchorProperty {
   if (p.attributes && Object.keys(p.attributes).length > 0) {
     json.attributes = { ...p.attributes };
   }
+  if (p.kind !== undefined && p.kind !== '') json.kind = p.kind;
   return json;
 }
 
@@ -269,6 +270,7 @@ function deserializeAnchorProperty(json: JsonAnchorProperty): AnchorProperty {
     labelVisibility: deserializeLabelVisibility(json.labelVisibility),
     style: deserializePolygonStyle(json.style),
     attributes: json.attributes,
+    kind: typeof json.kind === 'string' && json.kind !== '' ? json.kind : undefined,
   };
 }
 

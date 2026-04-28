@@ -78,6 +78,19 @@ describe('PropertyProjection', () => {
       expect(proj.style).toBeUndefined();
       expect(proj.parentId).toBeNull();
       expect(proj.childIds).toEqual([]);
+      expect(proj.kind).toBeUndefined();
+    });
+
+    it('kind が錨に設定されていれば投影へ反映される', () => {
+      const kindedAnchor = new FeatureAnchor(
+        'kinded',
+        { start: new TimePoint(2000) },
+        { name: '東京都', description: '', kind: '都' },
+        { type: 'Point', vertexId: 'v1' },
+        { layerId: 'l1', parentId: null, childIds: [] }
+      );
+      const proj = projectFromAnchor(kindedAnchor, 'f-k', 'Point');
+      expect(proj.kind).toBe('都');
     });
   });
 

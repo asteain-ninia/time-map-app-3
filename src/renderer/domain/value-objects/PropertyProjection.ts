@@ -39,6 +39,8 @@ export class PropertyProjection {
   readonly style: PolygonStyle | undefined;
   /** カスタム属性 */
   readonly attributes: Record<string, unknown>;
+  /** 種別ラベル（表示専用、整合性検証に関与しない） */
+  readonly kind: string | undefined;
 
   constructor(params: {
     anchorId: string;
@@ -53,6 +55,7 @@ export class PropertyProjection {
     childIds: readonly string[];
     style: PolygonStyle | undefined;
     attributes: Record<string, unknown>;
+    kind: string | undefined;
   }) {
     this.anchorId = params.anchorId;
     this.featureId = params.featureId;
@@ -66,6 +69,7 @@ export class PropertyProjection {
     this.childIds = params.childIds;
     this.style = params.style;
     this.attributes = params.attributes;
+    this.kind = params.kind;
   }
 }
 
@@ -90,6 +94,7 @@ export function projectFromAnchor(
     childIds: anchor.placement.childIds,
     style: anchor.property.style,
     attributes: anchor.property.attributes ?? {},
+    kind: anchor.property.kind,
   });
 }
 

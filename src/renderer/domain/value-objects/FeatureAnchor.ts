@@ -28,6 +28,12 @@ export interface AnchorProperty {
   readonly labelVisibility?: LabelVisibility;
   readonly style?: PolygonStyle;
   readonly attributes?: Record<string, unknown>;
+  /**
+   * 種別ラベル（国 / 州 / 郡 / 町 / 連邦 / 植民地 など）。
+   * 表示専用で整合性検証には関与しない。錨ごとに保持することで
+   * 時間軸上の階級変動（同一地物が時刻ごとに別種別をとる）を表現できる。
+   */
+  readonly kind?: string;
 }
 
 /** 所属と階層情報 */
