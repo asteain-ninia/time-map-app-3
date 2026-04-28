@@ -85,7 +85,7 @@
       return buildPolygonPath(anchor.shape, vertices);
     }
 
-    const derived = deriveParentShape(feature, features, vertexCoordinates(), currentTime);
+    const derived = deriveParentShape(feature, features, vertexCoordinates, currentTime);
     return derived.isEmpty
       ? buildPolygonPath(anchor.shape, vertices)
       : buildPolygonPathFromCoords(derived.rings);
