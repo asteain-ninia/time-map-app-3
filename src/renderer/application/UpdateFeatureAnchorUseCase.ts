@@ -11,6 +11,7 @@
 import { Feature } from '@domain/entities/Feature';
 import {
   FeatureAnchor,
+  createAnchorPlacement,
   type AnchorProperty,
   type FeatureShape,
   type AnchorPlacement,
@@ -139,7 +140,9 @@ export class UpdateFeatureAnchorUseCase {
   }
 
   /**
-   * 錨の配置を更新する
+   * 錨の配置を更新する。
+   * 不変条件「同一錨内で `isTopLevel === (parentId === null)`」を境界で強制するため、
+   * 渡された `isTopLevel` は信頼せず `createAnchorPlacement` で `parentId` から再派生する。
    */
   updatePlacement(
     featureId: string,
@@ -148,7 +151,9 @@ export class UpdateFeatureAnchorUseCase {
   ): void {
     const feature = this.getFeatureOrThrow(featureId);
     const anchor = this.getAnchorOrThrow(feature, anchorId);
-    const updated = anchor.withPlacement(placement);
+    const updated = anchor.withPlacement(
+      createAnchorPlacement(placement.layerId, placement.parentId, placement.childIds)
+    );
     this.replaceAnchor(feature, anchorId, updated);
   }
 

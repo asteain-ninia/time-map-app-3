@@ -10,7 +10,7 @@
 
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
-import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import type { AnchorProperty, AnchorPlacement, FeatureShape, PolygonStyle } from '@domain/value-objects/FeatureAnchor';
 import { Ring } from '@domain/value-objects/Ring';
 import { Vertex } from '@domain/entities/Vertex';
@@ -223,11 +223,7 @@ export class AddFeatureUseCase {
       ...propertyPatch,
     };
 
-    const placement: AnchorPlacement = {
-      layerId,
-      parentId: null,
-      childIds: [],
-    };
+    const placement: AnchorPlacement = createAnchorPlacement(layerId, null, []);
 
     const anchor = new FeatureAnchor(
       anchorId,

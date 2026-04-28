@@ -46,7 +46,7 @@ function makePolygonFeatureWithRings(
     rings: rings.map((ring) => new Ring(ring.id, ring.vertexIds, ring.ringType, ring.parentId)),
   };
   const property: AnchorProperty = { name: 'test', description: '' };
-  const placement: AnchorPlacement = { layerId, parentId: null, childIds: [] };
+  const placement: AnchorPlacement = { layerId, parentId: null, childIds: [], isTopLevel: true };
   const anchor = new FeatureAnchor('a-1', { start: time }, property, shape, placement);
   return new Feature(featureId, 'Polygon', [anchor]);
 }
@@ -59,7 +59,7 @@ function makeLineFeature(
 ): Feature {
   const shape: FeatureShape = { type: 'LineString', vertexIds };
   const property: AnchorProperty = { name: 'test', description: '' };
-  const placement: AnchorPlacement = { layerId, parentId: null, childIds: [] };
+  const placement: AnchorPlacement = { layerId, parentId: null, childIds: [], isTopLevel: true };
   const anchor = new FeatureAnchor('a-1', { start: time }, property, shape, placement);
   return new Feature(featureId, 'Line', [anchor]);
 }

@@ -23,7 +23,7 @@ function makeAnchor(
     },
     { name: id, description: '' },
     { type: 'Polygon', rings: [new Ring(`${id}-ring`, ['v1', 'v2', 'v3'], 'territory', null)] },
-    { layerId: 'l1', parentId: null, childIds: [] }
+    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
   );
 }
 

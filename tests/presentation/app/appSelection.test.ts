@@ -21,7 +21,7 @@ function createFeature(id: string, name: string): Feature {
           new Ring(`${id}-hole`, [`${id}-v4`, `${id}-v5`, `${id}-v6`], 'hole', `${id}-outer`),
         ],
       },
-      { layerId: 'layer-1', parentId: null, childIds: [] }
+      { layerId: 'layer-1', parentId: null, childIds: [], isTopLevel: true }
     ),
   ]);
 }
@@ -32,7 +32,7 @@ function createPointAnchor(vertexId = 'point-v1'): FeatureAnchor {
     { start: new TimePoint(100) },
     { name: '点', description: '' },
     { type: 'Point', vertexId },
-    { layerId: 'layer-1', parentId: null, childIds: [] }
+    { layerId: 'layer-1', parentId: null, childIds: [], isTopLevel: true }
   );
 }
 
@@ -42,7 +42,7 @@ function createLineAnchor(vertexIds = ['line-v1', 'line-v2', 'line-v3']): Featur
     { start: new TimePoint(100) },
     { name: '線', description: '' },
     { type: 'LineString', vertexIds },
-    { layerId: 'layer-1', parentId: null, childIds: [] }
+    { layerId: 'layer-1', parentId: null, childIds: [], isTopLevel: true }
   );
 }
 

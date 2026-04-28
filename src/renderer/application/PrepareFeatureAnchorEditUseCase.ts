@@ -7,7 +7,7 @@
  * Prepare 成功後にのみ Resolve / Commit を実行可能。
  */
 
-import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
@@ -163,12 +163,13 @@ export class PrepareFeatureAnchorEditUseCase {
         updated = updated.withShape(patch.shape);
       }
 
-      // 配置更新
+      // 配置更新（不変条件「同一錨内で isTopLevel === (parentId === null)」を維持するため
+      // createAnchorPlacement で再構築する）
       if (patch.placement) {
-        updated = updated.withPlacement({
-          ...updated.placement,
-          ...patch.placement,
-        });
+        const merged = { ...updated.placement, ...patch.placement };
+        updated = updated.withPlacement(
+          createAnchorPlacement(merged.layerId, merged.parentId, merged.childIds)
+        );
       }
 
       // 時間範囲更新

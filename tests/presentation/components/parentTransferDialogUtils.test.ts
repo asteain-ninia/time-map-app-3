@@ -10,7 +10,11 @@ import {
   resolveParentTransferSelection,
 } from '@presentation/components/parentTransferDialogUtils';
 import { Feature } from '@domain/entities/Feature';
-import { FeatureAnchor, type AnchorPlacement } from '@domain/value-objects/FeatureAnchor';
+import {
+  FeatureAnchor,
+  createAnchorPlacement,
+  type AnchorPlacement,
+} from '@domain/value-objects/FeatureAnchor';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { Ring } from '@domain/value-objects/Ring';
 
@@ -24,7 +28,7 @@ function makeFeature(
   childIds: readonly string[] = [],
   featureType: Feature['featureType'] = 'Polygon'
 ): Feature {
-  const placement: AnchorPlacement = { layerId: 'l1', parentId, childIds };
+  const placement: AnchorPlacement = createAnchorPlacement('l1', parentId, childIds);
   const shape = featureType === 'Polygon'
     ? { type: 'Polygon' as const, rings: [new Ring(`${id}-ring`, ['v1', 'v2', 'v3'], 'territory', null)] }
     : featureType === 'Point'
@@ -62,14 +66,14 @@ describe('parentTransferDialogUtils', () => {
         { start: time, end: futureTime },
         { name: 'feature', description: '' },
         { type: 'Polygon', rings: [new Ring('feature-r1', ['v1', 'v2', 'v3'], 'territory', null)] },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       ),
       new FeatureAnchor(
         'feature-a2',
         { start: futureTime },
         { name: 'feature', description: '' },
         { type: 'Polygon', rings: [new Ring('feature-r2', ['v1', 'v2', 'v3'], 'territory', null)] },
-        { layerId: 'l1', parentId: null, childIds: ['future-child'] }
+        { layerId: 'l1', parentId: null, childIds: ['future-child'], isTopLevel: true }
       ),
     ]);
 
@@ -108,7 +112,7 @@ describe('parentTransferDialogUtils', () => {
         { start: time },
         { name: 'moving', description: '' },
         { type: 'Polygon', rings: [new Ring('moving-r1', ['v1', 'v2', 'v3'], 'territory', null)] },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]);
     const shortParent = new Feature('short-parent', 'Polygon', [
@@ -117,7 +121,7 @@ describe('parentTransferDialogUtils', () => {
         { start: time, end: futureTime },
         { name: 'short-parent', description: '' },
         { type: 'Polygon', rings: [new Ring('short-parent-r1', ['v1', 'v2', 'v3'], 'territory', null)] },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]);
     const durableParent = makeFeature('durable-parent', null);
@@ -138,7 +142,7 @@ describe('parentTransferDialogUtils', () => {
         { start: time, end: futureTime },
         { name: '短期親', description: '' },
         { type: 'Polygon', rings: [new Ring('short-parent-r1', ['v1', 'v2', 'v3'], 'territory', null)] },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]);
     const durableParent = makeFeature('durable-parent', null);
@@ -161,7 +165,7 @@ describe('parentTransferDialogUtils', () => {
         { start: time },
         { name: 'ベータ', description: '' },
         { type: 'Polygon', rings: [new Ring('beta-r1', ['v1', 'v2', 'v3'], 'territory', null)] },
-        { layerId: 'l2', parentId: null, childIds: [] }
+        { layerId: 'l2', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]);
     const alpha = new Feature('alpha', 'Polygon', [
@@ -170,7 +174,7 @@ describe('parentTransferDialogUtils', () => {
         { start: time },
         { name: 'アルファ', description: '' },
         { type: 'Polygon', rings: [new Ring('alpha-r1', ['v1', 'v2', 'v3'], 'territory', null)] },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]);
 
@@ -199,7 +203,7 @@ describe('parentTransferDialogUtils', () => {
         { start: time, end: laterTime },
         { name: 'child', description: '' },
         { type: 'Polygon', rings: [new Ring('child-r1', ['v1', 'v2', 'v3'], 'territory', null)] },
-        { layerId: 'l1', parentId: 'new-parent', childIds: [] }
+        { layerId: 'l1', parentId: 'new-parent', childIds: [], isTopLevel: false }
       ),
     ]);
 

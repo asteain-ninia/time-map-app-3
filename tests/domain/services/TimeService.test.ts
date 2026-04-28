@@ -32,7 +32,7 @@ function makeAnchor(
     },
     { name: id, description: '' },
     { type: 'Point', vertexId: 'v1' },
-    { layerId: 'l1', parentId: null, childIds: [] }
+    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
   );
 }
 

@@ -493,13 +493,35 @@ function normalizePlacement(
     ctx.warn('placement がない旧形式の錨を検出したため、所属情報を補完しました。');
   }
 
+  const parentId = typeof source.parentId === 'string' ? source.parentId : null;
+  const isTopLevel = normalizeIsTopLevel(source.isTopLevel, parentId, ctx);
   return {
     layerId: optionalString(source, 'layerId') ?? defaultLayerId,
-    parentId: typeof source.parentId === 'string' ? source.parentId : null,
+    parentId,
     childIds: Array.isArray(source.childIds)
       ? source.childIds.filter((id): id is string => typeof id === 'string')
       : [],
+    isTopLevel,
   };
+}
+
+function normalizeIsTopLevel(
+  value: unknown,
+  parentId: string | null,
+  ctx: MigrationContext
+): boolean {
+  const derived = parentId === null;
+  if (typeof value !== 'boolean') {
+    ctx.warn('placement.isTopLevel がない旧形式の錨を検出したため、parentId から派生しました。');
+    return derived;
+  }
+  if (value !== derived) {
+    ctx.warn(
+      'placement.isTopLevel と parentId の不変条件が崩れた錨を検出したため、parentId から再派生しました。'
+    );
+    return derived;
+  }
+  return value;
 }
 
 function normalizeMetadata(value: unknown, ctx: MigrationContext): JsonWorldMetadata {

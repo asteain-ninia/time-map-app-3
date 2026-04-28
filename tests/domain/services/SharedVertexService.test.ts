@@ -46,7 +46,7 @@ function makePointFeature(id: string, vertexId: string): Feature {
         { start: new TimePoint(1000) },
         { name: id, description: '' },
         { type: 'Point', vertexId },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]
   );
@@ -62,7 +62,7 @@ function makeLineFeature(id: string, vertexIds: readonly string[]): Feature {
         { start: new TimePoint(1000) },
         { name: id, description: '' },
         { type: 'LineString', vertexIds },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]
   );
@@ -78,7 +78,7 @@ function makePolygonFeature(id: string, rings: readonly Ring[]): Feature {
         { start: new TimePoint(1000) },
         { name: id, description: '' },
         { type: 'Polygon', rings },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]
   );

@@ -76,6 +76,7 @@ interface JsonAnchorPlacement {
   layerId: string;
   parentId: string | null;
   childIds: string[];
+  isTopLevel: boolean;
 }
 
 interface JsonTimeRange {

@@ -32,7 +32,7 @@ function makePolygonFeature(
         type: 'Polygon',
         rings: rings.map((ring) => new Ring(ring.id, ring.vertexIds, ring.ringType, ring.parentId)),
       },
-      { layerId, parentId: null, childIds: [] }
+      { layerId, parentId: null, childIds: [], isTopLevel: true }
     ),
   ]);
 }
@@ -44,7 +44,7 @@ function makePointFeature(featureId: string, layerId: string, vertexId: string):
       { start: time100 },
       { name: featureId, description: '' },
       { type: 'Point', vertexId },
-      { layerId, parentId: null, childIds: [] }
+      { layerId, parentId: null, childIds: [], isTopLevel: true }
     ),
   ]);
 }

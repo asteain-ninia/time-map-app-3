@@ -16,7 +16,7 @@ import {
   buildParentChildUnlink,
 } from '@domain/services/LayerService';
 import { Feature } from '@domain/entities/Feature';
-import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { Ring } from '@domain/value-objects/Ring';
 import { Coordinate } from '@domain/value-objects/Coordinate';
@@ -38,7 +38,7 @@ function makePolygonFeature(
       { start: new TimePoint(1900) },
       { name: id, description: '' },
       { type: 'Polygon', rings: [ring] },
-      { layerId: 'l1', parentId, childIds }
+      createAnchorPlacement('l1', parentId, childIds)
     ),
   ]);
 }
@@ -54,7 +54,7 @@ function makePointFeature(
       { start: new TimePoint(1900) },
       { name: id, description: '' },
       { type: 'Point', vertexId: 'v1' },
-      { layerId: 'l1', parentId, childIds }
+      createAnchorPlacement('l1', parentId, childIds)
     ),
   ]);
 }

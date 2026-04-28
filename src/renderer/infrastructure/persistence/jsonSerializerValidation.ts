@@ -88,6 +88,23 @@ function validateLayerReferences(json: JsonWorld): string[] {
   return errors;
 }
 
+function validatePlacementInvariants(json: JsonWorld): string[] {
+  const errors: string[] = [];
+
+  for (const feature of json.features) {
+    for (const anchor of feature.anchors) {
+      const expected = anchor.placement.parentId === null;
+      if (anchor.placement.isTopLevel !== expected) {
+        errors.push(
+          `Feature "${feature.id}" anchor "${anchor.id}" placement.isTopLevel must equal (parentId === null)`
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
 function validateSharedVertexGroups(json: JsonWorld): string[] {
   const errors: string[] = [];
   const verticesById = new Map(json.vertices.map((vertex) => [vertex.id, vertex]));
@@ -233,6 +250,7 @@ function validateJsonWorld(json: JsonWorld): string[] {
     ...validateOrphanedVertices(json),
     ...validateTimeRanges(json),
     ...validateLayerReferences(json),
+    ...validatePlacementInvariants(json),
     ...validateSharedVertexGroups(json),
     ...validatePolygons(json),
   ];

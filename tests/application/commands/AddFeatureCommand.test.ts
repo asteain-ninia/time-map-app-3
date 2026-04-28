@@ -236,7 +236,7 @@ describe('AddFeatureCommand', () => {
         { start: time },
         { name: '穴あき地物', description: '' },
         { type: 'Polygon', rings },
-        { layerId, parentId: null, childIds: [] }
+        { layerId, parentId: null, childIds: [], isTopLevel: true }
       );
       addFeature.restore(
         new Map([['f-existing', new Feature('f-existing', 'Polygon', [anchor])]]),

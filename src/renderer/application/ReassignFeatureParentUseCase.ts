@@ -10,7 +10,11 @@
 import type { Feature } from '@domain/entities/Feature';
 import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import type { Vertex } from '@domain/entities/Vertex';
-import { FeatureAnchor, type AnchorPlacement } from '@domain/value-objects/FeatureAnchor';
+import {
+  FeatureAnchor,
+  createAnchorPlacement,
+  type AnchorPlacement,
+} from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import {
   getAncestors,
@@ -91,10 +95,11 @@ export class ReassignFeatureParentUseCase {
         feature,
         params.effectiveTime,
         usedAnchorIds,
-        (placement) => ({
-          ...placement,
-          parentId: params.newParentId,
-        })
+        (placement) => createAnchorPlacement(
+          placement.layerId,
+          params.newParentId,
+          placement.childIds
+        )
       );
       this.stageFeature(staged, changedFeatureIds, feature, updated);
     }
@@ -109,10 +114,11 @@ export class ReassignFeatureParentUseCase {
         oldParent,
         params.effectiveTime,
         usedAnchorIds,
-        (placement) => ({
-          ...placement,
-          childIds: placement.childIds.filter((id) => !featureIds.includes(id)),
-        })
+        (placement) => createAnchorPlacement(
+          placement.layerId,
+          placement.parentId,
+          placement.childIds.filter((id) => !featureIds.includes(id))
+        )
       );
       const pruned = this.removeEmptyParentRangesFromTime(
         oldParent,
@@ -565,6 +571,7 @@ function appendUnique(baseIds: readonly string[], idsToAdd: readonly string[]): 
 function samePlacement(a: AnchorPlacement, b: AnchorPlacement): boolean {
   return a.layerId === b.layerId &&
     a.parentId === b.parentId &&
+    a.isTopLevel === b.isTopLevel &&
     sameStringArray(a.childIds, b.childIds);
 }
 
@@ -640,10 +647,11 @@ function buildParentPlacementForSegment(
   const activeTransferredChildIds = targetFeatures
     .filter((feature) => feature.getActiveAnchor(time) !== undefined)
     .map((feature) => feature.id);
-  return {
-    ...basePlacement,
-    childIds: appendUnique(baseChildIds, activeTransferredChildIds),
-  };
+  return createAnchorPlacement(
+    basePlacement.layerId,
+    basePlacement.parentId,
+    appendUnique(baseChildIds, activeTransferredChildIds)
+  );
 }
 
 function mergeParentChildSegments(segments: readonly ParentChildSegment[]): ParentChildSegment[] {

@@ -27,7 +27,7 @@ function makeFeature(
         { start: new TimePoint(startYear) },
         property,
         { type: 'Point', vertexId: `${id}-vertex` },
-        { layerId: 'layer-1', parentId: null, childIds: [] }
+        { layerId: 'layer-1', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]
   );

@@ -173,7 +173,7 @@ describe('ManageLayersUseCase', () => {
           { start: new TimePoint(2000) },
           { name: 'test', description: '' },
           { type: 'Point', vertexId: 'v1' },
-          { layerId: 'l1', parentId: null, childIds: [] }
+          { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
         ),
       ]);
 
@@ -198,7 +198,7 @@ describe('ManageLayersUseCase', () => {
           { start: new TimePoint(2000) },
           { name: 'test', description: '' },
           { type: 'Point', vertexId: 'v1' },
-          { layerId: 'l2', parentId: null, childIds: [] }
+          { layerId: 'l2', parentId: null, childIds: [], isTopLevel: true }
         ),
       ]);
 

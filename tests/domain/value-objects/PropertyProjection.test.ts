@@ -29,7 +29,7 @@ function makeAnchor(id: string, startYear: number, endYear?: number): FeatureAnc
       type: 'Polygon',
       rings: [new Ring('r1', ['v1', 'v2', 'v3'], 'territory', null)],
     },
-    { layerId: 'layer1', parentId: 'parent1', childIds: ['child1', 'child2'] }
+    { layerId: 'layer1', parentId: 'parent1', childIds: ['child1', 'child2'], isTopLevel: false }
   );
 }
 
@@ -55,6 +55,7 @@ describe('PropertyProjection', () => {
       expect(proj.layerId).toBe('layer1');
       expect(proj.parentId).toBe('parent1');
       expect(proj.childIds).toEqual(['child1', 'child2']);
+      expect(proj.isTopLevel).toBe(false);
       expect(proj.style?.fillColor).toBe('#ff0000');
       expect(proj.attributes).toEqual({ population: 1000 });
     });
@@ -71,7 +72,7 @@ describe('PropertyProjection', () => {
         { start: new TimePoint(2000) },
         { name: 'test', description: '' },
         { type: 'Point', vertexId: 'v1' },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       );
       const proj = projectFromAnchor(simpleAnchor, 'f3', 'Point');
       expect(proj.attributes).toEqual({});
@@ -87,7 +88,7 @@ describe('PropertyProjection', () => {
         { start: new TimePoint(2000) },
         { name: '東京都', description: '', kind: '都' },
         { type: 'Point', vertexId: 'v1' },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       );
       const proj = projectFromAnchor(kindedAnchor, 'f-k', 'Point');
       expect(proj.kind).toBe('都');

@@ -35,6 +35,8 @@ export class PropertyProjection {
   readonly parentId: string | null;
   /** 子地物ID群 */
   readonly childIds: readonly string[];
+  /** 最上位フラグ（時間依存スナップショット）。同一錨内で `parentId === null` と同値 */
+  readonly isTopLevel: boolean;
   /** 面スタイル（ポリゴンの場合） */
   readonly style: PolygonStyle | undefined;
   /** カスタム属性 */
@@ -53,6 +55,7 @@ export class PropertyProjection {
     layerId: string;
     parentId: string | null;
     childIds: readonly string[];
+    isTopLevel: boolean;
     style: PolygonStyle | undefined;
     attributes: Record<string, unknown>;
     kind: string | undefined;
@@ -67,6 +70,7 @@ export class PropertyProjection {
     this.layerId = params.layerId;
     this.parentId = params.parentId;
     this.childIds = params.childIds;
+    this.isTopLevel = params.isTopLevel;
     this.style = params.style;
     this.attributes = params.attributes;
     this.kind = params.kind;
@@ -92,6 +96,7 @@ export function projectFromAnchor(
     layerId: anchor.placement.layerId,
     parentId: anchor.placement.parentId,
     childIds: anchor.placement.childIds,
+    isTopLevel: anchor.placement.isTopLevel,
     style: anchor.property.style,
     attributes: anchor.property.attributes ?? {},
     kind: anchor.property.kind,

@@ -133,6 +133,7 @@ function serializeAnchorPlacement(pl: AnchorPlacement): JsonAnchorPlacement {
     layerId: pl.layerId,
     parentId: pl.parentId,
     childIds: [...pl.childIds],
+    isTopLevel: pl.isTopLevel,
   };
 }
 
@@ -279,6 +280,7 @@ function deserializeAnchorPlacement(json: JsonAnchorPlacement): AnchorPlacement 
     layerId: json.layerId,
     parentId: json.parentId,
     childIds: json.childIds,
+    isTopLevel: json.isTopLevel,
   };
 }
 

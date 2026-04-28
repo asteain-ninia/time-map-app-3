@@ -19,6 +19,7 @@ import {
   getChildFeatures,
 } from '@domain/services/LayerService';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
+import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 
 /** 削除結果 */
 export interface DeleteFeatureResult {
@@ -67,10 +68,13 @@ export class DeleteFeatureUseCase {
       for (const child of children) {
         const anchor = child.getActiveAnchor(currentTime);
         if (anchor) {
-          const updatedAnchor = anchor.withPlacement({
-            ...anchor.placement,
-            parentId: null,
-          });
+          const updatedAnchor = anchor.withPlacement(
+            createAnchorPlacement(
+              anchor.placement.layerId,
+              null,
+              anchor.placement.childIds
+            )
+          );
           const updatedAnchors = child.anchors.map(a =>
             a.id === anchor.id ? updatedAnchor : a
           );

@@ -10,7 +10,11 @@ import { Feature } from '@domain/entities/Feature';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import { Vertex } from '@domain/entities/Vertex';
 import { Coordinate } from '@domain/value-objects/Coordinate';
-import { FeatureAnchor, type AnchorPlacement } from '@domain/value-objects/FeatureAnchor';
+import {
+  FeatureAnchor,
+  createAnchorPlacement,
+  type AnchorPlacement,
+} from '@domain/value-objects/FeatureAnchor';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { Ring } from '@domain/value-objects/Ring';
 
@@ -43,7 +47,7 @@ function makeFeature(
 }
 
 function placement(parentId: string | null, childIds: readonly string[] = []): AnchorPlacement {
-  return { layerId: 'l1', parentId, childIds };
+  return createAnchorPlacement('l1', parentId, childIds);
 }
 
 describe('ReassignFeatureParentUseCase', () => {
@@ -92,6 +96,60 @@ describe('ReassignFeatureParentUseCase', () => {
     expect(addFeature.getFeatureById('old-parent')!.getActiveAnchor(t1400)?.placement.childIds).toEqual(['child']);
     expect(addFeature.getFeatureById('old-parent')!.getActiveAnchor(t1500)).toBeUndefined();
     expect(addFeature.getFeatureById('new-parent')!.getActiveAnchor(t1500)?.placement.childIds).toEqual(['child']);
+  });
+
+  it('parentId 更新と同時に同一錨の isTopLevel を派生する（最上位フラグ → 子帰属）', () => {
+    const oldParent = makeFeature('old-parent', [
+      makeAnchor('old-a1', t1000, placement(null, ['child'])),
+    ]);
+    const newParent = makeFeature('new-parent', [
+      makeAnchor('new-a1', t1000, placement(null, [])),
+    ]);
+    const child = makeFeature('child', [
+      makeAnchor('child-a1', t1000, placement('old-parent')),
+    ]);
+
+    addFeature.restore(new Map([
+      [oldParent.id, oldParent],
+      [newParent.id, newParent],
+      [child.id, child],
+    ]), new Map());
+
+    transfer.reassignFeatureParent({
+      featureIds: ['child'],
+      newParentId: 'new-parent',
+      effectiveTime: t1500,
+      transferType: 'cede',
+    });
+
+    const childAnchor = addFeature.getFeatureById('child')!.getActiveAnchor(t2000)!;
+    expect(childAnchor.placement.parentId).toBe('new-parent');
+    expect(childAnchor.placement.isTopLevel).toBe(false);
+  });
+
+  it('newParentId=null の所属解除で isTopLevel=true へ戻る', () => {
+    const oldParent = makeFeature('old-parent', [
+      makeAnchor('old-a1', t1000, placement(null, ['child'])),
+    ]);
+    const child = makeFeature('child', [
+      makeAnchor('child-a1', t1000, placement('old-parent')),
+    ]);
+
+    addFeature.restore(new Map([
+      [oldParent.id, oldParent],
+      [child.id, child],
+    ]), new Map());
+
+    transfer.reassignFeatureParent({
+      featureIds: ['child'],
+      newParentId: null,
+      effectiveTime: t1500,
+      transferType: 'cede',
+    });
+
+    const childAnchor = addFeature.getFeatureById('child')!.getActiveAnchor(t2000)!;
+    expect(childAnchor.placement.parentId).toBeNull();
+    expect(childAnchor.placement.isTopLevel).toBe(true);
   });
 
   it('有限期間の子を移した場合、新親の childIds は子の終了後に残らない', () => {
@@ -444,7 +502,7 @@ describe('ReassignFeatureParentUseCase', () => {
         { start: t1000 },
         { name: 'old-parent', description: '' },
         { type: 'Polygon', rings: [new Ring('old-parent-r1', ['op-1', 'op-2', 'op-3'], 'territory', null)] },
-        { layerId: 'l1', parentId: null, childIds: ['child'] }
+        { layerId: 'l1', parentId: null, childIds: ['child'], isTopLevel: true }
       ),
     ]);
     const child = new Feature('child', 'Polygon', [
@@ -453,7 +511,7 @@ describe('ReassignFeatureParentUseCase', () => {
         { start: t1000 },
         { name: 'child', description: '' },
         { type: 'Polygon', rings: [new Ring('child-r1', ['c-1', 'c-2', 'c-3'], 'territory', null)] },
-        { layerId: 'l1', parentId: 'old-parent', childIds: [] }
+        { layerId: 'l1', parentId: 'old-parent', childIds: [], isTopLevel: false }
       ),
     ]);
     const newParent = new Feature('new-parent', 'Polygon', [
@@ -462,7 +520,7 @@ describe('ReassignFeatureParentUseCase', () => {
         { start: t1000 },
         { name: 'new-parent', description: '' },
         { type: 'Polygon', rings: [new Ring('new-parent-r1', ['np-1', 'np-2', 'np-3'], 'territory', null)] },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]);
     const helper = new Feature('helper', 'Point', [
@@ -471,7 +529,7 @@ describe('ReassignFeatureParentUseCase', () => {
         { start: t1000 },
         { name: 'helper', description: '' },
         { type: 'Point', vertexId: 'helper-v' },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       ),
     ]);
     const vertices = new Map<string, Vertex>([

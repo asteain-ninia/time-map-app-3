@@ -12,6 +12,7 @@
 
 import type { Feature } from '@domain/entities/Feature';
 import type { FeatureAnchor, FeatureShape } from '@domain/value-objects/FeatureAnchor';
+import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { RingCoords } from './GeometryService';
 import { polygonUnion } from './BooleanOperationService';
@@ -372,15 +373,21 @@ export function buildParentChildLink(
   const childActive = childFeature.getActiveAnchor(time);
   if (!parentActive || !childActive) return undefined;
 
-  const updatedParentAnchor = parentActive.withPlacement({
-    ...parentActive.placement,
-    childIds: [...parentActive.placement.childIds, childFeature.id],
-  });
+  const updatedParentAnchor = parentActive.withPlacement(
+    createAnchorPlacement(
+      parentActive.placement.layerId,
+      parentActive.placement.parentId,
+      [...parentActive.placement.childIds, childFeature.id]
+    )
+  );
 
-  const updatedChildAnchor = childActive.withPlacement({
-    ...childActive.placement,
-    parentId: parentFeature.id,
-  });
+  const updatedChildAnchor = childActive.withPlacement(
+    createAnchorPlacement(
+      childActive.placement.layerId,
+      parentFeature.id,
+      childActive.placement.childIds
+    )
+  );
 
   return {
     parentAnchor: updatedParentAnchor,
@@ -400,15 +407,21 @@ export function buildParentChildUnlink(
   const childActive = childFeature.getActiveAnchor(time);
   if (!parentActive || !childActive) return undefined;
 
-  const updatedParentAnchor = parentActive.withPlacement({
-    ...parentActive.placement,
-    childIds: parentActive.placement.childIds.filter(id => id !== childFeature.id),
-  });
+  const updatedParentAnchor = parentActive.withPlacement(
+    createAnchorPlacement(
+      parentActive.placement.layerId,
+      parentActive.placement.parentId,
+      parentActive.placement.childIds.filter(id => id !== childFeature.id)
+    )
+  );
 
-  const updatedChildAnchor = childActive.withPlacement({
-    ...childActive.placement,
-    parentId: null,
-  });
+  const updatedChildAnchor = childActive.withPlacement(
+    createAnchorPlacement(
+      childActive.placement.layerId,
+      null,
+      childActive.placement.childIds
+    )
+  );
 
   return {
     parentAnchor: updatedParentAnchor,

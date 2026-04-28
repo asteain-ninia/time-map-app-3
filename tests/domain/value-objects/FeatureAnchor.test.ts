@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import type { AnchorProperty, AnchorPlacement, FeatureShape, TimeRange } from '@domain/value-objects/FeatureAnchor';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 
@@ -14,7 +14,7 @@ function createAnchor(overrides?: {
     overrides?.timeRange ?? { start: new TimePoint(1000), end: new TimePoint(2000) },
     overrides?.property ?? { name: 'テスト国', description: '説明' },
     overrides?.shape ?? { type: 'Point', vertexId: 'v1' },
-    overrides?.placement ?? { layerId: 'l1', parentId: null, childIds: [] }
+    overrides?.placement ?? { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
   );
 }
 
@@ -72,7 +72,7 @@ describe('FeatureAnchor', () => {
     });
 
     it('withPlacement は所属のみ変更する', () => {
-      const updated = anchor.withPlacement({ layerId: 'l2', parentId: 'p1', childIds: ['c1'] });
+      const updated = anchor.withPlacement({ layerId: 'l2', parentId: 'p1', childIds: ['c1'], isTopLevel: false });
       expect(updated.placement.layerId).toBe('l2');
       expect(updated.placement.parentId).toBe('p1');
     });
@@ -80,6 +80,28 @@ describe('FeatureAnchor', () => {
     it('元のインスタンスは変更しない', () => {
       anchor.withProperty({ name: '変更', description: '' });
       expect(anchor.property.name).toBe('テスト国');
+    });
+  });
+
+  describe('placement.isTopLevel（最上位フラグ）', () => {
+    it('createAnchorPlacement は parentId === null から isTopLevel=true を派生する', () => {
+      const placement = createAnchorPlacement('l1', null, []);
+      expect(placement.isTopLevel).toBe(true);
+      expect(placement.parentId).toBeNull();
+    });
+
+    it('createAnchorPlacement は parentId 指定時に isTopLevel=false を派生する', () => {
+      const placement = createAnchorPlacement('l1', 'parent-id', ['c1']);
+      expect(placement.isTopLevel).toBe(false);
+      expect(placement.parentId).toBe('parent-id');
+      expect(placement.childIds).toEqual(['c1']);
+    });
+
+    it('withPlacement で最上位フラグも反映される', () => {
+      const a = createAnchor({ placement: createAnchorPlacement('l1', null, []) });
+      const updated = a.withPlacement(createAnchorPlacement('l1', 'p1', []));
+      expect(updated.placement.isTopLevel).toBe(false);
+      expect(updated.placement.parentId).toBe('p1');
     });
   });
 

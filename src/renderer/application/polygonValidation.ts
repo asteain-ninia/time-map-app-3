@@ -2,7 +2,7 @@ import { Feature } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
 import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import { Coordinate } from '@domain/value-objects/Coordinate';
-import { FeatureAnchor as FeatureAnchorEntity } from '@domain/value-objects/FeatureAnchor';
+import { FeatureAnchor as FeatureAnchorEntity, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import { Ring } from '@domain/value-objects/Ring';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import { validatePolygonFeature } from '@domain/services/PolygonValidationService';
@@ -34,7 +34,7 @@ export function createTransientPolygonFeature(
     { start: time },
     { name: 'temp', description: '' },
     { type: 'Polygon', rings: [new Ring(ringId, vertexIds, 'territory', null)] },
-    { layerId, parentId: null, childIds: [] }
+    createAnchorPlacement(layerId, null, [])
   );
 
   return {

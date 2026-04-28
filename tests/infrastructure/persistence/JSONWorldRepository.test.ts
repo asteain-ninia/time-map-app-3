@@ -42,7 +42,7 @@ function createTestWorld(): World {
     { start: new TimePoint(1000) },
     { name: 'テスト', description: '' },
     { type: 'Point', vertexId: 'v1' },
-    { layerId: 'l1', parentId: null, childIds: [] }
+    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
   );
   const features = new Map<string, Feature>();
   features.set('f1', new Feature('f1', 'Point', [anchor]));

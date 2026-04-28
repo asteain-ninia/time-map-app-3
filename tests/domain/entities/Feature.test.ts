@@ -6,7 +6,7 @@ import type { AnchorProperty, AnchorPlacement, FeatureShape } from '@domain/valu
 
 const defaultProperty: AnchorProperty = { name: 'テスト国', description: '' };
 const defaultShape: FeatureShape = { type: 'Point', vertexId: 'v1' };
-const defaultPlacement: AnchorPlacement = { layerId: 'l1', parentId: null, childIds: [] };
+const defaultPlacement: AnchorPlacement = { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true };
 
 function anchor(id: string, startYear: number, endYear?: number, name?: string): FeatureAnchor {
   return new FeatureAnchor(

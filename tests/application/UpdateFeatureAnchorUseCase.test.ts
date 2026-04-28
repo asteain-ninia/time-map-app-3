@@ -4,6 +4,7 @@ import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { eventBus } from '@application/EventBus';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
+import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 
 describe('UpdateFeatureAnchorUseCase', () => {
   let addFeature: AddFeatureUseCase;
@@ -234,16 +235,37 @@ describe('UpdateFeatureAnchorUseCase', () => {
       );
       const anchorId = feature.anchors[0].id;
 
-      anchorEdit.updatePlacement(feature.id, anchorId, {
-        layerId: 'l2',
-        parentId: 'parent1',
-        childIds: ['child1'],
-      });
+      anchorEdit.updatePlacement(
+        feature.id,
+        anchorId,
+        createAnchorPlacement('l2', 'parent1', ['child1'])
+      );
 
       const updated = addFeature.getFeatureById(feature.id)!;
       expect(updated.anchors[0].placement.layerId).toBe('l2');
       expect(updated.anchors[0].placement.parentId).toBe('parent1');
       expect(updated.anchors[0].placement.childIds).toEqual(['child1']);
+      expect(updated.anchors[0].placement.isTopLevel).toBe(false);
+    });
+
+    it('updatePlacement は不変条件違反の placement を渡されても再派生する', () => {
+      const feature = addFeature.addPoint(
+        new Coordinate(10, 20),
+        layerId,
+        new TimePoint(1000)
+      );
+      const anchorId = feature.anchors[0].id;
+
+      anchorEdit.updatePlacement(feature.id, anchorId, {
+        layerId: 'l2',
+        parentId: null,
+        childIds: [],
+        isTopLevel: false,
+      });
+
+      const updated = addFeature.getFeatureById(feature.id)!;
+      expect(updated.anchors[0].placement.parentId).toBeNull();
+      expect(updated.anchors[0].placement.isTopLevel).toBe(true);
     });
   });
 

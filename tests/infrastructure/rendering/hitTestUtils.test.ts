@@ -35,7 +35,7 @@ function makePointFeature(
     { start: new TimePoint(0) },
     { name: id, description: '' },
     { type: 'Point', vertexId },
-    { layerId, parentId: null, childIds: [] }
+    { layerId, parentId: null, childIds: [], isTopLevel: true }
   );
   return new Feature(id, 'Point', [anchor]);
 }
@@ -51,7 +51,7 @@ function makeLineFeature(
     { start: new TimePoint(0) },
     { name: id, description: '' },
     { type: 'LineString', vertexIds },
-    { layerId, parentId: null, childIds: [] }
+    { layerId, parentId: null, childIds: [], isTopLevel: true }
   );
   return new Feature(id, 'Line', [anchor]);
 }
@@ -68,7 +68,7 @@ function makePolygonFeature(
     { start: new TimePoint(0) },
     { name: id, description: '' },
     { type: 'Polygon', rings: [ring] },
-    { layerId, parentId: null, childIds: [] }
+    { layerId, parentId: null, childIds: [], isTopLevel: true }
   );
   return new Feature(id, 'Polygon', [anchor]);
 }
@@ -313,7 +313,7 @@ describe('hitTest', () => {
         { start: new TimePoint(0) },
         { name: 'hole-wrap', description: '' },
         shape,
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       );
       const feature = new Feature('pg-hole-wrap', 'Polygon', [anchor]);
 
@@ -352,7 +352,7 @@ describe('hitTest', () => {
         { start: new TimePoint(0) },
         { name: 'hole-wrap', description: '' },
         shape,
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       );
       const feature = new Feature('pg-hole-wrap', 'Polygon', [anchor]);
 
@@ -433,7 +433,7 @@ describe('hitTest', () => {
         { start: new TimePoint(1000) }, // 時刻1000以降のみ有効
         { name: 'future', description: '' },
         { type: 'Point', vertexId: 'v1' },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       );
       const feature = new Feature('p1', 'Point', [anchor]);
       const result = hitTest(

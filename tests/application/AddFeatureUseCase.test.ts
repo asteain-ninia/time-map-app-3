@@ -262,7 +262,7 @@ describe('AddFeatureUseCase', () => {
         { start: new TimePoint(1000) },
         { name: '復元地物', description: '' },
         { type: 'Point', vertexId: 'v1' },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       );
       const features = new Map<string, Feature>();
       features.set('f1', new Feature('f1', 'Point', [anchor]));
@@ -295,7 +295,7 @@ describe('AddFeatureUseCase', () => {
         { start: new TimePoint(100) },
         { name: 'test', description: '' },
         { type: 'Point', vertexId: 'v-5' },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       );
       const features = new Map<string, Feature>();
       features.set('f-10', new Feature('f-10', 'Point', [anchor]));
@@ -324,7 +324,7 @@ describe('AddFeatureUseCase', () => {
         { start: new TimePoint(100) },
         { name: 'poly', description: '' },
         { type: 'Polygon', rings: [ring] },
-        { layerId: 'l1', parentId: null, childIds: [] }
+        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       );
       const features = new Map<string, Feature>();
       features.set('f-1', new Feature('f-1', 'Polygon', [anchor]));

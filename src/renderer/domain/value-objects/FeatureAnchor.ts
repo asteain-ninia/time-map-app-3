@@ -36,11 +36,35 @@ export interface AnchorProperty {
   readonly kind?: string;
 }
 
-/** 所属と階層情報 */
+/**
+ * 所属と階層情報。
+ * 不変条件: 同一錨内で `isTopLevel === (parentId === null)`。
+ * 最上位フラグは錨ごとに保持することで時間軸上の位相変化（独立 / 帰属 / 連邦化）を表現できる。
+ */
 export interface AnchorPlacement {
   readonly layerId: string;
   readonly parentId: string | null;
   readonly childIds: readonly string[];
+  readonly isTopLevel: boolean;
+}
+
+/**
+ * AnchorPlacement の生成ヘルパー。
+ * `isTopLevel` を `parentId === null` から派生し、不変条件「同一錨内で
+ * `isTopLevel === (parentId === null)`」を生成側で必ず満たす。
+ * 呼び出し側は明示的に最上位フラグを指定せず、`parentId` の有無で位相を表現する。
+ */
+export function createAnchorPlacement(
+  layerId: string,
+  parentId: string | null,
+  childIds: readonly string[]
+): AnchorPlacement {
+  return {
+    layerId,
+    parentId,
+    childIds,
+    isTopLevel: parentId === null,
+  };
 }
 
 /** 歴史の錨の有効期間 */
