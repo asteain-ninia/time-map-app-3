@@ -7,6 +7,7 @@
   import EditToolbar from '../EditToolbar.svelte';
   import GridLabelsOverlay from '../GridLabelsOverlay.svelte';
   import LongitudeCompass from '../LongitudeCompass.svelte';
+  import type { ParentCandidateItem } from '../parentTransferDialogUtils';
   import {
     formatSurveyDistance,
     type MapCanvasViewBoxValues,
@@ -21,6 +22,10 @@
     isDrawing = false,
     drawingCanConfirm = false,
     drawingCoords = [] as readonly Coordinate[],
+    drawingParentCandidates = [] as readonly ParentCandidateItem[],
+    drawingParentId = null as string | null,
+    drawingParentSessionId = 0,
+    onDrawingParentChange,
     onConfirm,
     onCancel,
     isRingDrawing = false,
@@ -61,6 +66,10 @@
     isDrawing?: boolean;
     drawingCanConfirm?: boolean;
     drawingCoords?: readonly Coordinate[];
+    drawingParentCandidates?: readonly ParentCandidateItem[];
+    drawingParentId?: string | null;
+    drawingParentSessionId?: number;
+    onDrawingParentChange?: (parentId: string | null, sessionId: number) => void;
     onConfirm?: () => void;
     onCancel?: () => void;
     isRingDrawing?: boolean;
@@ -97,6 +106,17 @@
   let hasSurveyData = $derived(
     surveyMeasurementCount > 0 || surveyPointA !== null || surveyPointB !== null || surveyResult !== null
   );
+
+  function handleDrawingParentChange(event: Event): void {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLSelectElement)) return;
+    if (!isDrawing) return;
+    onDrawingParentChange?.(
+      target.value === '__root__' ? null : target.value,
+      drawingParentSessionId
+    );
+  }
+
 </script>
 
 <GridLabelsOverlay
@@ -123,6 +143,24 @@
 
 {#if isDrawing}
   <div class="drawing-toolbar">
+    {#if drawingParentCandidates.length > 0}
+      {#key drawingParentSessionId}
+        <label class="drawing-parent" for="drawing-parent-select">
+          <span>親</span>
+          <select
+            id="drawing-parent-select"
+            class="drawing-parent-select"
+            value={drawingParentId ?? '__root__'}
+            onchange={handleDrawingParentChange}
+          >
+            <option value="__root__">親なし</option>
+            {#each drawingParentCandidates as candidate (candidate.id)}
+              <option value={candidate.id}>{candidate.name} ({candidate.id})</option>
+            {/each}
+          </select>
+        </label>
+      {/key}
+    {/if}
     <button
       class="drawing-btn confirm"
       disabled={!drawingCanConfirm}
@@ -277,11 +315,38 @@
     left: 50%;
     transform: translateX(-50%);
     display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
     gap: 8px;
+    max-width: min(92vw, 720px);
     padding: 6px 12px;
     background: rgba(0, 0, 0, 0.8);
     border-radius: 6px;
     border: 1px solid #555;
+  }
+
+  .drawing-parent {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #aaa;
+    font-size: 12px;
+  }
+
+  .drawing-parent-select {
+    width: clamp(150px, 32vw, 240px);
+    padding: 4px 8px;
+    background: #1e1e1e;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 12px;
+  }
+
+  .drawing-parent-select:focus {
+    outline: none;
+    border-color: #007acc;
   }
 
   .drawing-btn {

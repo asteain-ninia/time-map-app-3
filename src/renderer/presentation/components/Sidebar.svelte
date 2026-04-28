@@ -129,6 +129,7 @@
           {currentTime}
           {timelineMin}
           {timelineMax}
+          {features}
           {onPropertyChange}
         />
       {:else if activeTab === 'features'}

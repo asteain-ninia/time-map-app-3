@@ -191,6 +191,93 @@ test('面ツールで3点クリック後に確定ボタンが表示される', a
   await expect(confirmBtn).toBeVisible({ timeout: 3000 });
 });
 
+test('面追加時に既存面を親として指定でき、確定後に親選択がリセットされる', async ({ page }) => {
+  await page.keyboard.press('a');
+  const polygonTool = page.locator('.tool-button.sub-tool[title="面を追加"]');
+  await polygonTool.click();
+
+  const map = page.locator('.map-svg');
+  const box = await map.boundingBox();
+  if (!box) throw new Error('map not found');
+
+  const cx = box.width / 2;
+  const cy = box.height / 2;
+
+  await map.click({ position: { x: cx - 160, y: cy - 80 } });
+  await expect(page.locator('#drawing-parent-select')).toHaveCount(0);
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx - 100, y: cy - 80 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx - 130, y: cy - 20 } });
+  await page.locator('.drawing-btn.confirm').click();
+
+  await polygonTool.click();
+  await map.click({ position: { x: cx + 100, y: cy + 20 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx + 160, y: cy + 20 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx + 130, y: cy + 80 } });
+
+  const parentSelect = page.locator('#drawing-parent-select');
+  await expect(parentSelect).toBeVisible({ timeout: 3000 });
+  await expect(parentSelect.locator('option[value="f-1"]')).toHaveText(/面1/);
+  await parentSelect.selectOption('f-1');
+  await page.locator('.drawing-btn.confirm').click();
+
+  await map.click({ position: { x: cx - 40, y: cy + 20 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx + 20, y: cy + 20 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx - 10, y: cy + 80 } });
+  await expect(page.locator('#drawing-parent-select')).toHaveValue('__root__');
+  await page.keyboard.press('Escape');
+
+  await page.locator('.tab', { hasText: '地物一覧' }).click();
+  await page.locator('.feature-item', { hasText: 'f-2' }).click();
+  await page.locator('.tab', { hasText: 'プロパティ' }).click();
+
+  await expect(page.locator('.field', { hasText: '親' })).toContainText('面1 (f-1)');
+});
+
+test('面追加時の親選択はキャンセル後にリセットされる', async ({ page }) => {
+  await page.keyboard.press('a');
+  const polygonTool = page.locator('.tool-button.sub-tool[title="面を追加"]');
+  await polygonTool.click();
+
+  const map = page.locator('.map-svg');
+  const box = await map.boundingBox();
+  if (!box) throw new Error('map not found');
+
+  const cx = box.width / 2;
+  const cy = box.height / 2;
+
+  await map.click({ position: { x: cx - 190, y: cy - 80 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx - 130, y: cy - 80 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx - 160, y: cy - 20 } });
+  await page.locator('.drawing-btn.confirm').click();
+
+  await map.click({ position: { x: cx + 100, y: cy - 95 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx + 160, y: cy - 95 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx + 130, y: cy - 35 } });
+  let parentSelect = page.locator('#drawing-parent-select');
+  await expect(parentSelect).toBeVisible({ timeout: 3000 });
+  await parentSelect.selectOption('f-1');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.drawing-btn.confirm')).not.toBeVisible();
+
+  await map.click({ position: { x: cx + 20, y: cy + 30 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx + 80, y: cy + 30 } });
+  await page.waitForTimeout(100);
+  await map.click({ position: { x: cx + 50, y: cy + 90 } });
+  parentSelect = page.locator('#drawing-parent-select');
+  await expect(parentSelect).toHaveValue('__root__');
+});
+
 // §2.3.2 共通 — キャンセル（Escape）で描画を破棄
 test('描画中にEscapeで描画がキャンセルされる', async ({ page }) => {
   await page.keyboard.press('a');

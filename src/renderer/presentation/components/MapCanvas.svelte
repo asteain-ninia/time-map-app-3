@@ -13,6 +13,7 @@
   import type { SnapIndicator } from '@infrastructure/rendering/snapIndicatorUtils';
   import type { SurveyMeasurement, SurveyResult } from '@infrastructure/rendering/surveyModeManager';
   import { wrapLongitudeToPrimaryRange } from '@infrastructure/rendering/featureRenderingUtils';
+  import type { ParentCandidateItem } from './parentTransferDialogUtils';
   import MapCanvasHud from './mapCanvas/MapCanvasHud.svelte';
   import MapCanvasSvgLayers from './mapCanvas/MapCanvasSvgLayers.svelte';
   import {
@@ -50,6 +51,10 @@
     addToolType = 'polygon' as AddToolType,
     isDrawing = false,
     drawingCoords = [] as readonly Coordinate[],
+    drawingParentCandidates = [] as readonly ParentCandidateItem[],
+    drawingParentId = null as string | null,
+    drawingParentSessionId = 0,
+    onDrawingParentChange,
     selectedFeatureId = null as string | null,
     selectionFeatureId = null as string | null,
     vertexSelectionContextFeatureId = null as string | null,
@@ -118,6 +123,10 @@
     addToolType?: AddToolType;
     isDrawing?: boolean;
     drawingCoords?: readonly Coordinate[];
+    drawingParentCandidates?: readonly ParentCandidateItem[];
+    drawingParentId?: string | null;
+    drawingParentSessionId?: number;
+    onDrawingParentChange?: (parentId: string | null, sessionId: number) => void;
     selectedFeatureId?: string | null;
     selectionFeatureId?: string | null;
     vertexSelectionContextFeatureId?: string | null;
@@ -693,6 +702,10 @@
     {isDrawing}
     drawingCanConfirm={canConfirm}
     {drawingCoords}
+    {drawingParentCandidates}
+    {drawingParentId}
+    {drawingParentSessionId}
+    {onDrawingParentChange}
     {onConfirm}
     {onCancel}
     {isRingDrawing}

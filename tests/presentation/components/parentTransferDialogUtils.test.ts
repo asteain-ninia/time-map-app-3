@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildNewFeatureParentCandidateItems,
   buildParentCandidateItems,
   canTransferChildren,
   canTransferSelectedFeature,
@@ -128,6 +129,57 @@ describe('parentTransferDialogUtils', () => {
     });
 
     expect(candidates.map((item) => item.id)).toEqual(['durable-parent']);
+  });
+
+  it('新規面の親候補には指定時刻から永続する面情報だけを返す', () => {
+    const shortParent = new Feature('short-parent', 'Polygon', [
+      new FeatureAnchor(
+        'short-parent-a1',
+        { start: time, end: futureTime },
+        { name: '短期親', description: '' },
+        { type: 'Polygon', rings: [new Ring('short-parent-r1', ['v1', 'v2', 'v3'], 'territory', null)] },
+        { layerId: 'l1', parentId: null, childIds: [] }
+      ),
+    ]);
+    const durableParent = makeFeature('durable-parent', null);
+    const point = makeFeature('point', null, [], 'Point');
+
+    const candidates = buildNewFeatureParentCandidateItems({
+      features: [shortParent, durableParent, point],
+      time,
+    });
+
+    expect(candidates).toEqual([
+      { id: 'durable-parent', name: 'durable-parent', layerId: 'l1' },
+    ]);
+  });
+
+  it('新規面の親候補を名称順に並べる', () => {
+    const beta = new Feature('beta', 'Polygon', [
+      new FeatureAnchor(
+        'beta-a1',
+        { start: time },
+        { name: 'ベータ', description: '' },
+        { type: 'Polygon', rings: [new Ring('beta-r1', ['v1', 'v2', 'v3'], 'territory', null)] },
+        { layerId: 'l2', parentId: null, childIds: [] }
+      ),
+    ]);
+    const alpha = new Feature('alpha', 'Polygon', [
+      new FeatureAnchor(
+        'alpha-a1',
+        { start: time },
+        { name: 'アルファ', description: '' },
+        { type: 'Polygon', rings: [new Ring('alpha-r1', ['v1', 'v2', 'v3'], 'territory', null)] },
+        { layerId: 'l1', parentId: null, childIds: [] }
+      ),
+    ]);
+
+    const candidates = buildNewFeatureParentCandidateItems({
+      features: [beta, alpha],
+      time,
+    });
+
+    expect(candidates.map((item) => item.id)).toEqual(['alpha', 'beta']);
   });
 
   it('子孫IDを再帰的に収集する', () => {

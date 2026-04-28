@@ -166,6 +166,7 @@
     type FeatureDragSnapshot,
   } from '@presentation/app/appFeatureDragging';
   import {
+    buildNewFeatureParentCandidateItems,
     resolveParentTransferSelection,
     type ParentTransferConfirmDetail,
   } from '@presentation/components/parentTransferDialogUtils';
@@ -216,6 +217,7 @@
       } else if (addToolType === 'line' && coords.length >= 2) {
         executeAddFeatureCommand({ type: 'line', coords, layerId, time });
       } else if (addToolType === 'polygon' && coords.length >= 3) {
+        const parentId = getAddPolygonParentId();
         const params: Extract<AddFeatureParams, { type: 'polygon' }> = {
           type: 'polygon',
           coords,
@@ -223,7 +225,11 @@
           time,
           style: createDefaultPolygonStyle(polygonIndexInLayer, projectSettings),
         };
+        if (parentId) {
+          params.parentId = parentId;
+        }
         executeAddFeatureCommand(params);
+        resetAddPolygonParentSelection();
       }
     } catch (error) {
       validationMessage = getValidationMessage(error);
@@ -257,6 +263,8 @@
   let mergeTargetIds = $state<string[]>([]);
   let showMergeModal = $state(false);
   let showParentTransferModal = $state(false);
+  let addPolygonParentId = $state<string | null>(null);
+  let addPolygonParentSessionId = $state(0);
 
   // --- バージョン情報 ---
   let showAboutDialog = $state(false);
@@ -296,10 +304,22 @@
       )
     )
   );
+  let addPolygonParentCandidates = $derived(
+    buildNewFeatureParentCandidateItems({ features, time: currentTime })
+  );
 
   $effect(() => {
     if (focusedLayerId && !layers.some((layer) => layer.id === focusedLayerId && layer.visible)) {
       focusedLayerId = null;
+    }
+  });
+
+  $effect(() => {
+    if (
+      addPolygonParentId &&
+      !addPolygonParentCandidates.some((candidate) => candidate.id === addPolygonParentId)
+    ) {
+      addPolygonParentId = null;
     }
   });
 
@@ -795,6 +815,34 @@
     refreshFeatureData();
   }
 
+  function getAddPolygonParentId(): string | null {
+    if (!addPolygonParentId) return null;
+    return addPolygonParentCandidates.some((candidate) => candidate.id === addPolygonParentId)
+      ? addPolygonParentId
+      : null;
+  }
+
+  function onDrawingParentChange(parentId: string | null, sessionId: number): void {
+    const snap = toolStore.getSnapshot();
+    if (
+      sessionId !== addPolygonParentSessionId ||
+      !snap.isDrawing ||
+      snap.addToolType !== 'polygon'
+    ) {
+      return;
+    }
+    addPolygonParentId = parentId;
+  }
+
+  function resetAddPolygonParentSelection(): void {
+    addPolygonParentId = null;
+  }
+
+  function startAddPolygonParentSelectionSession(): void {
+    addPolygonParentId = null;
+    addPolygonParentSessionId += 1;
+  }
+
   function resetInteractionState(): void {
     toolStore.send({ type: 'RESET_INTERACTION' });
     syncToolState();
@@ -809,6 +857,7 @@
     showSplitModal = false;
     showMergeModal = false;
     showParentTransferModal = false;
+    resetAddPolygonParentSelection();
     mergeTargetIds = [];
     validationMessage = '';
     resetFeatureDragContext();
@@ -934,6 +983,7 @@
 
   function onAddToolChange(toolType: AddToolType): void {
     toolStore.send({ type: 'SET_ADD_TOOL', toolType });
+    resetAddPolygonParentSelection();
     validationMessage = '';
     syncToolState();
   }
@@ -1020,6 +1070,9 @@
     }
     if (toolMode === 'add') {
       const alignedCoord = alignCoordinateNearReference(coord, drawingCoords);
+      if (!isDrawing && addToolType === 'polygon') {
+        startAddPolygonParentSelectionSession();
+      }
       toolStore.send({ type: 'MAP_CLICK', coord: alignedCoord });
       syncToolState();
       // 点ツール: 即座にポイント追加（Undo対応）
@@ -1074,6 +1127,7 @@
       }
       validationMessage = '';
       toolStore.send({ type: 'MAP_DOUBLE_CLICK', coord: alignedCoord });
+      resetAddPolygonParentSelection();
       syncToolState();
     }
   }
@@ -1104,6 +1158,7 @@
       }
       validationMessage = '';
       toolStore.send({ type: 'CONFIRM' });
+      resetAddPolygonParentSelection();
       syncToolState();
     }
   }
@@ -1112,6 +1167,7 @@
     if (isDrawing) {
       validationMessage = '';
       toolStore.send({ type: 'KEY_ESCAPE' });
+      resetAddPolygonParentSelection();
       syncToolState();
     }
   }
@@ -1986,6 +2042,7 @@
         ringDrawingState = null;
       } else if (isDrawing) {
         toolStore.send({ type: 'KEY_ESCAPE' });
+        resetAddPolygonParentSelection();
         syncToolState();
       } else if (toolMode === 'measure' && (surveyState.pointA || surveyMeasurements.length > 0)) {
         clearSurveyMeasurements();
@@ -2160,6 +2217,10 @@
           {addToolType}
           {isDrawing}
           {drawingCoords}
+          drawingParentCandidates={addToolType === 'polygon' ? addPolygonParentCandidates : []}
+          drawingParentId={addPolygonParentId}
+          drawingParentSessionId={addPolygonParentSessionId}
+          {onDrawingParentChange}
           {selectedFeatureId}
           selectionFeatureId={selectionFeatureId}
           vertexSelectionContextFeatureId={vertexSelectionContextFeatureId}

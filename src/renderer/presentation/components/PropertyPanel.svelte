@@ -21,6 +21,7 @@
     currentTime = undefined as TimePoint | undefined,
     timelineMin = 0,
     timelineMax = 10000,
+    features = [] as readonly Feature[],
     onPropertyChange,
   }: {
     feature?: Feature | null;
@@ -33,6 +34,7 @@
     currentTime?: TimePoint;
     timelineMin?: number;
     timelineMax?: number;
+    features?: readonly Feature[];
     onPropertyChange?: (featureId: string, anchorId: string, property: AnchorProperty) => void;
   } = $props();
 
@@ -53,6 +55,7 @@
   let historyViewMode = $state<'bar' | 'list'>('bar');
   let availablePalettes = $derived(getAvailablePaletteNames(settings?.customPalettes ?? []));
   let sortedAnchors = $derived(feature ? sortAnchorsByStart(feature.anchors) : []);
+  let featureById = $derived(new Map(features.map((candidate) => [candidate.id, candidate])));
   let timelineSegments = $derived(
     buildAnchorTimelineSegments(sortedAnchors, timelineMin, timelineMax)
   );
@@ -99,6 +102,19 @@
       style,
     };
     onPropertyChange?.(feature.id, anchor.id, newProperty);
+  }
+
+  function formatRelatedFeature(featureId: string): string {
+    const relatedFeature = featureById.get(featureId);
+    if (!relatedFeature || !currentTime) return featureId;
+    const name = relatedFeature.getActiveAnchor(currentTime)?.property.name;
+    return name ? `${name} (${featureId})` : featureId;
+  }
+
+  function formatRelatedFeatures(featureIds: readonly string[]): string {
+    return featureIds.length > 0
+      ? featureIds.map((featureId) => formatRelatedFeature(featureId)).join(', ')
+      : 'なし';
   }
 </script>
 
@@ -202,6 +218,19 @@
     </div>
 
     {#if anchor.shape.type === 'Polygon'}
+      <div class="field">
+        <label class="field-label">親</label>
+        <span class="field-value">
+          {anchor.placement.parentId ? formatRelatedFeature(anchor.placement.parentId) : 'なし'}
+        </span>
+      </div>
+      <div class="field">
+        <label class="field-label">下位領域</label>
+        <span class="field-value">
+          {formatRelatedFeatures(anchor.placement.childIds)}
+        </span>
+      </div>
+
       <div class="section-header">面スタイル</div>
 
       <div class="field">
