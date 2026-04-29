@@ -979,6 +979,175 @@ describe('JSONSerializer', () => {
     });
   });
 
+  describe('shape optional 化（Phase 2-C-1: コンテナ錨）', () => {
+    it('shape を持たないコンテナ錨は JSON ラウンドトリップで shape フィールドを出力しない', () => {
+      const containerAnchor = new FeatureAnchor(
+        'a-c',
+        { start: new TimePoint(0) },
+        { name: '合衆国', description: '' },
+        undefined,
+        { layerId: 'l1', parentId: null, childIds: ['f-child'], isTopLevel: true }
+      );
+      const childAnchor = new FeatureAnchor(
+        'a-child',
+        { start: new TimePoint(0) },
+        { name: 'ヴァージニア', description: '' },
+        { type: 'Polygon', rings: [new Ring('r1', ['v1', 'v2', 'v3'], 'territory', null)] },
+        { layerId: 'l1', parentId: 'f-c', childIds: [], isTopLevel: false }
+      );
+      const features = new Map<string, Feature>();
+      features.set('f-c', new Feature('f-c', 'Polygon', [containerAnchor]));
+      features.set('f-child', new Feature('f-child', 'Polygon', [childAnchor]));
+      const layers = [new Layer('l1', 'L1', 0)];
+      const vertices = new Map<string, Vertex>();
+      vertices.set('v1', new Vertex('v1', new Coordinate(0, 0)));
+      vertices.set('v2', new Vertex('v2', new Coordinate(10, 0)));
+      vertices.set('v3', new Vertex('v3', new Coordinate(0, 10)));
+      const world = new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+
+      const json = serialize(world);
+      const parsed = JSON.parse(json);
+      const containerJson = parsed.features.find((f: { id: string }) => f.id === 'f-c').anchors[0];
+      expect('shape' in containerJson).toBe(false);
+
+      const restored = deserialize(json);
+      expect(restored.features.get('f-c')!.anchors[0].shape).toBeUndefined();
+    });
+
+    it('旧形式（shape フィールドなし + Polygon + childIds 非空）はコンテナとして警告付きで読み込む', () => {
+      const json = createValidJsonWorld({
+        layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
+        vertices: [
+          { id: 'v1', x: 0, y: 0 },
+          { id: 'v2', x: 10, y: 0 },
+          { id: 'v3', x: 0, y: 10 },
+        ],
+        features: [
+          {
+            id: 'f-c',
+            featureType: 'Polygon',
+            anchors: [
+              {
+                id: 'a-c',
+                timeRange: { start: { year: 0 } },
+                property: { name: '合衆国', description: '' },
+                placement: { layerId: 'l1', parentId: null, childIds: ['f-child'], isTopLevel: true },
+              },
+            ],
+          },
+          {
+            id: 'f-child',
+            featureType: 'Polygon',
+            anchors: [
+              {
+                id: 'a-child',
+                timeRange: { start: { year: 0 } },
+                property: { name: 'ヴァージニア', description: '' },
+                shape: {
+                  type: 'Polygon',
+                  rings: [
+                    { id: 'r1', vertexIds: ['v1', 'v2', 'v3'], ringType: 'territory', parentId: null },
+                  ],
+                },
+                placement: { layerId: 'l1', parentId: 'f-c', childIds: [], isTopLevel: false },
+              },
+            ],
+          },
+        ],
+      });
+      const report = deserializeWithReport(JSON.stringify(json));
+      expect(report.world.features.get('f-c')!.anchors[0].shape).toBeUndefined();
+      expect(
+        report.compatibilityWarnings.some((w) => w.includes('集約地物'))
+      ).toBe(true);
+    });
+
+    it('旧形式（shape フィールドなし + Point）は SerializationError を投げる', () => {
+      const json = createValidJsonWorld({
+        features: [
+          {
+            id: 'f1',
+            featureType: 'Point',
+            anchors: [
+              {
+                id: 'a1',
+                timeRange: { start: { year: 0 } },
+                property: { name: 'p', description: '' },
+                placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+              },
+            ],
+          },
+        ],
+      });
+      expect(() => deserialize(JSON.stringify(json))).toThrow(SerializationError);
+    });
+
+    it('旧形式（shape フィールドなし + Line）は SerializationError を投げる', () => {
+      const json = createValidJsonWorld({
+        features: [
+          {
+            id: 'f1',
+            featureType: 'Line',
+            anchors: [
+              {
+                id: 'a1',
+                timeRange: { start: { year: 0 } },
+                property: { name: 'p', description: '' },
+                placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+              },
+            ],
+          },
+        ],
+      });
+      expect(() => deserialize(JSON.stringify(json))).toThrow(SerializationError);
+    });
+
+    it('旧形式（shape フィールドなし + Polygon + childIds に存在しない feature ID）は SerializationError を投げる', () => {
+      const json = createValidJsonWorld({
+        features: [
+          {
+            id: 'f-c',
+            featureType: 'Polygon',
+            anchors: [
+              {
+                id: 'a-c',
+                timeRange: { start: { year: 0 } },
+                property: { name: '合衆国', description: '' },
+                placement: {
+                  layerId: 'l1',
+                  parentId: null,
+                  childIds: ['ghost'],
+                  isTopLevel: true,
+                },
+              },
+            ],
+          },
+        ],
+      });
+      expect(() => deserialize(JSON.stringify(json))).toThrow(SerializationError);
+    });
+
+    it('旧形式（shape フィールドなし + Polygon + childIds 空）は SerializationError を投げる', () => {
+      const json = createValidJsonWorld({
+        features: [
+          {
+            id: 'f1',
+            featureType: 'Polygon',
+            anchors: [
+              {
+                id: 'a1',
+                timeRange: { start: { year: 0 } },
+                property: { name: 'p', description: '' },
+                placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+              },
+            ],
+          },
+        ],
+      });
+      expect(() => deserialize(JSON.stringify(json))).toThrow(SerializationError);
+    });
+  });
+
   describe('穴あきポリゴン', () => {
     it('ホールリングを含むポリゴンをラウンドトリップできる', () => {
       const vertices = new Map<string, Vertex>();

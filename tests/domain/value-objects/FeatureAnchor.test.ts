@@ -1,19 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
+import {
+  FeatureAnchor,
+  createAnchorPlacement,
+  requireLeafShape,
+} from '@domain/value-objects/FeatureAnchor';
 import type { AnchorProperty, AnchorPlacement, FeatureShape, TimeRange } from '@domain/value-objects/FeatureAnchor';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 
 function createAnchor(overrides?: {
   timeRange?: TimeRange;
   property?: AnchorProperty;
-  shape?: FeatureShape;
+  shape?: FeatureShape | undefined;
   placement?: AnchorPlacement;
 }): FeatureAnchor {
   return new FeatureAnchor(
     'a1',
     overrides?.timeRange ?? { start: new TimePoint(1000), end: new TimePoint(2000) },
     overrides?.property ?? { name: 'テスト国', description: '説明' },
-    overrides?.shape ?? { type: 'Point', vertexId: 'v1' },
+    overrides && 'shape' in overrides ? overrides.shape : { type: 'Point', vertexId: 'v1' },
     overrides?.placement ?? { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
   );
 }
@@ -102,6 +106,36 @@ describe('FeatureAnchor', () => {
       const updated = a.withPlacement(createAnchorPlacement('l1', 'p1', []));
       expect(updated.placement.isTopLevel).toBe(false);
       expect(updated.placement.parentId).toBe('p1');
+    });
+  });
+
+  describe('shape optional 化（集約地物）', () => {
+    it('shape を undefined としてコンテナ錨を生成できる', () => {
+      const a = createAnchor({ shape: undefined });
+      expect(a.shape).toBeUndefined();
+    });
+
+    it('withShape(undefined) でリーフからコンテナへ遷移できる', () => {
+      const a = createAnchor({ shape: { type: 'Point', vertexId: 'v1' } });
+      const container = a.withShape(undefined);
+      expect(container.shape).toBeUndefined();
+      expect(a.shape?.type).toBe('Point');
+    });
+
+    it('withShape(shape) でコンテナからリーフ復帰もできる', () => {
+      const container = createAnchor({ shape: undefined });
+      const leaf = container.withShape({ type: 'Point', vertexId: 'v9' });
+      expect(leaf.shape).toEqual({ type: 'Point', vertexId: 'v9' });
+    });
+
+    it('requireLeafShape はリーフ錨の shape を返す', () => {
+      const a = createAnchor({ shape: { type: 'Point', vertexId: 'v1' } });
+      expect(requireLeafShape(a)).toEqual({ type: 'Point', vertexId: 'v1' });
+    });
+
+    it('requireLeafShape はコンテナ錨で Error を投げる', () => {
+      const container = createAnchor({ shape: undefined });
+      expect(() => requireLeafShape(container)).toThrow(/has no shape/);
     });
   });
 

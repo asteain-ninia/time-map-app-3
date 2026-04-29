@@ -88,7 +88,11 @@ interface JsonFeatureAnchor {
   id: string;
   timeRange: JsonTimeRange;
   property: JsonAnchorProperty;
-  shape: JsonFeatureShape;
+  /**
+   * 形状定義。末端地物（リーフ）のみが保持する。集約地物（コンテナ）は
+   * このフィールド自体を出力しない。
+   */
+  shape?: JsonFeatureShape;
   placement: JsonAnchorPlacement;
 }
 

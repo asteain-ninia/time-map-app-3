@@ -75,20 +75,22 @@ export interface TimeRange {
 
 /**
  * 歴史の錨（FeatureAnchor）値オブジェクト
- * 特定時間範囲における地物の完全状態スナップショット
+ * 特定時間範囲における地物の完全状態スナップショット。
+ * 形状（`shape`）は末端地物（リーフ）のみが保持する。集約地物（コンテナ）は
+ * `shape === undefined` で表現し、形状は下位領域の和として実行時に導出する。
  */
 export class FeatureAnchor {
   readonly id: string;
   readonly timeRange: TimeRange;
   readonly property: AnchorProperty;
-  readonly shape: FeatureShape;
+  readonly shape: FeatureShape | undefined;
   readonly placement: AnchorPlacement;
 
   constructor(
     id: string,
     timeRange: TimeRange,
     property: AnchorProperty,
-    shape: FeatureShape,
+    shape: FeatureShape | undefined,
     placement: AnchorPlacement
   ) {
     this.id = id;
@@ -113,11 +115,25 @@ export class FeatureAnchor {
     return new FeatureAnchor(this.id, this.timeRange, property, this.shape, this.placement);
   }
 
-  withShape(shape: FeatureShape): FeatureAnchor {
+  withShape(shape: FeatureShape | undefined): FeatureAnchor {
     return new FeatureAnchor(this.id, this.timeRange, this.property, shape, this.placement);
   }
 
   withPlacement(placement: AnchorPlacement): FeatureAnchor {
     return new FeatureAnchor(this.id, this.timeRange, this.property, this.shape, placement);
   }
+}
+
+/**
+ * リーフ前提の関数で `FeatureAnchor.shape` を取り出すヘルパー。
+ * `shape === undefined`（集約地物）のときは Error を投げる。
+ * Phase 2-C で導入したリーフ専用パスでの誤呼び出しを runtime で検知するための防御。
+ */
+export function requireLeafShape(anchor: FeatureAnchor): FeatureShape {
+  if (anchor.shape === undefined) {
+    throw new Error(
+      `FeatureAnchor "${anchor.id}" has no shape (container anchor); leaf shape is required here`
+    );
+  }
+  return anchor.shape;
 }

@@ -138,13 +138,16 @@ function serializeAnchorPlacement(pl: AnchorPlacement): JsonAnchorPlacement {
 }
 
 function serializeAnchor(a: FeatureAnchor): JsonFeatureAnchor {
-  return {
+  const json: JsonFeatureAnchor = {
     id: a.id,
     timeRange: serializeTimeRange(a.timeRange),
     property: serializeAnchorProperty(a.property),
-    shape: serializeShape(a.shape),
     placement: serializeAnchorPlacement(a.placement),
   };
+  if (a.shape !== undefined) {
+    json.shape = serializeShape(a.shape);
+  }
+  return json;
 }
 
 function serializeFeature(f: Feature): JsonFeature {
@@ -289,7 +292,7 @@ function deserializeAnchor(json: JsonFeatureAnchor): FeatureAnchor {
     json.id,
     deserializeTimeRange(json.timeRange),
     deserializeAnchorProperty(json.property),
-    deserializeShape(json.shape),
+    json.shape === undefined ? undefined : deserializeShape(json.shape),
     deserializeAnchorPlacement(json.placement)
   );
 }

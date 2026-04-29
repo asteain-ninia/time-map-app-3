@@ -14,6 +14,7 @@ function validateOrphanedVertices(json: JsonWorld): string[] {
 
   for (const feature of json.features) {
     for (const anchor of feature.anchors) {
+      if (!anchor.shape) continue;
       if (anchor.shape.type === 'Point' && anchor.shape.vertexId) {
         if (!vertexIds.has(anchor.shape.vertexId)) {
           errors.push(`Feature "${feature.id}" references non-existent vertex "${anchor.shape.vertexId}"`);
@@ -159,6 +160,9 @@ function validatePolygons(json: JsonWorld): string[] {
 
   for (const feature of json.features) {
     for (const anchor of feature.anchors) {
+      if (!anchor.shape) {
+        continue;
+      }
       if (anchor.shape.type !== 'Polygon') {
         continue;
       }

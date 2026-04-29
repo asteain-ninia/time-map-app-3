@@ -67,8 +67,9 @@ function migrateJsonWorld(raw: unknown): JsonMigrationResult {
   }
 
   const defaultLayerId = layers[0]?.id ?? 'default';
+  const featureIds = collectFeatureIds(featureSources);
   const features = featureSources.map((item, index) =>
-    normalizeFeature(item, index, defaultLayerId, ctx)
+    normalizeFeature(item, index, defaultLayerId, featureIds, ctx)
   );
   const sharedVertexGroups = optionalArray(raw, 'sharedVertexGroups', ctx).map((item, index) =>
     normalizeSharedVertexGroup(item, index)
@@ -207,6 +208,7 @@ function normalizeFeature(
   value: unknown,
   index: number,
   defaultLayerId: string,
+  featureIds: ReadonlySet<string>,
   ctx: MigrationContext
 ): JsonFeature {
   const record = expectRecord(value, `features[${index}]`);
@@ -217,15 +219,31 @@ function normalizeFeature(
   );
   const anchors = Array.isArray(record.anchors)
     ? record.anchors.map((anchor, anchorIndex) =>
-        normalizeAnchor(anchor, id, anchorIndex, featureType, defaultLayerId, ctx)
+        normalizeAnchor(anchor, id, anchorIndex, featureType, defaultLayerId, featureIds, ctx)
       )
-    : [normalizeLegacyFeatureAnchor(record, id, featureType, defaultLayerId, ctx)];
+    : [normalizeLegacyFeatureAnchor(record, id, featureType, defaultLayerId, featureIds, ctx)];
 
   return {
     id,
     featureType,
     anchors,
   };
+}
+
+/**
+ * features 配列から id セットを抽出する。
+ * `resolveShape` のコンテナ判定（`shape` 欠落 + `childIds` 非空）の前提条件として、
+ * `childIds` が実在する feature を指していることを確認するために使う。
+ * （要件定義書 §2.5.2 「子の親側参照欠落」検出の最低限の実装）
+ */
+function collectFeatureIds(featureSources: readonly unknown[]): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const source of featureSources) {
+    if (isRecord(source) && typeof source.id === 'string') {
+      ids.add(source.id);
+    }
+  }
+  return ids;
 }
 
 function normalizeFeatureType(value: string, ctx: MigrationContext): string {
@@ -260,6 +278,7 @@ function normalizeAnchor(
   anchorIndex: number,
   featureType: string,
   defaultLayerId: string,
+  featureIds: ReadonlySet<string>,
   ctx: MigrationContext
 ): JsonFeatureAnchor {
   const record = expectRecord(value, `features[${featureId}].anchors[${anchorIndex}]`);
@@ -268,12 +287,13 @@ function normalizeAnchor(
     ctx.warn('IDがない歴史の錨を検出したため、既定IDを補完しました。');
   }
 
+  const placement = normalizePlacement(record.placement, record, defaultLayerId, ctx);
   return {
     id,
     timeRange: normalizeTimeRange(record.timeRange, record, id, ctx),
     property: normalizeAnchorProperty(record.property, record, ctx),
-    shape: normalizeShape(record.shape, record, id, featureType, ctx),
-    placement: normalizePlacement(record.placement, record, defaultLayerId, ctx),
+    shape: resolveShape(record, id, featureType, placement, featureIds, ctx),
+    placement,
   };
 }
 
@@ -282,16 +302,67 @@ function normalizeLegacyFeatureAnchor(
   featureId: string,
   featureType: string,
   defaultLayerId: string,
+  featureIds: ReadonlySet<string>,
   ctx: MigrationContext
 ): JsonFeatureAnchor {
   ctx.warn('anchors がない旧形式の地物を、単一の歴史の錨へ変換しました。');
+  const anchorId = `${featureId}-anchor-1`;
+  const placement = normalizePlacement(record.placement, record, defaultLayerId, ctx);
   return {
-    id: `${featureId}-anchor-1`,
-    timeRange: normalizeTimeRange(record.timeRange, record, `${featureId}-anchor-1`, ctx),
+    id: anchorId,
+    timeRange: normalizeTimeRange(record.timeRange, record, anchorId, ctx),
     property: normalizeAnchorProperty(record.property, record, ctx),
-    shape: normalizeShape(record.shape, record, `${featureId}-anchor-1`, featureType, ctx),
-    placement: normalizePlacement(record.placement, record, defaultLayerId, ctx),
+    shape: resolveShape(record, anchorId, featureType, placement, featureIds, ctx),
+    placement,
   };
+}
+
+/**
+ * shape の有無を判定し、欠落時はコンテナ（Polygon + 子あり）または
+ * SerializationError として扱う。詳細は 要件定義書.md §4.1（`shape`?）を参照。
+ * コンテナ昇格の前提として `childIds` が実在する feature を指していることも確認する
+ * （要件定義書 §2.5.2「子の親側参照欠落」検出の最低限の実装。Phase 3 で親側からの
+ * 相互参照や循環検出に拡張予定）。
+ */
+function resolveShape(
+  record: JsonRecord,
+  anchorId: string,
+  featureType: string,
+  placement: JsonAnchorPlacement,
+  featureIds: ReadonlySet<string>,
+  ctx: MigrationContext
+): JsonFeatureShape | undefined {
+  if (hasShapeSource(record)) {
+    return normalizeShape(record.shape, record, anchorId, featureType, ctx);
+  }
+
+  if (featureType === 'Polygon' && placement.childIds.length > 0) {
+    const orphans = placement.childIds.filter((childId) => !featureIds.has(childId));
+    if (orphans.length > 0) {
+      throw new SerializationError(
+        `Anchor "${anchorId}" has no shape and references non-existent child feature(s): ${orphans.join(', ')}`
+      );
+    }
+    ctx.warn('shape を持たない集約地物（Polygon + childIds あり）を検出したため、形状フィールドを省略しました。');
+    return undefined;
+  }
+
+  if (featureType === 'Polygon') {
+    throw new SerializationError(
+      `Anchor "${anchorId}" has no shape but is not a container (childIds is empty)`
+    );
+  }
+  throw new SerializationError(
+    `Anchor "${anchorId}" of type "${featureType}" requires a shape`
+  );
+}
+
+function hasShapeSource(record: JsonRecord): boolean {
+  if (isRecord(record.shape)) return true;
+  if (record.vertexIds !== undefined) return true;
+  if (Array.isArray(record.rings)) return true;
+  if (record.vertexId !== undefined) return true;
+  return false;
 }
 
 function normalizeTimeRange(
