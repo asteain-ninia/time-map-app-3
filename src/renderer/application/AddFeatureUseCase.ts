@@ -100,7 +100,7 @@ export class AddFeatureUseCase {
     let max = 0;
     for (const f of features) {
       for (const a of f.anchors) {
-        if (a.shape.type === 'Polygon') {
+        if (a.shape && a.shape.type === 'Polygon') {
           for (const ring of a.shape.rings) {
             if (ring.id.startsWith('ring-')) {
               const n = parseInt(ring.id.slice(5), 10);

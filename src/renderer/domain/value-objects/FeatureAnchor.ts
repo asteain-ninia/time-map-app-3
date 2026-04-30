@@ -137,3 +137,22 @@ export function requireLeafShape(anchor: FeatureAnchor): FeatureShape {
   }
   return anchor.shape;
 }
+
+/** 末端ポリゴン錨を絞り込んだ型: shape が必ず存在し Polygon として narrow 済み。 */
+export type LeafPolygonAnchor = FeatureAnchor & {
+  readonly shape: Extract<FeatureShape, { type: 'Polygon' }>;
+};
+
+/**
+ * 末端ポリゴン地物の錨判定。
+ * 要件定義書 §2.1「排他検証は末端地物同士のみ」「集約地物ペアに直接の非重複検証を実装しない」、
+ * 開発ガイド §6.6.8「リーフ判定: shape を保持し childIds.length === 0 であることを必要十分条件とする」、
+ * 現状.md §6.4「リーフ判定は『shape を保持し、子を持たない』を必要十分条件とする」に従う。
+ *
+ * 移行期間ノード（shape あり + childIds 非空）も false を返すため、
+ * 排他検証 (`ConflictDetectionService`) や末端前提のバリデーション (`PolygonValidationService`)
+ * から確実に除外できる。判定を1ヘルパーに集約することで検証経路間のドリフトを防ぐ。
+ */
+export function isLeafPolygonAnchor(anchor: FeatureAnchor): anchor is LeafPolygonAnchor {
+  return anchor.shape?.type === 'Polygon' && anchor.placement.childIds.length === 0;
+}

@@ -7,6 +7,7 @@
 import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
+import { isLeafPolygonAnchor } from '@domain/value-objects/FeatureAnchor';
 import { isSelfIntersecting, type RingCoords } from './GeometryService';
 import {
   validatePolygonRingHierarchy,
@@ -32,7 +33,9 @@ export function validatePolygonFeature(
   explicitLayerId?: string
 ): PolygonValidationResult {
   const activeAnchor = targetFeature.getActiveAnchor(time);
-  if (!activeAnchor || activeAnchor.shape.type !== 'Polygon') {
+  // §6.6.8: ポリゴン整合性検証（自己交差・リング階層・空間競合）はいずれも末端地物のみが対象。
+  // 集約地物・移行期間ノードは shape を持たない／リーフ前提検証の対象外なのでスキップする。
+  if (!activeAnchor || !isLeafPolygonAnchor(activeAnchor)) {
     return {
       selfIntersectingRingIds: [],
       ringValidationErrors: [],

@@ -140,6 +140,7 @@ export function getLinkedVertexIds(
 }
 
 function anchorContainsVertex(anchor: FeatureAnchor, vertexId: string): boolean {
+  if (!anchor.shape) return false;
   switch (anchor.shape.type) {
     case 'Point':
       return anchor.shape.vertexId === vertexId;
@@ -160,6 +161,7 @@ function getAnchorsForValidation(
 }
 
 function getAdjacentVertexIdsInAnchor(anchor: FeatureAnchor, vertexId: string): string[] {
+  if (!anchor.shape) return [];
   switch (anchor.shape.type) {
     case 'Point':
       return [];
@@ -199,6 +201,7 @@ function getRestrictedShapeComponentKeys(
   for (const feature of features) {
     const anchors = getAnchorsForValidation(feature, currentTime);
     for (const anchor of anchors) {
+      if (!anchor.shape) continue;
       switch (anchor.shape.type) {
         case 'Point':
           break;

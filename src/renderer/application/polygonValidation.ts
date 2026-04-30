@@ -115,6 +115,7 @@ function anchorContainsAnyVertex(
   anchor: FeatureAnchor,
   vertexIds: ReadonlySet<string>
 ): boolean {
+  if (!anchor.shape) return false;
   switch (anchor.shape.type) {
     case 'Point':
       return vertexIds.has(anchor.shape.vertexId);

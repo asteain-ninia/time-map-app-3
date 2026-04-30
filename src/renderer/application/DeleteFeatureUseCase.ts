@@ -139,6 +139,7 @@ export class DeleteFeatureUseCase {
   private collectVertexIds(feature: Feature): Set<string> {
     const ids = new Set<string>();
     for (const anchor of feature.anchors) {
+      if (!anchor.shape) continue;
       switch (anchor.shape.type) {
         case 'Point':
           ids.add(anchor.shape.vertexId);

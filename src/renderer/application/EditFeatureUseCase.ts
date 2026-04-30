@@ -217,7 +217,7 @@ export class EditFeatureUseCase {
     if (!feature) return null;
 
     const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor || anchor.shape.type !== 'Polygon') return null;
+    if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') return null;
 
     const result = addHoleRing(anchor.shape.rings, parentRingId, vertexIds);
     if (result) {
@@ -238,7 +238,7 @@ export class EditFeatureUseCase {
     if (!feature) return null;
 
     const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor || anchor.shape.type !== 'Polygon') return null;
+    if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') return null;
 
     const result = addExclaveRing(anchor.shape.rings, vertexIds);
     if (result) {
@@ -259,7 +259,7 @@ export class EditFeatureUseCase {
     if (!feature) return null;
 
     const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor || anchor.shape.type !== 'Polygon') return null;
+    if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') return null;
 
     const result = deleteRing(anchor.shape.rings, ringId);
     if (result) {
@@ -286,7 +286,7 @@ export class EditFeatureUseCase {
     if (!feature) return [{ type: 'not_contained', ringId: '', message: '地物が見つかりません' }];
 
     const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor || anchor.shape.type !== 'Polygon') {
+    if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') {
       return [{ type: 'not_contained', ringId: '', message: 'ポリゴンではありません' }];
     }
 

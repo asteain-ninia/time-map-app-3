@@ -12,6 +12,7 @@ import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import { isLeafPolygonAnchor } from '@domain/value-objects/FeatureAnchor';
 import type { RingCoords } from './GeometryService';
 import { findOverlappingLongitudeShift } from './BooleanOperationService';
 
@@ -129,7 +130,8 @@ export function detectConflictsForFeature(
   if (!targetFeature || targetFeature.featureType !== 'Polygon') return [];
 
   const targetAnchor = targetFeature.getActiveAnchor(time);
-  if (!targetAnchor || targetAnchor.shape.type !== 'Polygon') return [];
+  // §6.6.8: 末端排他は末端地物同士のみ。集約地物・移行期間ノード（shape あり + childIds 非空）は対象外。
+  if (!targetAnchor || !isLeafPolygonAnchor(targetAnchor)) return [];
 
   const targetRings = resolveOccupiedPolygons(targetAnchor, vertices);
   if (targetRings.length === 0) return [];
@@ -143,7 +145,8 @@ export function detectConflictsForFeature(
     if (other.featureType !== 'Polygon') continue;
 
     const otherAnchor = other.getActiveAnchor(time);
-    if (!otherAnchor || otherAnchor.shape.type !== 'Polygon') continue;
+    // §6.6.8: 排他検証対象は末端地物のみに絞る。
+    if (!otherAnchor || !isLeafPolygonAnchor(otherAnchor)) continue;
     if (otherAnchor.placement.layerId !== targetLayerId) continue;
 
     const otherRings = resolveOccupiedPolygons(otherAnchor, vertices);
@@ -175,7 +178,8 @@ function groupPolygonsByLayer(
     if (feature.featureType !== 'Polygon') continue;
 
     const anchor = feature.getActiveAnchor(time);
-    if (!anchor || anchor.shape.type !== 'Polygon') continue;
+    // §6.6.8: レイヤー別ペアワイズ排他検証も末端地物のみに限定する。
+    if (!anchor || !isLeafPolygonAnchor(anchor)) continue;
 
     const layerId = anchor.placement.layerId;
     if (targetLayerIds && !targetLayerIds.has(layerId)) continue;
@@ -201,7 +205,7 @@ function resolveOccupiedPolygons(
   anchor: FeatureAnchor,
   vertices: ReadonlyMap<string, Vertex>
 ): RingCoords[][] {
-  if (anchor.shape.type !== 'Polygon') return [];
+  if (!anchor.shape || anchor.shape.type !== 'Polygon') return [];
 
   const rings: ResolvedPolygonRing[] = [];
   for (const ring of anchor.shape.rings) {

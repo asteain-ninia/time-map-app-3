@@ -100,7 +100,7 @@ function insertSharedEdgeVerticesIntoFeature(
   context: ReturnType<typeof createInsertionContext>
 ): void {
   const anchor = feature.getActiveAnchor(currentTime);
-  if (!anchor) return;
+  if (!anchor || !anchor.shape) return;
 
   const shape = insertSharedEdgeVerticesIntoShape(
     anchor.shape,

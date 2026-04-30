@@ -92,12 +92,12 @@ export class ResolveFeatureAnchorConflictsUseCase {
       // 優先地物の形状を取得
       const preferredAnchor = preferredAnchors.find((anchor) => anchor.isActiveAt(draft.editTime));
 
-      if (!preferredAnchor || preferredAnchor.shape.type !== 'Polygon') continue;
+      if (!preferredAnchor || !preferredAnchor.shape || preferredAnchor.shape.type !== 'Polygon') continue;
 
       // 非優先地物の形状を差分演算
       const updatedAnchors = nonPreferredAnchors.map(anchor => {
         if (!anchor.isActiveAt(draft.editTime)) return anchor;
-        if (anchor.shape.type !== 'Polygon') return anchor;
+        if (!anchor.shape || anchor.shape.type !== 'Polygon') return anchor;
 
         // 差分: 非優先 - 優先
         const nonPrefRings = this.resolveRings(anchor, workingVertices);
@@ -173,7 +173,7 @@ export class ResolveFeatureAnchorConflictsUseCase {
     anchor: FeatureAnchor,
     vertices: ReadonlyMap<string, Vertex>
   ): RingCoords[] {
-    if (anchor.shape.type !== 'Polygon') return [];
+    if (!anchor.shape || anchor.shape.type !== 'Polygon') return [];
     return anchor.shape.rings.map(ring =>
       ring.vertexIds
         .map(vid => {

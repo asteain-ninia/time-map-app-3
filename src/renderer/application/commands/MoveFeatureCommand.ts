@@ -163,7 +163,7 @@ export class MoveFeatureCommand implements UndoableCommand {
   private collectActiveVertexIds(feature: Feature, time: TimePoint): Set<string> {
     const ids = new Set<string>();
     const anchor = feature.getActiveAnchor(time);
-    if (!anchor) return ids;
+    if (!anchor || !anchor.shape) return ids;
 
     switch (anchor.shape.type) {
       case 'Point':

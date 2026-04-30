@@ -101,7 +101,7 @@ export class SplitFeatureCommand implements UndoableCommand {
     if (!feature) return;
 
     const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor || anchor.shape.type !== 'Polygon') return;
+    if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') return;
 
     const vertices = this.featureUseCase.getVertices();
     const splitSourceVertexIds = collectShapeVertexIds(anchor.shape);

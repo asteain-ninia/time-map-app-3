@@ -86,7 +86,7 @@ export class MergeFeatureCommand implements UndoableCommand {
         throw new Error(`結合対象の地物が見つかりません: ${fid}`);
       }
       const anchor = feature.getActiveAnchor(currentTime);
-      if (!anchor || anchor.shape.type !== 'Polygon') {
+      if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') {
         throw new Error('結合できるのは現在時刻で有効な面情報のみです');
       }
       validationTargets.push({

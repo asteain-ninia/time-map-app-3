@@ -3,6 +3,7 @@ import {
   FeatureAnchor,
   createAnchorPlacement,
   requireLeafShape,
+  isLeafPolygonAnchor,
 } from '@domain/value-objects/FeatureAnchor';
 import type { AnchorProperty, AnchorPlacement, FeatureShape, TimeRange } from '@domain/value-objects/FeatureAnchor';
 import { TimePoint } from '@domain/value-objects/TimePoint';
@@ -136,6 +137,45 @@ describe('FeatureAnchor', () => {
     it('requireLeafShape はコンテナ錨で Error を投げる', () => {
       const container = createAnchor({ shape: undefined });
       expect(() => requireLeafShape(container)).toThrow(/has no shape/);
+    });
+  });
+
+  describe('isLeafPolygonAnchor（末端ポリゴン判定）', () => {
+    const polygonShape: FeatureShape = {
+      type: 'Polygon',
+      rings: [{ id: 'r1', vertexIds: ['v1', 'v2', 'v3'], ringType: 'territory', parentId: null }],
+    };
+
+    it('shape あり (Polygon) + childIds 空 → true（リーフ）', () => {
+      const a = createAnchor({
+        shape: polygonShape,
+        placement: createAnchorPlacement('l1', null, []),
+      });
+      expect(isLeafPolygonAnchor(a)).toBe(true);
+    });
+
+    it('shape あり (Polygon) + childIds 非空 → false（移行期間ノードを排他検証から除外）', () => {
+      const a = createAnchor({
+        shape: polygonShape,
+        placement: createAnchorPlacement('l1', null, ['c1']),
+      });
+      expect(isLeafPolygonAnchor(a)).toBe(false);
+    });
+
+    it('shape なし + childIds 非空 → false（コンテナ）', () => {
+      const a = createAnchor({
+        shape: undefined,
+        placement: createAnchorPlacement('l1', null, ['c1']),
+      });
+      expect(isLeafPolygonAnchor(a)).toBe(false);
+    });
+
+    it('shape あり (Point) + childIds 空 → false（Polygon 限定）', () => {
+      const a = createAnchor({
+        shape: { type: 'Point', vertexId: 'v1' },
+        placement: createAnchorPlacement('l1', null, []),
+      });
+      expect(isLeafPolygonAnchor(a)).toBe(false);
     });
   });
 

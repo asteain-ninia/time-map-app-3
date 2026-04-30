@@ -67,7 +67,7 @@ export class VertexEditUseCase {
 
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor) throw new VertexEditError(`No active anchor at current time`);
-    if (anchor.shape.type !== 'LineString') {
+    if (!anchor.shape || anchor.shape.type !== 'LineString') {
       throw new VertexEditError(`Anchor shape is not LineString`);
     }
 
@@ -113,7 +113,7 @@ export class VertexEditUseCase {
 
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor) throw new VertexEditError(`No active anchor at current time`);
-    if (anchor.shape.type !== 'Polygon') {
+    if (!anchor.shape || anchor.shape.type !== 'Polygon') {
       throw new VertexEditError(`Anchor shape is not Polygon`);
     }
 
@@ -167,7 +167,7 @@ export class VertexEditUseCase {
 
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor) throw new VertexEditError(`No active anchor at current time`);
-    if (anchor.shape.type !== 'LineString') {
+    if (!anchor.shape || anchor.shape.type !== 'LineString') {
       throw new VertexEditError(`Anchor shape is not LineString`);
     }
 
@@ -208,7 +208,7 @@ export class VertexEditUseCase {
 
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor) throw new VertexEditError(`No active anchor at current time`);
-    if (anchor.shape.type !== 'Polygon') {
+    if (!anchor.shape || anchor.shape.type !== 'Polygon') {
       throw new VertexEditError(`Anchor shape is not Polygon`);
     }
 

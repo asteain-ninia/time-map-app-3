@@ -127,6 +127,7 @@ export class DeleteVerticesCommand implements UndoableCommand {
     const ids = new Set<string>();
     for (const feature of features.values()) {
       for (const anchor of feature.anchors) {
+        if (!anchor.shape) continue;
         switch (anchor.shape.type) {
           case 'Point':
             ids.add(anchor.shape.vertexId);

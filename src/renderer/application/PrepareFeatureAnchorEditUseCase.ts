@@ -252,7 +252,7 @@ export class PrepareFeatureAnchorEditUseCase {
     // 候補錨を適用した仮想地物で競合検出
     const tempFeature = feature.withAnchors(candidateAnchors);
     const activeAnchor = tempFeature.getActiveAnchor(editTime);
-    if (!activeAnchor || activeAnchor.shape.type !== 'Polygon') return [];
+    if (!activeAnchor || !activeAnchor.shape || activeAnchor.shape.type !== 'Polygon') return [];
 
     const allFeatures = this.featureUseCase.getFeatures();
     const vertices = this.featureUseCase.getVertices();
