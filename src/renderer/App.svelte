@@ -208,7 +208,7 @@
     const time = timelineQueries.getCurrentTime();
     const polygonIndexInLayer = features.filter((feature) => {
       const anchor = feature.getActiveAnchor(time);
-      return anchor?.shape.type === 'Polygon' && anchor.placement.layerId === layerId;
+      return anchor?.shape?.type === 'Polygon' && anchor.placement.layerId === layerId;
     }).length;
 
     try {
@@ -1316,7 +1316,7 @@
     const feature = features.find(f => f.id === selectionFeatureId);
     if (!feature) return false;
     const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor || anchor.shape.type !== 'Polygon') return false;
+    if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') return false;
 
     const polygons = resolvePolygonShapePolygons(anchor.shape, addFeature.getVertices());
     return canConfirmKnifeDrawing(knifeDrawingState, polygons);
@@ -1481,7 +1481,7 @@
     const feature = features.find((f) => f.id === selectionFeatureId);
     if (!feature) return null;
     const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor) return null;
+    if (!anchor || !anchor.shape) return null;
 
     if (anchor.shape.type === 'LineString') {
       return {
@@ -1685,7 +1685,7 @@
     const feature = features.find((f) => f.id === selectionFeatureId);
     if (!feature) return null;
     const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor) return null;
+    if (!anchor || !anchor.shape) return null;
 
     const vtx1 = vertices.get(v1);
     const vtx2 = vertices.get(v2);
@@ -1946,7 +1946,7 @@
     const featureType = (() => {
       if (!currentTime) return null;
       const f = features.find(feat => feat.id === selectedFeatureId);
-      return f?.getActiveAnchor(currentTime)?.shape.type ?? null;
+      return f?.getActiveAnchor(currentTime)?.shape?.type ?? null;
     })();
 
     // 選択頂点が共有頂点かチェック

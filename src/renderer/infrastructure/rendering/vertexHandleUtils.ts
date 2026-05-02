@@ -96,9 +96,10 @@ export function getShapeEdges(shape: FeatureShape): Edge[] {
 }
 
 export function getShapeVertexPositions(
-  shape: FeatureShape,
+  shape: FeatureShape | undefined,
   vertices: ReadonlyMap<string, Vertex>
 ): VertexPosition[] {
+  if (!shape) return [];
   if (shape.type === 'Point') {
     const vertex = vertices.get(shape.vertexId);
     return vertex
@@ -122,10 +123,11 @@ export function getShapeVertexPositions(
 }
 
 export function getShapeEdgePositions(
-  shape: FeatureShape,
+  shape: FeatureShape | undefined,
   vertices: ReadonlyMap<string, Vertex>
 ): EdgePosition[] {
   const edges: EdgePosition[] = [];
+  if (!shape) return edges;
   if (shape.type === 'Point') return edges;
 
   for (const group of getShapeVertexGroups(shape)) {

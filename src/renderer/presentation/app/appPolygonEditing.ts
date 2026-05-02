@@ -29,6 +29,10 @@ type PolygonAnchor = FeatureAnchor & {
   readonly shape: Extract<FeatureAnchor['shape'], { readonly type: 'Polygon' }>;
 };
 
+function isPolygonAnchor(anchor: FeatureAnchor): anchor is PolygonAnchor {
+  return anchor.shape !== undefined && anchor.shape.type === 'Polygon';
+}
+
 export type { MovingEdgeConstraint, ObstaclePoint };
 
 export interface RingDrawingTarget {
@@ -74,7 +78,7 @@ export function getRingDrawingTarget(
   if (!feature) return null;
 
   const anchor = feature.getActiveAnchor(currentTime);
-  if (!anchor || anchor.shape.type !== 'Polygon') return null;
+  if (!anchor || !isPolygonAnchor(anchor)) return null;
 
   return { feature, anchor };
 }
@@ -83,6 +87,7 @@ export function getAnchorReferenceLongitude(
   anchor: FeatureAnchor,
   vertices: ReadonlyMap<string, Vertex>
 ): number | null {
+  if (!anchor.shape) return null;
   switch (anchor.shape.type) {
     case 'Point':
       return vertices.get(anchor.shape.vertexId)?.x ?? null;
@@ -114,7 +119,7 @@ export function getSelectedPolygonReferenceLongitude(
   if (!selectionFeatureId || !currentTime) return null;
   const feature = features.find((candidate) => candidate.id === selectionFeatureId);
   const anchor = feature?.getActiveAnchor(currentTime);
-  return anchor && anchor.shape.type === 'Polygon'
+  return anchor && anchor.shape && anchor.shape.type === 'Polygon'
     ? getAnchorReferenceLongitude(anchor, vertices)
     : null;
 }

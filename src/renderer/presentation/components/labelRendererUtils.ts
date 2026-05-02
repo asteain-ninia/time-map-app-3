@@ -32,6 +32,8 @@ export function getFeatureLabelPosition(
   anchor: FeatureAnchor,
   vertices: ReadonlyMap<string, Vertex>
 ): LabelPosition | null {
+  if (!anchor.shape) return null;
+
   if (anchor.shape.type === 'Point') {
     const vertex = vertices.get(anchor.shape.vertexId);
     return vertex
@@ -68,7 +70,7 @@ export function measureFeatureLabelArea(
   anchor: FeatureAnchor,
   vertices: ReadonlyMap<string, Vertex>
 ): number {
-  if (anchor.shape.type !== 'Polygon') return 0;
+  if (!anchor.shape || anchor.shape.type !== 'Polygon') return 0;
 
   const outerRing = anchor.shape.rings[0];
   if (!outerRing) return 0;
@@ -91,7 +93,7 @@ export function measureFeatureLabelLength(
   anchor: FeatureAnchor,
   vertices: ReadonlyMap<string, Vertex>
 ): number {
-  if (anchor.shape.type !== 'LineString') return 0;
+  if (!anchor.shape || anchor.shape.type !== 'LineString') return 0;
 
   const coordinates = getVertexCoordinates(anchor.shape.vertexIds, vertices);
   if (coordinates.length < 2) return 0;
@@ -113,6 +115,7 @@ export function shouldRenderFeatureLabel(
   labelAreaThreshold: number
 ): boolean {
   if (!anchor.property.name) return false;
+  if (!anchor.shape) return false;
 
   const minZoom = anchor.property.labelVisibility?.minZoom ?? DEFAULT_LABEL_MIN_ZOOM;
   if (zoom < minZoom) return false;

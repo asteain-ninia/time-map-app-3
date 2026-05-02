@@ -28,7 +28,7 @@ export function getActivePolygonAnchor(
 ): FeatureAnchor | null {
   if (!feature || !time || feature.featureType !== 'Polygon') return null;
   const anchor = feature.getActiveAnchor(time);
-  if (!anchor || anchor.shape.type !== 'Polygon') return null;
+  if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') return null;
   return anchor;
 }
 

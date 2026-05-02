@@ -87,7 +87,7 @@
   /** プロパティの変更を適用 */
   function applyChanges(): void {
     if (!feature || !anchor) return;
-    const style = anchor.shape.type === 'Polygon'
+    const style = anchor.shape?.type === 'Polygon'
       ? {
           fillColor: editFillColor,
           selectedFillColor: editSelectedFillColor,
@@ -151,7 +151,7 @@
 
     <div class="field">
       <label class="field-label" for="prop-type">種別</label>
-      <input class="field-input" id="prop-type" type="text" value={anchor.shape.type} readonly />
+      <input class="field-input" id="prop-type" type="text" value={anchor.shape?.type ?? '集約地物'} readonly />
     </div>
 
     <div class="field">
@@ -191,17 +191,17 @@
 
     <div class="section-header">形状情報</div>
 
-    {#if anchor.shape.type === 'Point'}
+    {#if anchor.shape?.type === 'Point'}
       <div class="field">
         <label class="field-label">頂点数</label>
         <span class="field-value">1</span>
       </div>
-    {:else if anchor.shape.type === 'LineString'}
+    {:else if anchor.shape?.type === 'LineString'}
       <div class="field">
         <label class="field-label">頂点数</label>
         <span class="field-value">{anchor.shape.vertexIds.length}</span>
       </div>
-    {:else if anchor.shape.type === 'Polygon'}
+    {:else if anchor.shape?.type === 'Polygon'}
       <div class="field">
         <label class="field-label">リング数</label>
         <span class="field-value">{anchor.shape.rings.length}</span>
@@ -217,7 +217,7 @@
       <span class="field-value">{anchor.placement.layerId}</span>
     </div>
 
-    {#if anchor.shape.type === 'Polygon'}
+    {#if anchor.shape?.type === 'Polygon'}
       <div class="field">
         <label class="field-label">親</label>
         <span class="field-value">

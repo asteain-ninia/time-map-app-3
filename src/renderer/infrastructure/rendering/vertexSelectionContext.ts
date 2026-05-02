@@ -27,6 +27,7 @@ export function buildVisibleVertexOwnerMap(
     if (!anchor || !visibleLayerIds.has(anchor.placement.layerId)) {
       continue;
     }
+    if (!anchor.shape) continue;
 
     for (const vertexId of getUniqueVertexIds(anchor.shape)) {
       const owners = ownerMap.get(vertexId);

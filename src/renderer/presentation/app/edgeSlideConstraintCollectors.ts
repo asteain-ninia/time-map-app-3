@@ -39,6 +39,7 @@ export function collectSameLayerPolygonObstacleRings(
     const anchor = feature.getActiveAnchor(currentTime);
     if (
       !anchor ||
+      !anchor.shape ||
       anchor.shape.type !== 'Polygon' ||
       !sourceLayerIds.has(anchor.placement.layerId)
     ) {
@@ -87,6 +88,7 @@ export function collectSameLayerPolygonObstacleVertices(
     const anchor = feature.getActiveAnchor(currentTime);
     if (
       !anchor ||
+      !anchor.shape ||
       anchor.shape.type !== 'Polygon' ||
       !sourceLayerIds.has(anchor.placement.layerId)
     ) {
@@ -120,7 +122,7 @@ export function collectMovingPolygonEdgeConstraints(
     }
 
     const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor || anchor.shape.type !== 'Polygon') {
+    if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') {
       continue;
     }
 

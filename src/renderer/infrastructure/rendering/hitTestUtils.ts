@@ -207,6 +207,7 @@ export function hitTest(
     const anchor = feature.getActiveAnchor(currentTime);
     if (!anchor) continue;
     if (!visibleLayerIds.has(anchor.placement.layerId)) continue;
+    if (!anchor.shape) continue;
 
     let hit = false;
     if (anchor.shape.type === 'Point') {

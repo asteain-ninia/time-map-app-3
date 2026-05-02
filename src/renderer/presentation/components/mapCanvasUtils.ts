@@ -35,6 +35,7 @@ interface LongitudeBounds {
 }
 
 export function getAnchorVertexCount(anchor: FeatureAnchor): number {
+  if (!anchor.shape) return 0;
   switch (anchor.shape.type) {
     case 'Point':
       return 1;
@@ -224,6 +225,7 @@ function getAnchorLongitudeBounds(
   anchor: FeatureAnchor,
   vertices: ReadonlyMap<string, Vertex>
 ): LongitudeBounds | null {
+  if (!anchor.shape) return null;
   const longitudes: number[] = [];
 
   switch (anchor.shape.type) {

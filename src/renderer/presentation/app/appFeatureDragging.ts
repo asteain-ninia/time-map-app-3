@@ -21,7 +21,7 @@ interface FeatureTranslationTargets {
 function collectAnchorVertexIds(feature: Feature, currentTime: TimePoint): Set<string> {
   const anchor = feature.getActiveAnchor(currentTime);
   const vertexIds = new Set<string>();
-  if (!anchor) return vertexIds;
+  if (!anchor || !anchor.shape) return vertexIds;
 
   switch (anchor.shape.type) {
     case 'Point':

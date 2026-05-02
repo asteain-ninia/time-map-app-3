@@ -69,7 +69,9 @@
     const result: Array<{ feature: Feature; anchor: FeatureAnchor; featureIndex: number }> = [];
     for (const feature of features) {
       const anchor = feature.getActiveAnchor(currentTime);
-      if (anchor && anchor.placement.layerId === layerId) {
+      // Phase 2-C-3: shape を持たない錨（コンテナ）は描画対象外。
+      // コンテナの派生形状描画は Phase 2.5-B で対応する。
+      if (anchor && anchor.shape && anchor.placement.layerId === layerId) {
         result.push({ feature, anchor, featureIndex: result.length });
       }
     }
@@ -77,7 +79,7 @@
   }
 
   function getPolygonPath(feature: Feature, anchor: FeatureAnchor): string {
-    if (anchor.shape.type !== 'Polygon') {
+    if (!anchor.shape || anchor.shape.type !== 'Polygon') {
       return '';
     }
 

@@ -59,6 +59,7 @@ export function buildPropertyPanelSelectionState(
 }
 
 export function collectAnchorVertexIds(anchor: FeatureAnchor): string[] {
+  if (!anchor.shape) return [];
   switch (anchor.shape.type) {
     case 'Point':
       return [anchor.shape.vertexId];
