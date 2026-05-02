@@ -249,12 +249,61 @@ function validatePolygonRings(
   return errors;
 }
 
+/**
+ * 単一錨内で `shape` の有無と `featureType` ↔ `shape.type` の整合を検証する。
+ * 要件定義書 §4.1 と現状.md §6.10 Phase 2-C-4 のスコープ:
+ *   - `shape === undefined` ⟹ `featureType === 'Polygon'` かつ `placement.childIds.length > 0`（コンテナ）
+ *   - `shape !== undefined` ⟹ `featureType` と `shape.type` が整合（Point↔Point / Line↔LineString / Polygon↔Polygon）
+ * 子参照健全性・親子相互整合・循環検出・リーフ排他・親≡子の和は Phase 3 のスコープ。
+ */
+function validateShapePresence(json: JsonWorld): string[] {
+  const errors: string[] = [];
+
+  for (const feature of json.features) {
+    for (const anchor of feature.anchors) {
+      const shape = anchor.shape;
+
+      if (shape === undefined) {
+        if (feature.featureType !== 'Polygon') {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" of type "${feature.featureType}" requires a shape`
+          );
+          continue;
+        }
+        if (anchor.placement.childIds.length === 0) {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" has no shape but is not a container (childIds is empty)`
+          );
+        }
+        continue;
+      }
+
+      const expected = expectedShapeTypeFor(feature.featureType);
+      if (expected !== null && shape.type !== expected) {
+        errors.push(
+          `Feature "${feature.id}" anchor "${anchor.id}" shape.type "${shape.type}" does not match featureType "${feature.featureType}"`
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
+function expectedShapeTypeFor(featureType: string): string | null {
+  if (featureType === 'Point') return 'Point';
+  if (featureType === 'Line') return 'LineString';
+  if (featureType === 'Polygon') return 'Polygon';
+  return null;
+}
+
 function validateJsonWorld(json: JsonWorld): string[] {
   return [
     ...validateOrphanedVertices(json),
     ...validateTimeRanges(json),
     ...validateLayerReferences(json),
     ...validatePlacementInvariants(json),
+    ...validateShapePresence(json),
     ...validateSharedVertexGroups(json),
     ...validatePolygons(json),
   ];

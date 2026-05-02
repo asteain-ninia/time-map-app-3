@@ -606,7 +606,9 @@ describe('JSONSerializer', () => {
         timelineMarkers: [],
         metadata: DEFAULT_METADATA,
       });
-      expect(() => deserialize(json)).toThrow('Unknown shape type');
+      expect(() => deserialize(json)).toThrow(
+        'shape.type "Circle" does not match featureType "Point"'
+      );
     });
 
     it('LineStringのvertexIds欠損でエラー', () => {
