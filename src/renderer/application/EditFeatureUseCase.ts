@@ -309,8 +309,7 @@ export class EditFeatureUseCase {
 
   detectConflictsForFeature(
     featureId: string,
-    currentTime: TimePoint,
-    layerId: string
+    currentTime: TimePoint
   ): SpatialConflict[] {
     const feature = this.getFeatureById(featureId);
     if (!feature) return [];
@@ -320,8 +319,7 @@ export class EditFeatureUseCase {
       feature,
       this.featureUseCase.getFeatures(),
       vertices,
-      currentTime,
-      layerId
+      currentTime
     );
   }
 }

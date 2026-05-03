@@ -261,8 +261,7 @@ export class PrepareFeatureAnchorEditUseCase {
       tempFeature,
       allFeatures,
       vertices,
-      editTime,
-      activeAnchor.placement.layerId
+      editTime
     );
   }
 }

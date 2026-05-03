@@ -89,7 +89,6 @@
             </div>
 
             <div class="conflict-info">
-              <p>レイヤー: {currentConflict.layerId}</p>
               <p>時間: {currentConflict.atTime.year}年</p>
             </div>
 

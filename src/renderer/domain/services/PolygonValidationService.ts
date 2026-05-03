@@ -29,8 +29,7 @@ export function validatePolygonFeature(
   targetFeature: Feature,
   features: readonly Feature[],
   vertices: ReadonlyMap<string, Vertex>,
-  time: TimePoint,
-  explicitLayerId?: string
+  time: TimePoint
 ): PolygonValidationResult {
   const activeAnchor = targetFeature.getActiveAnchor(time);
   // §6.6.8: ポリゴン整合性検証（自己交差・リング階層・空間競合）はいずれも末端地物のみが対象。
@@ -57,8 +56,7 @@ export function validatePolygonFeature(
     targetFeature,
     features,
     vertices,
-    time,
-    explicitLayerId
+    time
   );
 
   return {

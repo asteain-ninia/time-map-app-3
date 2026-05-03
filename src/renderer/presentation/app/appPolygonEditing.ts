@@ -259,8 +259,7 @@ export function validatePendingPolygon(
       transient.feature,
       features,
       validationVertices,
-      currentTime,
-      layerId
+      currentTime
     );
     return null;
   } catch (error) {

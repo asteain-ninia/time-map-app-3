@@ -122,7 +122,7 @@ describe('PolygonValidationService', () => {
     expect(result.ringValidationErrors.some((error) => error.message.includes('親リングの内部に完全に収まっていません'))).toBe(true);
   });
 
-  it('同一レイヤー重複をconflictsへ含める', () => {
+  it('末端地物重複をconflictsへ含める', () => {
     const vertices = new Map<string, Vertex>([
       ['a1', makeVertex('a1', 0, 0)],
       ['a2', makeVertex('a2', 10, 0)],

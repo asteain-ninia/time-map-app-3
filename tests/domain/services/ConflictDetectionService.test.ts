@@ -122,7 +122,7 @@ const vertices = new Map<string, Vertex>([
 
 describe('ConflictDetectionService', () => {
   describe('detectSpatialConflicts', () => {
-    it('同一レイヤーで重なるポリゴンを競合として検出する', () => {
+    it('重なる末端ポリゴンを競合として検出する', () => {
       const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
       const featureB = makePolygonFeature('f2', 'layer-1', ['vB1', 'vB2', 'vB3', 'vB4']);
       const result = detectSpatialConflicts([featureA, featureB], vertices, time100);
@@ -131,15 +131,26 @@ describe('ConflictDetectionService', () => {
       expect(result.conflicts.length).toBe(1);
       expect(result.conflicts[0].featureIdA).toBe('f1');
       expect(result.conflicts[0].featureIdB).toBe('f2');
-      expect(result.conflicts[0].layerId).toBe('layer-1');
     });
 
-    it('異なるレイヤーのポリゴンは競合しない', () => {
+    it('異なるレイヤーIDの末端ポリゴン同士でも重なれば競合として検出する（地図全体排他）', () => {
       const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
       const featureB = makePolygonFeature('f2', 'layer-2', ['vB1', 'vB2', 'vB3', 'vB4']);
       const result = detectSpatialConflicts([featureA, featureB], vertices, time100);
 
+      expect(result.hasConflicts).toBe(true);
+      expect(result.conflicts.length).toBe(1);
+      expect(result.conflicts[0].featureIdA).toBe('f1');
+      expect(result.conflicts[0].featureIdB).toBe('f2');
+    });
+
+    it('異なるレイヤーIDの末端ポリゴンが重ならなければ競合しない（重なりだけが判定基準）', () => {
+      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const featureC = makePolygonFeature('f3', 'layer-2', ['vC1', 'vC2', 'vC3', 'vC4']);
+      const result = detectSpatialConflicts([featureA, featureC], vertices, time100);
+
       expect(result.hasConflicts).toBe(false);
+      expect(result.conflicts).toEqual([]);
     });
 
     it('重ならないポリゴンは競合しない', () => {
@@ -176,17 +187,6 @@ describe('ConflictDetectionService', () => {
 
       // f1-f2は重なる、f1-f3とf2-f3は重ならない
       expect(result.conflicts.length).toBe(1);
-    });
-
-    it('targetLayerIdsでフィルタリングできる', () => {
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const featureB = makePolygonFeature('f2', 'layer-1', ['vB1', 'vB2', 'vB3', 'vB4']);
-      // layer-2のみ指定 → layer-1の競合は検出されない
-      const result = detectSpatialConflicts(
-        [featureA, featureB], vertices, time100, new Set(['layer-2'])
-      );
-
-      expect(result.hasConflicts).toBe(false);
     });
 
     it('空の地物リストでは競合なし', () => {
@@ -281,11 +281,23 @@ describe('ConflictDetectionService', () => {
       expect(conflicts).toEqual([]);
     });
 
-    it('異なるレイヤーの地物とは競合しない', () => {
+    it('異なるレイヤーIDの末端地物とも重なれば競合として検出する（地図全体排他）', () => {
       const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
       const featureB = makePolygonFeature('f2', 'layer-2', ['vB1', 'vB2', 'vB3', 'vB4']);
       const conflicts = detectConflictsForFeature(
         'f1', [featureA, featureB], vertices, time100
+      );
+
+      expect(conflicts).toHaveLength(1);
+      expect(conflicts[0].featureIdA).toBe('f1');
+      expect(conflicts[0].featureIdB).toBe('f2');
+    });
+
+    it('異なるレイヤーIDの末端地物でも重ならなければ競合しない（重なりだけが判定基準）', () => {
+      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const featureC = makePolygonFeature('f3', 'layer-2', ['vC1', 'vC2', 'vC3', 'vC4']);
+      const conflicts = detectConflictsForFeature(
+        'f1', [featureA, featureC], vertices, time100
       );
 
       expect(conflicts).toEqual([]);
@@ -299,8 +311,7 @@ describe('ConflictDetectionService', () => {
         transient,
         [existing],
         vertices,
-        time100,
-        'layer-1'
+        time100
       );
 
       expect(conflicts).toHaveLength(1);

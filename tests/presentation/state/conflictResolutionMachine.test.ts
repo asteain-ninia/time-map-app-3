@@ -2,22 +2,25 @@ import { describe, it, expect } from 'vitest';
 import { createActor } from 'xstate';
 import { conflictResolutionMachine } from '@presentation/state/conflictResolutionMachine';
 import type { SpatialConflict } from '@domain/services/ConflictDetectionService';
+import { TimePoint } from '@domain/value-objects/TimePoint';
 
 /** テスト用の競合データを生成 */
 function makeConflict(overrides: Partial<SpatialConflict> = {}): SpatialConflict {
   return {
-    featureA: { id: 'f1', layerId: 'l1' },
-    featureB: { id: 'f2', layerId: 'l1' },
-    overlapRatio: 0.3,
+    id: 'conflict-0',
+    featureIdA: 'f1',
+    featureIdB: 'f2',
+    atTime: new TimePoint(0),
     ...overrides,
-  } as SpatialConflict;
+  };
 }
 
 function makeConflicts(count: number): SpatialConflict[] {
   return Array.from({ length: count }, (_, i) =>
     makeConflict({
-      featureA: { id: `fa${i}`, layerId: 'l1' } as SpatialConflict['featureA'],
-      featureB: { id: `fb${i}`, layerId: 'l1' } as SpatialConflict['featureB'],
+      id: `conflict-${i}`,
+      featureIdA: `fa${i}`,
+      featureIdB: `fb${i}`,
     })
   );
 }

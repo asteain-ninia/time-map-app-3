@@ -67,15 +67,13 @@ export function validatePolygonOrThrow(
   targetFeature: Feature,
   features: readonly Feature[],
   vertices: ReadonlyMap<string, Vertex>,
-  time: TimePoint,
-  explicitLayerId?: string
+  time: TimePoint
 ): void {
   const result = validatePolygonFeature(
     targetFeature,
     features,
     vertices,
-    time,
-    explicitLayerId
+    time
   );
 
   if (result.selfIntersectingRingIds.length > 0) {
@@ -93,7 +91,7 @@ export function validatePolygonOrThrow(
         ? firstConflict.featureIdB
         : firstConflict.featureIdA;
     throw new PolygonValidationError(
-      `ポリゴンが同一レイヤーの地物 "${otherFeatureId}" と重なっています`
+      `ポリゴンが他の末端地物 "${otherFeatureId}" と重なっています`
     );
   }
 }

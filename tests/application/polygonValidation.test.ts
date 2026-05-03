@@ -196,7 +196,7 @@ describe('polygonValidation', () => {
     );
   });
 
-  it('validatePolygonOrThrowは同一レイヤー重複で相手IDを含むエラーを投げる', () => {
+  it('validatePolygonOrThrowは末端地物重複で相手IDを含むエラーを投げる', () => {
     const vertices = new Map<string, Vertex>([
       ['a1', makeVertex('a1', 0, 0)],
       ['a2', makeVertex('a2', 10, 0)],
@@ -215,7 +215,7 @@ describe('polygonValidation', () => {
     ]);
 
     expect(() => validatePolygonOrThrow(target, [target, other], vertices, time100))
-      .toThrowError(new PolygonValidationError('ポリゴンが同一レイヤーの地物 "polygon-other" と重なっています'));
+      .toThrowError(new PolygonValidationError('ポリゴンが他の末端地物 "polygon-other" と重なっています'));
   });
 
   it('validatePolygonFeatureIdsOrThrowはLine地物をスキップする', () => {

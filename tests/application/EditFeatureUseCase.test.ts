@@ -156,7 +156,7 @@ describe('EditFeatureUseCase', () => {
 
   describe('衝突判定', () => {
     it('detectConflictsForFeature が存在しない地物で空配列', () => {
-      const result = edit.detectConflictsForFeature('nonexistent', time, 'l1');
+      const result = edit.detectConflictsForFeature('nonexistent', time);
       expect(result).toHaveLength(0);
     });
 
@@ -165,7 +165,7 @@ describe('EditFeatureUseCase', () => {
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
         'l1', time
       );
-      const result = edit.detectConflictsForFeature(feature.id, time, 'l1');
+      const result = edit.detectConflictsForFeature(feature.id, time);
       expect(result).toHaveLength(0);
     });
   });

@@ -81,8 +81,7 @@ export class AddFeatureCommand implements UndoableCommand {
         transient.feature,
         this.featureUseCase.getFeatures(),
         validationVertices,
-        this.params.time,
-        this.params.layerId
+        this.params.time
       );
       if (this.params.parentId) {
         this.parentTransferUseCase.assertCanAssignNewFeatureToParent(

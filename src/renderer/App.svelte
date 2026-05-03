@@ -1232,8 +1232,7 @@
         pendingFeature,
         features,
         validationVertices,
-        currentTime,
-        anchor.placement.layerId
+        currentTime
       );
 
       const vertexMap = addFeature.getVertices() as Map<string, Vertex>;
