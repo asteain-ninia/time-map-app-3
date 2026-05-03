@@ -14,7 +14,6 @@ export type {
   FeatureRemovedEvent,
 } from './EventBus';
 export { NavigateTimeUseCase } from './NavigateTimeUseCase';
-export { ManageLayersUseCase } from './ManageLayersUseCase';
 export { AddFeatureUseCase } from './AddFeatureUseCase';
 export { SaveLoadUseCase } from './SaveLoadUseCase';
 export { VertexEditUseCase } from './VertexEditUseCase';
@@ -58,7 +57,6 @@ export {
 } from './commands/ReassignFeatureParentCommand';
 export {
   FeatureQueryService,
-  LayerQueryService,
   TimelineQueryService,
   ProjectQueryService,
 } from './queries';

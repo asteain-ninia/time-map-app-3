@@ -26,7 +26,7 @@
   import { eventBus } from '@application/EventBus';
   import { Coordinate } from '@domain/value-objects/Coordinate';
   import type { Feature } from '@domain/entities/Feature';
-  import type { Layer } from '@domain/entities/Layer';
+  import { Layer } from '@domain/entities/Layer';
   import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
   import { hitTest } from '@infrastructure/rendering/hitTestUtils';
@@ -177,7 +177,6 @@
       addFeature,
       anchorEdit,
       deleteFeature,
-      manageLayers,
       navigateTime,
       reassignParent,
       saveLoad,
@@ -186,7 +185,6 @@
     },
     queries: {
       features: featureQueries,
-      layers: layerQueries,
       timeline: timelineQueries,
       project: projectQueries,
     },
@@ -247,6 +245,10 @@
   let layers = $state<readonly Layer[]>([]);
   let currentTime = $state(timelineQueries.getCurrentTime());
   let selectedFeatureId = $state<string | null>(null);
+  // Phase 2-D-3 で UI 入力経路 (Sidebar レイヤータブ + LayerPanel) を撤去したため
+  // 常に null。描画グルーピング / `getAddTargetLayer` は当面この null を許容する形で
+  // 動作する。Phase 5 で深度フォーカス UI として再構築予定（焦点識別子の型は
+  // depth ベースに置換される可能性あり）。それまで state と参照経路を残置。
   let focusedLayerId = $state<string | null>(null);
   let isSidebarCollapsed = $state(false);
   let selectedVertexIds = $state<ReadonlySet<string>>(new Set());
@@ -360,7 +362,7 @@
       nextLayers
     );
 
-    manageLayers.restore(nextLayers);
+    saveLoad.setLayers(nextLayers);
     refreshLayerData();
     projectSettings = nextProjectSettings;
     projectMetadata = nextProjectMetadata;
@@ -795,11 +797,11 @@
 
   /** レイヤーデータを更新する */
   function refreshLayerData(): void {
-    layers = layerQueries.getLayers();
+    layers = [...saveLoad.getLayers()];
   }
 
   function getAddTargetLayer(): Layer | null {
-    const layerList = layerQueries.getLayers();
+    const layerList = saveLoad.getLayers();
     if (focusedLayerId) {
       const focusedLayer = layerList.find((layer) => layer.id === focusedLayerId && layer.visible);
       if (focusedLayer) {
@@ -865,8 +867,8 @@
   }
 
   // --- 初期レイヤー（デフォルト1つ） ---
-  if (layerQueries.getLayers().length === 0) {
-    manageLayers.addLayer('default', 'レイヤー1');
+  if (saveLoad.getLayers().length === 0) {
+    saveLoad.setLayers([new Layer('default', 'レイヤー1', 0)]);
   }
   refreshFeatureData();
   refreshLayerData();
@@ -881,6 +883,9 @@
     currentTime = e.time;
   });
 
+  // Phase 2-D-3: emit 側 (`ManageLayersUseCase`) を撤去したため現在は発火しない。
+  // EventBus 型定義 (`layers:changed`) と購読は Phase 2-D-7 で `Layer` エンティティ /
+  // `World.layers` 廃止と同時に削除予定。それまで残置。
   const unsubLayersChanged = eventBus.on('layers:changed', () => {
     refreshLayerData();
     markAsDirty();
@@ -2121,8 +2126,7 @@
     if (!confirmUnsavedChanges()) return;
     saveLoad.resetProjectState();
     addFeature.restore(new Map(), new Map(), []);
-    manageLayers.restore([]);
-    manageLayers.addLayer('default', 'レイヤー1');
+    saveLoad.setLayers([new Layer('default', 'レイヤー1', 0)]);
     refreshFeatureData();
     refreshLayerData();
     resetInteractionState();
@@ -2274,16 +2278,12 @@
         <Sidebar
           selectedFeature={getSelectionFeature()}
           propertySelectionState={getPropertyPanelSelectionState()}
-          {focusedLayerId}
           settings={projectSettings}
           {currentTime}
           timelineMin={projectMetadata.sliderMin}
           timelineMax={projectMetadata.sliderMax}
           {features}
           isCollapsed={isSidebarCollapsed}
-          onFocusLayerChange={(layerId) => {
-            focusedLayerId = layerId;
-          }}
           {onPropertyChange}
           onFeatureSelect={(id) => {
             selectedFeatureId = id;

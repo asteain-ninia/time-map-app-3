@@ -7,9 +7,9 @@
  */
 
 import { World, DEFAULT_METADATA, type WorldMetadata, type WorldSettings } from '@domain/entities/World';
+import type { Layer } from '@domain/entities/Layer';
 import type { LoadWorldResult, WorldRepository } from '@domain/repositories/WorldRepository';
 import type { AddFeatureUseCase } from './AddFeatureUseCase';
-import type { ManageLayersUseCase } from './ManageLayersUseCase';
 import type { NavigateTimeUseCase } from './NavigateTimeUseCase';
 import { eventBus } from './EventBus';
 
@@ -37,12 +37,18 @@ function cloneMetadata(metadata: WorldMetadata): WorldMetadata {
 export class SaveLoadUseCase {
   private currentFilePath: string | null = null;
   private metadata: WorldMetadata = cloneMetadata(DEFAULT_METADATA);
+  /**
+   * `World.layers` を保存/読込のラウンドトリップで保持する一時フィールド。
+   * Phase 2-D-3 で `ManageLayersUseCase` を撤去したため、新階層モデル移行までの
+   * つなぎとして `SaveLoadUseCase` が内部に保持する。Phase 2-D-7 で `World.layers`
+   * 自体が削除されるタイミングでこのフィールドも撤去する。
+   */
+  private layers: readonly Layer[] = [];
 
   constructor(
     private readonly repository: WorldRepository,
     private readonly dialog: DialogPort,
     private readonly addFeature: AddFeatureUseCase,
-    private readonly manageLayers: ManageLayersUseCase,
     private readonly navigateTime: NavigateTimeUseCase
   ) {}
 
@@ -54,6 +60,24 @@ export class SaveLoadUseCase {
   /** メタデータを取得する */
   getMetadata(): WorldMetadata {
     return cloneMetadata(this.metadata);
+  }
+
+  /**
+   * `World.layers` を取得する。Phase 2-D-3 で `ManageLayersUseCase` を撤去した
+   * ため、レイヤー一覧の保持はこの UseCase に集約されている（Phase 2-D-7 で
+   * `World.layers` 自体が削除されるタイミングでこの API も撤去予定）。
+   * 旧 `LayerQueryService.getLayers()` の防御的コピー契約を踏襲し、配列の浅い
+   * コピーを返す（呼び出し側からの破壊的変更で内部状態を汚染させない）。
+   */
+  getLayers(): readonly Layer[] {
+    return [...this.layers];
+  }
+
+  /**
+   * `World.layers` を設定する。Phase 2-D-3 移行期の暫定 API。
+   */
+  setLayers(layers: readonly Layer[]): void {
+    this.layers = layers;
   }
 
   /** 現在のファイルパスを取得する */
@@ -110,6 +134,7 @@ export class SaveLoadUseCase {
   resetProjectState(): void {
     this.currentFilePath = null;
     this.metadata = cloneMetadata(DEFAULT_METADATA);
+    this.layers = [];
   }
 
   /** 現在の状態をWorldに組み立てる */
@@ -118,7 +143,7 @@ export class SaveLoadUseCase {
       '1.0.0',
       this.addFeature.getVertices(),
       this.addFeature.getFeaturesMap(),
-      this.manageLayers.getLayers(),
+      this.layers,
       this.addFeature.getSharedVertexGroups(),
       [],
       this.metadata
@@ -147,7 +172,7 @@ export class SaveLoadUseCase {
   /** 読み込んだWorldの内容を各ユースケースに分配する */
   private distributeWorld(world: World): void {
     this.addFeature.restore(world.features, world.vertices, world.sharedVertexGroups);
-    this.manageLayers.restore(world.layers);
+    this.layers = world.layers;
     this.metadata = cloneMetadata(world.metadata);
   }
 }

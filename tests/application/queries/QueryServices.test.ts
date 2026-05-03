@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
-import { ManageLayersUseCase } from '@application/ManageLayersUseCase';
 import { NavigateTimeUseCase } from '@application/NavigateTimeUseCase';
 import { SaveLoadUseCase } from '@application/SaveLoadUseCase';
 import {
   FeatureQueryService,
-  LayerQueryService,
   TimelineQueryService,
   ProjectQueryService,
 } from '@application/queries';
@@ -74,34 +72,6 @@ describe('Query services', () => {
     expect(addFeature.getSharedVertexGroups().size).toBe(1);
   });
 
-  it('LayerQueryServiceはレイヤー一覧のコピーとID検索を返す', () => {
-    const manageLayers = new ManageLayersUseCase();
-    manageLayers.addLayer('layer-1', '第1層');
-    manageLayers.addLayer('layer-2', '第2層');
-
-    const query = new LayerQueryService(manageLayers);
-    const layers = [...query.getLayers()];
-    layers.length = 0;
-
-    expect(query.getLayerById('layer-2')?.name).toBe('第2層');
-    expect(manageLayers.getLayers()).toHaveLength(2);
-  });
-
-  it('LayerQueryServiceはレイヤーがない場合に空配列を返す', () => {
-    const query = new LayerQueryService(new ManageLayersUseCase());
-
-    expect(query.getLayers()).toEqual([]);
-  });
-
-  it('LayerQueryServiceは存在しないIDにundefinedを返す', () => {
-    const manageLayers = new ManageLayersUseCase();
-    manageLayers.addLayer('layer-1', '第1層');
-
-    const query = new LayerQueryService(manageLayers);
-
-    expect(query.getLayerById('missing-layer')).toBeUndefined();
-  });
-
   it('TimelineQueryServiceは現在時刻を追従する', () => {
     const navigateTime = new NavigateTimeUseCase(new TimePoint(1200, 2, 3));
     const query = new TimelineQueryService(navigateTime);
@@ -121,7 +91,6 @@ describe('Query services', () => {
 
   it('ProjectQueryServiceはメタデータ・設定・保存先・アプリ設定を返す', async () => {
     const addFeature = new AddFeatureUseCase();
-    const manageLayers = new ManageLayersUseCase();
     const navigateTime = new NavigateTimeUseCase();
     const configManager = new ConfigManager();
     const projectMetadata = {
@@ -154,7 +123,6 @@ describe('Query services', () => {
       repository,
       dialog,
       addFeature,
-      manageLayers,
       navigateTime
     );
 
@@ -181,7 +149,6 @@ describe('Query services', () => {
 
   it('ProjectQueryServiceはメタデータと設定をそれぞれ独立して返す', () => {
     const addFeature = new AddFeatureUseCase();
-    const manageLayers = new ManageLayersUseCase();
     const navigateTime = new NavigateTimeUseCase();
     const configManager = new ConfigManager();
     const metadata = {
@@ -203,7 +170,6 @@ describe('Query services', () => {
         showSaveDialog: async () => null,
       },
       addFeature,
-      manageLayers,
       navigateTime
     );
 

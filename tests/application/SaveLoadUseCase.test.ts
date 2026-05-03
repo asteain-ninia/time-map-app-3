@@ -10,7 +10,6 @@ import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
-import { ManageLayersUseCase } from '@application/ManageLayersUseCase';
 import { NavigateTimeUseCase } from '@application/NavigateTimeUseCase';
 import { eventBus } from '@application/EventBus';
 
@@ -94,7 +93,6 @@ describe('SaveLoadUseCase', () => {
   let repo: ReturnType<typeof createMockRepository>;
   let dialog: ReturnType<typeof createMockDialog>;
   let addFeature: AddFeatureUseCase;
-  let manageLayers: ManageLayersUseCase;
   let navigateTime: NavigateTimeUseCase;
   let useCase: SaveLoadUseCase;
 
@@ -102,9 +100,8 @@ describe('SaveLoadUseCase', () => {
     repo = createMockRepository();
     dialog = createMockDialog();
     addFeature = new AddFeatureUseCase();
-    manageLayers = new ManageLayersUseCase();
     navigateTime = new NavigateTimeUseCase();
-    useCase = new SaveLoadUseCase(repo, dialog, addFeature, manageLayers, navigateTime);
+    useCase = new SaveLoadUseCase(repo, dialog, addFeature, navigateTime);
     eventBus.clear();
   });
 
@@ -226,29 +223,28 @@ describe('SaveLoadUseCase', () => {
       expect(vertices.get('v1')!.x).toBe(10);
     });
 
-    it('読み込んだレイヤーがManageLayersUseCaseに反映される', async () => {
+    it('読み込んだレイヤーがロード後のassembleWorldにラウンドトリップする', async () => {
       const world = createTestWorld();
       dialog.showOpenDialog.mockResolvedValue('/test/file.json');
       repo.load.mockResolvedValue(world);
 
       await useCase.open();
 
-      const layers = manageLayers.getLayers();
-      expect(layers).toHaveLength(2);
-      expect(layers[0].name).toBe('レイヤー1');
-      expect(layers[1].name).toBe('レイヤー2');
+      const assembled = useCase.assembleWorld();
+      expect(assembled.layers).toHaveLength(2);
+      expect(assembled.layers[0].name).toBe('レイヤー1');
+      expect(assembled.layers[1].name).toBe('レイヤー2');
     });
   });
 
   describe('assembleWorld', () => {
-    it('各ユースケースの状態からWorldを組み立てる', () => {
-      manageLayers.addLayer('l1', 'テスト');
+    it('地物追加後にWorldを組み立てられる（layersは空）', () => {
       addFeature.addPoint(new Coordinate(5, 10), 'l1', new TimePoint(100));
 
       const world = useCase.assembleWorld();
 
       expect(world.version).toBe('1.0.0');
-      expect(world.layers).toHaveLength(1);
+      expect(world.layers).toHaveLength(0);
       expect(world.features.size).toBe(1);
       expect(world.vertices.size).toBe(1);
     });
@@ -301,7 +297,6 @@ describe('SaveLoadUseCase', () => {
       // restoreで共有頂点グループを含むデータを設定
       const world = createTestWorldWithSharedVertices();
       addFeature.restore(world.features, world.vertices, world.sharedVertexGroups);
-      manageLayers.restore(world.layers);
 
       const assembled = useCase.assembleWorld();
 

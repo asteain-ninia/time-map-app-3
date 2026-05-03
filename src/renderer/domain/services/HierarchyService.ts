@@ -8,9 +8,9 @@
  * 面情報の親子関係（上位領域・下位領域）に関するドメインロジックを提供する。
  * ステートレスなユーティリティ関数群。
  *
- * ※ レイヤー（旧モデル）の表示制御（visibility, opacity）は ManageLayersUseCase の責務。
- *    新階層モデル（現状.md §6）では「グローバル `Layer` 概念」は廃止され、
- *    ツリー位置から派生する depth で階層を表現する方針へ転換済み。
+ * ※ レイヤー（旧モデル）の表示制御 UseCase は Phase 2-D-3 で撤去済み。新階層モデル
+ *    （現状.md §6）では「グローバル `Layer` 概念」は廃止され、ツリー位置から派生する
+ *    depth で階層を表現する方針へ転換済み。
  */
 
 import type { Feature } from '@domain/entities/Feature';

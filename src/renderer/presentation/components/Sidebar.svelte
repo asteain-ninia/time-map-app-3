@@ -1,5 +1,4 @@
 <script lang="ts">
-  import LayerPanel from './LayerPanel.svelte';
   import PropertyPanel from './PropertyPanel.svelte';
   import FeatureListPanel from './FeatureListPanel.svelte';
   import type { Feature } from '@domain/entities/Feature';
@@ -7,19 +6,17 @@
   import type { TimePoint } from '@domain/value-objects/TimePoint';
   import type { AnchorProperty } from '@domain/value-objects/FeatureAnchor';
 
-  type SidebarTab = 'layers' | 'properties' | 'features';
+  type SidebarTab = 'properties' | 'features';
 
   let {
     selectedFeature = null as Feature | null,
     propertySelectionState = { kind: 'empty' as const },
-    focusedLayerId = null as string | null,
     settings = undefined as WorldSettings | undefined,
     currentTime = undefined as TimePoint | undefined,
     timelineMin = 0,
     timelineMax = 10000,
     features = [] as readonly Feature[],
     isCollapsed = false,
-    onFocusLayerChange,
     onPropertyChange,
     onFeatureSelect,
     onCollapsedChange,
@@ -30,20 +27,18 @@
       featureSummaries?: readonly { id: string; name: string }[];
       remainingCount?: number;
     };
-    focusedLayerId?: string | null;
     settings?: WorldSettings;
     currentTime?: TimePoint;
     timelineMin?: number;
     timelineMax?: number;
     features?: readonly Feature[];
     isCollapsed?: boolean;
-    onFocusLayerChange?: (layerId: string | null) => void;
     onPropertyChange?: (featureId: string, anchorId: string, property: AnchorProperty) => void;
     onFeatureSelect?: (featureId: string) => void;
     onCollapsedChange?: (collapsed: boolean) => void;
   } = $props();
 
-  let activeTab = $state<SidebarTab>('layers');
+  let activeTab = $state<SidebarTab>('properties');
   let featureSearchQuery = $state('');
   let lastAutoOpenedFeatureId = $state<string | null>(null);
 
@@ -84,14 +79,6 @@
     <div class="tab-bar">
       <button
         class="tab"
-        class:active={activeTab === 'layers'}
-        type="button"
-        onclick={() => selectTab('layers')}
-      >
-        レイヤー
-      </button>
-      <button
-        class="tab"
         class:active={activeTab === 'properties'}
         type="button"
         onclick={() => selectTab('properties')}
@@ -119,9 +106,7 @@
       </button>
     </div>
     <div class="tab-content">
-      {#if activeTab === 'layers'}
-        <LayerPanel {focusedLayerId} {onFocusLayerChange} />
-      {:else if activeTab === 'properties'}
+      {#if activeTab === 'properties'}
         <PropertyPanel
           feature={selectedFeature}
           selectionState={propertySelectionState}

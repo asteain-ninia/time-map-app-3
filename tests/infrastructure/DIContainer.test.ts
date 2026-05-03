@@ -17,14 +17,12 @@ describe('DIContainer', () => {
     expect(container.commands.editFeature).toBeDefined();
     expect(container.commands.deleteFeature).toBeDefined();
     expect(container.commands.navigateTime).toBeDefined();
-    expect(container.commands.manageLayers).toBeDefined();
     expect(container.commands.undoRedo).toBeDefined();
     expect(container.commands.prepareAnchorEdit).toBeDefined();
     expect(container.commands.resolveConflicts).toBeDefined();
     expect(container.commands.commitAnchorEdit).toBeDefined();
     expect(container.commands.saveLoad).toBeDefined();
     expect(container.queries.features).toBeDefined();
-    expect(container.queries.layers).toBeDefined();
     expect(container.queries.timeline).toBeDefined();
     expect(container.queries.project).toBeDefined();
     expect(container.infrastructure.configManager).toBeDefined();

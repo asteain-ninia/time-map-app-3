@@ -13,7 +13,6 @@ import { UpdateFeatureAnchorUseCase } from '@application/UpdateFeatureAnchorUseC
 import { EditFeatureUseCase } from '@application/EditFeatureUseCase';
 import { DeleteFeatureUseCase } from '@application/DeleteFeatureUseCase';
 import { NavigateTimeUseCase } from '@application/NavigateTimeUseCase';
-import { ManageLayersUseCase } from '@application/ManageLayersUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
 import { PrepareFeatureAnchorEditUseCase } from '@application/PrepareFeatureAnchorEditUseCase';
 import { ResolveFeatureAnchorConflictsUseCase } from '@application/ResolveFeatureAnchorConflictsUseCase';
@@ -23,7 +22,6 @@ import type { DialogPort } from '@application/SaveLoadUseCase';
 import { SaveLoadUseCase } from '@application/SaveLoadUseCase';
 import {
   FeatureQueryService,
-  LayerQueryService,
   TimelineQueryService,
   ProjectQueryService,
 } from '@application/queries';
@@ -48,7 +46,6 @@ export interface ApplicationCommands {
   readonly editFeature: EditFeatureUseCase;
   readonly deleteFeature: DeleteFeatureUseCase;
   readonly navigateTime: NavigateTimeUseCase;
-  readonly manageLayers: ManageLayersUseCase;
   readonly undoRedo: UndoRedoManager;
   readonly prepareAnchorEdit: PrepareFeatureAnchorEditUseCase;
   readonly resolveConflicts: ResolveFeatureAnchorConflictsUseCase;
@@ -59,7 +56,6 @@ export interface ApplicationCommands {
 
 export interface ApplicationQueries {
   readonly features: FeatureQueryService;
-  readonly layers: LayerQueryService;
   readonly timeline: TimelineQueryService;
   readonly project: ProjectQueryService;
 }
@@ -163,7 +159,6 @@ export class DIContainer {
     );
     const deleteFeature = new DeleteFeatureUseCase(addFeature);
     const navigateTime = new NavigateTimeUseCase();
-    const manageLayers = new ManageLayersUseCase();
     const undoRedo = new UndoRedoManager();
     const prepareAnchorEdit = new PrepareFeatureAnchorEditUseCase(addFeature);
     const resolveConflicts = new ResolveFeatureAnchorConflictsUseCase(
@@ -177,7 +172,6 @@ export class DIContainer {
       repository,
       dialog,
       addFeature,
-      manageLayers,
       navigateTime
     );
 
@@ -188,7 +182,6 @@ export class DIContainer {
       editFeature,
       deleteFeature,
       navigateTime,
-      manageLayers,
       undoRedo,
       prepareAnchorEdit,
       resolveConflicts,
@@ -199,7 +192,6 @@ export class DIContainer {
 
     this.queries = {
       features: new FeatureQueryService(addFeature),
-      layers: new LayerQueryService(manageLayers),
       timeline: new TimelineQueryService(navigateTime),
       project: new ProjectQueryService(saveLoad, configManager),
     };

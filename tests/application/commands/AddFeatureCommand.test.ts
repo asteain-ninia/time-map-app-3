@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { AddFeatureCommand, type AddFeatureParams } from '@application/commands/AddFeatureCommand';
 import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
-import { ManageLayersUseCase } from '@application/ManageLayersUseCase';
 import { ReassignFeatureParentUseCase } from '@application/ReassignFeatureParentUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
 import { eventBus } from '@application/EventBus';
@@ -15,7 +14,6 @@ import { Ring } from '@domain/value-objects/Ring';
 
 describe('AddFeatureCommand', () => {
   let addFeature: AddFeatureUseCase;
-  let manageLayers: ManageLayersUseCase;
   let reassignParent: ReassignFeatureParentUseCase;
   let undoRedo: UndoRedoManager;
   const time = new TimePoint(1000);
@@ -23,9 +21,7 @@ describe('AddFeatureCommand', () => {
 
   beforeEach(() => {
     addFeature = new AddFeatureUseCase();
-    manageLayers = new ManageLayersUseCase();
     reassignParent = new ReassignFeatureParentUseCase(addFeature);
-    manageLayers.addLayer(layerId, 'テスト');
     undoRedo = new UndoRedoManager();
   });
 

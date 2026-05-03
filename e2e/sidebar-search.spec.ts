@@ -84,9 +84,10 @@ test('サイドバーとタイムラインを折りたためる', async ({ page 
     .toBeLessThan(80);
 
   await page.locator('.collapsed-toggle').click();
-  await page.locator('.tab', { hasText: 'レイヤー' }).click();
-  await expect(page.locator('.layer-panel')).toBeVisible();
-  await expect(page.locator('.focus-panel')).toBeVisible();
+  // Phase 2-D-3 でレイヤータブを撤去。展開後は地物一覧タブが表示できることを確認
+  const featureTab = page.locator('.tab', { hasText: '地物一覧' });
+  await featureTab.click();
+  await expect(featureTab).toHaveClass(/active/);
 
   const timelineToggle = page.locator('.timeline-panel-toggle');
   const expandedTimelineHeight = await page

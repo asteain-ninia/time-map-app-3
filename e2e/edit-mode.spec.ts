@@ -112,13 +112,8 @@ test('Escapeキーで地物選択が解除される', async ({ page }) => {
   }
 });
 
-// §2.4.3 サイドバー — タブ切替
+// §2.4.3 サイドバー — タブ切替（Phase 2-D-3 でレイヤータブを撤去し2タブ構成へ）
 test('サイドバーのタブが切り替えられる', async ({ page }) => {
-  // レイヤータブ
-  const layerTab = page.locator('.tab', { hasText: 'レイヤー' });
-  await layerTab.click();
-  await expect(layerTab).toHaveClass(/active/);
-
   // 地物一覧タブ
   const featureTab = page.locator('.tab', { hasText: '地物一覧' });
   await featureTab.click();
@@ -128,31 +123,4 @@ test('サイドバーのタブが切り替えられる', async ({ page }) => {
   const propTab = page.locator('.tab', { hasText: 'プロパティ' });
   await propTab.click();
   await expect(propTab).toHaveClass(/active/);
-});
-
-// §2.1 レイヤー — デフォルトレイヤーが存在する
-test('レイヤータブにデフォルトレイヤーが表示される', async ({ page }) => {
-  const layerTab = page.locator('.tab', { hasText: 'レイヤー' });
-  await layerTab.click();
-  await page.waitForTimeout(200);
-
-  const layerItem = page.locator('.layer-item');
-  const count = await layerItem.count();
-  expect(count).toBeGreaterThanOrEqual(1);
-});
-
-// §2.1 レイヤー — 表示/非表示の切り替え
-test('レイヤーの表示/非表示を切り替えられる', async ({ page }) => {
-  const layerTab = page.locator('.tab', { hasText: 'レイヤー' });
-  await layerTab.click();
-  await page.waitForTimeout(200);
-
-  const visToggle = page.locator('.visibility-toggle').first();
-  if (await visToggle.count() > 0) {
-    const beforeText = await visToggle.textContent();
-    await visToggle.click();
-    await page.waitForTimeout(200);
-    const afterText = await visToggle.textContent();
-    expect(afterText).not.toBe(beforeText);
-  }
 });
