@@ -17,7 +17,7 @@ import {
   shouldParentDisappear,
   getParentFeature,
   getChildFeatures,
-} from '@domain/services/LayerService';
+} from '@domain/services/HierarchyService';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 

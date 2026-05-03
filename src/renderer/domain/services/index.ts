@@ -16,8 +16,8 @@ export {
   shouldParentDisappear,
   buildParentChildLink,
   buildParentChildUnlink,
-} from './LayerService';
-export type { DerivedShapeResult, HierarchyValidationError } from './LayerService';
+} from './HierarchyService';
+export type { DerivedShapeResult, HierarchyValidationError } from './HierarchyService';
 
 export {
   segmentsIntersect,

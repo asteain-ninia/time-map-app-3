@@ -19,7 +19,7 @@ import type { TimePoint } from '@domain/value-objects/TimePoint';
 import {
   getAncestors,
   validateHierarchy,
-} from '@domain/services/LayerService';
+} from '@domain/services/HierarchyService';
 import { featureCoversRange } from '@domain/services/TimeService';
 import {
   validateTransfer,

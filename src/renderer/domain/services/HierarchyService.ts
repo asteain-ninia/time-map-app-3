@@ -1,13 +1,16 @@
 /**
- * レイヤー階層ドメインサービス
+ * 階層ナビゲーション・形状導出ドメインサービス
  *
- * §2.1: レイヤー間の制約 — 親子関係ナビゲーション、形状導出、バリデーション
- * §5.2: LayerService — parent-child feature navigation, shape derivation
+ * §2.1: 階層構造（上位領域・下位領域）に関する制約 — 親子関係ナビゲーション、形状導出、バリデーション
+ * §5.2: HierarchyService — ツリー階層の管理。親子参照の整合性検証、最上位フラグ判定、
+ *       階層深度の派生算出、末端地物・集約地物の判定。
  *
  * 面情報の親子関係（上位領域・下位領域）に関するドメインロジックを提供する。
  * ステートレスなユーティリティ関数群。
  *
- * ※ レイヤーの表示制御（visibility, opacity）は ManageLayersUseCase の責務。
+ * ※ レイヤー（旧モデル）の表示制御（visibility, opacity）は ManageLayersUseCase の責務。
+ *    新階層モデル（現状.md §6）では「グローバル `Layer` 概念」は廃止され、
+ *    ツリー位置から派生する depth で階層を表現する方針へ転換済み。
  */
 
 import type { Feature } from '@domain/entities/Feature';
@@ -25,7 +28,7 @@ import type { Coordinate } from '@domain/value-objects/Coordinate';
 /**
  * 指定時間点での親地物を取得する
  *
- * §2.1: 面情報は同一時点で高々1つの上位レイヤー面情報にのみ属する
+ * §2.1: 面情報は同一時点で高々1つの上位面情報にのみ属する
  */
 export function getParentFeature(
   feature: Feature,
@@ -375,6 +378,9 @@ export function shouldParentDisappear(
  * 親子関係を設定するための錨更新情報を生成する
  *
  * @returns 更新が必要な錨の [featureId, updatedAnchor] ペアの配列
+ *
+ * ※ `placement.layerId` の引き渡しは Phase 2-D-6（`placement.layerId` フィールド削除）で消える経路。
+ *   現時点では `createAnchorPlacement` の第1引数として必須のため既存値を透過保持する。
  */
 export function buildParentChildLink(
   parentFeature: Feature,
@@ -409,6 +415,9 @@ export function buildParentChildLink(
 
 /**
  * 親子関係を解除するための錨更新情報を生成する
+ *
+ * ※ `placement.layerId` の引き渡しは Phase 2-D-6（`placement.layerId` フィールド削除）で消える経路。
+ *   現時点では `createAnchorPlacement` の第1引数として必須のため既存値を透過保持する。
  */
 export function buildParentChildUnlink(
   parentFeature: Feature,

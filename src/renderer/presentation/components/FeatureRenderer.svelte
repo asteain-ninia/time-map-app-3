@@ -20,7 +20,7 @@
     resolvePointStyle,
     resolveStyle,
   } from '@infrastructure/StyleResolver';
-  import { deriveParentShape } from '@domain/services/LayerService';
+  import { deriveParentShape } from '@domain/services/HierarchyService';
 
   let {
     features,

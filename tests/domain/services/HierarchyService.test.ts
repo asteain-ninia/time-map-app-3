@@ -14,7 +14,7 @@ import {
   shouldParentDisappear,
   buildParentChildLink,
   buildParentChildUnlink,
-} from '@domain/services/LayerService';
+} from '@domain/services/HierarchyService';
 import { Feature } from '@domain/entities/Feature';
 import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import { TimePoint } from '@domain/value-objects/TimePoint';
@@ -65,7 +65,7 @@ function makeVertices(coords: [string, number, number][]): Map<string, Coordinat
 
 // --- テスト ---
 
-describe('LayerService', () => {
+describe('HierarchyService', () => {
   // 基本的な階層: country → [province1, province2]
   const province1 = makePolygonFeature('province1', 'country', [], ['v1', 'v2', 'v3']);
   const province2 = makePolygonFeature('province2', 'country', [], ['v4', 'v5', 'v6']);
