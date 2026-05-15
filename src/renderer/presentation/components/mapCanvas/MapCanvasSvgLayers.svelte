@@ -24,7 +24,6 @@
     features = [] as readonly Feature[],
     vertices = new Map<string, Vertex>() as ReadonlyMap<string, Vertex>,
     layers = [] as readonly Layer[],
-    focusedLayerId = null as string | null,
     settings = undefined as WorldSettings | undefined,
     gridInterval = 10,
     gridColor = '#888888',
@@ -66,7 +65,6 @@
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
     layers?: readonly Layer[];
-    focusedLayerId?: string | null;
     settings?: WorldSettings;
     gridInterval?: number;
     gridColor?: string;
@@ -138,7 +136,6 @@
           {features}
           {vertices}
           {layers}
-          {focusedLayerId}
           {currentTime}
           {settings}
           zoom={zoomLevel}

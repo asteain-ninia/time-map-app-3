@@ -245,11 +245,6 @@
   let layers = $state<readonly Layer[]>([]);
   let currentTime = $state(timelineQueries.getCurrentTime());
   let selectedFeatureId = $state<string | null>(null);
-  // Phase 2-D-3 で UI 入力経路 (Sidebar レイヤータブ + LayerPanel) を撤去したため
-  // 常に null。描画グルーピング / `getAddTargetLayer` は当面この null を許容する形で
-  // 動作する。Phase 5 で深度フォーカス UI として再構築予定（焦点識別子の型は
-  // depth ベースに置換される可能性あり）。それまで state と参照経路を残置。
-  let focusedLayerId = $state<string | null>(null);
   let isSidebarCollapsed = $state(false);
   let selectedVertexIds = $state<ReadonlySet<string>>(new Set());
   let editInteractionMode = $state<EditInteractionMode>('vertex');
@@ -309,12 +304,6 @@
   let addPolygonParentCandidates = $derived(
     buildNewFeatureParentCandidateItems({ features, time: currentTime })
   );
-
-  $effect(() => {
-    if (focusedLayerId && !layers.some((layer) => layer.id === focusedLayerId && layer.visible)) {
-      focusedLayerId = null;
-    }
-  });
 
   $effect(() => {
     if (
@@ -802,12 +791,6 @@
 
   function getAddTargetLayer(): Layer | null {
     const layerList = saveLoad.getLayers();
-    if (focusedLayerId) {
-      const focusedLayer = layerList.find((layer) => layer.id === focusedLayerId && layer.visible);
-      if (focusedLayer) {
-        return focusedLayer;
-      }
-    }
     return layerList.find((layer) => layer.visible) ?? layerList[0] ?? null;
   }
 
@@ -883,14 +866,6 @@
     currentTime = e.time;
   });
 
-  // Phase 2-D-3: emit 側 (`ManageLayersUseCase`) を撤去したため現在は発火しない。
-  // EventBus 型定義 (`layers:changed`) と購読は Phase 2-D-7 で `Layer` エンティティ /
-  // `World.layers` 廃止と同時に削除予定。それまで残置。
-  const unsubLayersChanged = eventBus.on('layers:changed', () => {
-    refreshLayerData();
-    markAsDirty();
-  });
-
   const unsubWorldLoaded = eventBus.on('world:loaded', (event) => {
     refreshFeatureData();
     refreshLayerData();
@@ -957,7 +932,6 @@
   onDestroy(() => {
     unsubFeatureAdded();
     unsubTimeChanged();
-    unsubLayersChanged();
     unsubWorldLoaded();
     unsubWorldSaved();
     unsubFeatureChanged();
@@ -2204,7 +2178,6 @@
           {features}
           {vertices}
           {layers}
-          {focusedLayerId}
           settings={projectSettings}
           gridInterval={projectSettings.gridInterval}
           gridColor={projectSettings.gridColor}

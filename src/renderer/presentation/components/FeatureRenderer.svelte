@@ -26,7 +26,6 @@
     features,
     vertices,
     layers,
-    focusedLayerId = null,
     currentTime,
     settings = undefined as WorldSettings | undefined,
     zoom,
@@ -37,7 +36,6 @@
     features: readonly Feature[];
     vertices: ReadonlyMap<string, Vertex>;
     layers: readonly Layer[];
-    focusedLayerId?: string | null;
     currentTime: TimePoint;
     settings?: WorldSettings;
     zoom: number;
@@ -105,7 +103,7 @@
     vertices,
     settings
   )}
-  <g opacity={layer.opacity * (focusedLayerId && layer.id !== focusedLayerId ? 0.22 : 1)}>
+  <g opacity={layer.opacity}>
     {#each layerFeatures as { feature, anchor, featureIndex } (feature.id)}
       {@const isSelected = feature.id === selectedFeatureId}
       {@const isContext = feature.id === contextFeatureId && !isSelected}
