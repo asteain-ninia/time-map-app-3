@@ -1,4 +1,3 @@
-import type { Layer } from '@domain/entities/Layer';
 import {
   DEFAULT_SETTINGS,
   type BaseMapSettings,
@@ -45,29 +44,11 @@ function normalizeBaseMapSettings(baseMap: BaseMapSettings): BaseMapSettings {
   };
 }
 
-export function areLayersEqual(left: readonly Layer[], right: readonly Layer[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((layer, index) => {
-    const other = right[index];
-    return other !== undefined &&
-      layer.id === other.id &&
-      layer.name === other.name &&
-      layer.order === other.order &&
-      layer.visible === other.visible &&
-      layer.opacity === other.opacity;
-  });
-}
-
 export function hasProjectSettingsChanged(
   currentMetadata: WorldMetadata,
   currentSettings: WorldSettings,
-  currentLayers: readonly Layer[],
   nextMetadata: WorldMetadata,
-  nextSettings: WorldSettings,
-  nextLayers: readonly Layer[]
+  nextSettings: WorldSettings
 ): boolean {
   return currentMetadata.worldName !== nextMetadata.worldName ||
     currentMetadata.worldDescription !== nextMetadata.worldDescription ||
@@ -86,8 +67,7 @@ export function hasProjectSettingsChanged(
     currentSettings.defaultPalette !== nextSettings.defaultPalette ||
     currentSettings.customPalettes.length !== nextSettings.customPalettes.length ||
     currentSettings.customPalettes.some((palette, index) => palette !== nextSettings.customPalettes[index]) ||
-    !areBaseMapsEqual(currentSettings.baseMap, nextSettings.baseMap) ||
-    !areLayersEqual(currentLayers, nextLayers);
+    !areBaseMapsEqual(currentSettings.baseMap, nextSettings.baseMap);
 }
 
 function areBaseMapsEqual(left: BaseMapSettings, right: BaseMapSettings): boolean {

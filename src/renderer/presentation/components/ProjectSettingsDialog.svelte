@@ -5,7 +5,6 @@
     type WorldSettings,
     type WorldMetadata,
   } from '@domain/entities/World';
-  import { Layer } from '@domain/entities/Layer';
   import type { AppConfig } from '@infrastructure/ConfigManager';
   import type { LogLevel } from '@infrastructure/Logger';
   import { parseSvgMap } from './mapCanvasUtils';
@@ -28,8 +27,6 @@
     metadata = undefined as WorldMetadata | undefined,
     settings = undefined as WorldSettings | undefined,
     appConfig = undefined as AppConfig | undefined,
-    layers = [] as readonly Layer[],
-    lockedLayerIds = new Set<string>() as ReadonlySet<string>,
     onSave,
     onClose,
   }: {
@@ -37,12 +34,9 @@
     metadata?: WorldMetadata;
     settings?: WorldSettings;
     appConfig?: AppConfig;
-    layers?: readonly Layer[];
-    lockedLayerIds?: ReadonlySet<string>;
     onSave?: (
       metadata: Partial<WorldMetadata>,
       settings: Partial<WorldSettings>,
-      layers: readonly Layer[],
       appConfig: Partial<AppConfig>
     ) => void;
     onClose?: () => void;
@@ -72,8 +66,6 @@
   let renderFps = $state(60);
   let alwaysVisibleVertexLimit = $state(1000);
   let logLevel = $state<LogLevel>('info');
-  let draftLayers = $state<readonly Layer[]>([]);
-  let newLayerName = $state('');
   let draftCustomPalettes = $state<readonly CustomPaletteDraft[]>([]);
   let newCustomPaletteName = $state('');
   let newCustomPaletteColors = $state('#4a90d9, #7ad151, #f4d35e');
@@ -108,8 +100,6 @@
       renderFps = appConfig.renderFps;
       alwaysVisibleVertexLimit = appConfig.alwaysVisibleVertexLimit;
       logLevel = appConfig.logLevel;
-      draftLayers = [...layers];
-      newLayerName = '';
       newCustomPaletteName = '';
       newCustomPaletteColors = '#4a90d9, #7ad151, #f4d35e';
       customPaletteError = '';
@@ -251,47 +241,6 @@
     baseMapError = '';
   }
 
-  function createDraftLayerId(): string {
-    const existingIds = new Set(draftLayers.map((layer) => layer.id));
-    let index = draftLayers.length + 1;
-    let candidate = `layer-${index}`;
-    while (existingIds.has(candidate)) {
-      index += 1;
-      candidate = `layer-${index}`;
-    }
-    return candidate;
-  }
-
-  function addDraftLayer(): void {
-    const trimmedName = newLayerName.trim();
-    if (!trimmedName) return;
-
-    draftLayers = [
-      ...draftLayers,
-      new Layer(createDraftLayerId(), trimmedName, draftLayers.length),
-    ];
-    newLayerName = '';
-  }
-
-  function updateDraftLayerName(layerId: string, name: string): void {
-    draftLayers = draftLayers.map((layer) =>
-      layer.id === layerId ? layer.withName(name) : layer
-    );
-  }
-
-  function canDeleteLayer(layerId: string): boolean {
-    return !lockedLayerIds.has(layerId);
-  }
-
-  function deleteDraftLayer(layerId: string): void {
-    if (!canDeleteLayer(layerId)) return;
-    if (!confirm('このレイヤーを削除しますか？')) return;
-
-    draftLayers = draftLayers
-      .filter((layer) => layer.id !== layerId)
-      .map((layer, index) => layer.withOrder(index));
-  }
-
   function save(): void {
     const customPalettes = buildCustomPaletteSpecs(true);
     if (customPalettes === null) {
@@ -315,7 +264,6 @@
         customPalettes,
         baseMap,
       },
-      draftLayers,
       {
         snapDistancePx,
         renderFps,
@@ -373,62 +321,6 @@
           {#if baseMapError}
             <div class="help-text error-text">{baseMapError}</div>
           {/if}
-        </div>
-
-        <div class="section">レイヤー管理</div>
-
-        <div class="field">
-          <label class="field-label" for="ps-new-layer-name">新規レイヤー</label>
-          <div class="layer-create-row">
-            <input
-              class="field-input"
-              id="ps-new-layer-name"
-              type="text"
-              placeholder="レイヤー名"
-              bind:value={newLayerName}
-              onkeydown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  addDraftLayer();
-                }
-              }}
-            />
-            <button class="btn secondary" type="button" onclick={addDraftLayer}>レイヤー追加</button>
-          </div>
-        </div>
-
-        <div class="layer-list">
-          {#if draftLayers.length === 0}
-            <div class="layer-empty">レイヤーはまだありません</div>
-          {:else}
-            {#each draftLayers as layer (layer.id)}
-              <div class="layer-row">
-                <span class="layer-order">#{layer.order + 1}</span>
-                <input
-                  class="field-input"
-                  type="text"
-                  value={layer.name}
-                  oninput={(event) =>
-                    updateDraftLayerName(layer.id, (event.currentTarget as HTMLInputElement).value)}
-                />
-                <button
-                  class="btn danger"
-                  type="button"
-                  disabled={!canDeleteLayer(layer.id)}
-                  title={canDeleteLayer(layer.id)
-                    ? '空レイヤーを削除'
-                    : 'このレイヤーには地物が所属しているため削除できません'}
-                  onclick={() => deleteDraftLayer(layer.id)}
-                >
-                  削除
-                </button>
-              </div>
-            {/each}
-          {/if}
-        </div>
-
-        <div class="help-text">
-          地物が存在するレイヤーは削除できません。レイヤー順序は固定です。
         </div>
 
         <div class="section">タイムライン</div>
@@ -773,8 +665,6 @@
   }
 
   .base-map-row,
-  .layer-create-row,
-  .layer-row,
   .palette-create-row,
   .palette-row {
     display: flex;
@@ -786,7 +676,6 @@
     flex-shrink: 0;
   }
 
-  .layer-list,
   .palette-list {
     display: flex;
     flex-direction: column;
@@ -794,7 +683,6 @@
     margin-top: 8px;
   }
 
-  .layer-row,
   .palette-row {
     padding: 6px 8px;
     border: 1px solid #3c3c3c;
@@ -802,15 +690,6 @@
     background: #252526;
   }
 
-  .layer-order {
-    width: 28px;
-    flex-shrink: 0;
-    color: #888;
-    font-size: 11px;
-    text-align: center;
-  }
-
-  .layer-empty,
   .palette-empty,
   .help-text {
     color: #888;

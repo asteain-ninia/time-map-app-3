@@ -21,6 +21,7 @@
     resolveStyle,
   } from '@infrastructure/StyleResolver';
   import { deriveParentShape } from '@domain/services/HierarchyService';
+  import { collectActiveFeatureEntries } from '@presentation/components/featureRendererUtils';
 
   let {
     features,
@@ -52,6 +53,7 @@
   let visibleLayers = $derived(
     layers.filter((l) => l.visible).toSorted((a, b) => a.order - b.order)
   );
+  let visibleLayerIds = $derived(new Set(visibleLayers.map((layer) => layer.id)));
   let vertexCoordinates = $derived.by(() => {
     const coords = new Map<string, Coordinate>();
     for (const [vertexId, vertex] of vertices) {
@@ -60,20 +62,37 @@
     return coords;
   });
 
-  /** 指定レイヤーに所属する、現在時刻でアクティブな地物を取得 */
+  /**
+   * 現在時刻でアクティブな描画対象地物（shape を持つ錨）を地図全体で収集する。
+   * Phase 2-D-5: 自動配色はレイヤー単位グルーピングを撤去し、地図全体で1回算出する。
+   * 詳細・テストは `featureRendererUtils.ts` を参照。
+   */
+  let activeFeatureEntries = $derived(
+    collectActiveFeatureEntries(features, currentTime, visibleLayerIds)
+  );
+
+  /** 地図全体で1回計算する自動配色（Phase 2-D-5: レイヤー単位グルーピングを撤去） */
+  let polygonAutoColors = $derived(
+    resolvePolygonAutoColors(
+      activeFeatureEntries
+        .filter(({ anchor }) => anchor.shape!.type === 'Polygon')
+        .map(({ feature, anchor }) => ({
+          featureId: feature.id,
+          shape: anchor.shape!,
+          style: anchor.property.style,
+        })),
+      vertices,
+      settings
+    )
+  );
+
+  /** 指定レイヤーに所属する地物を、地図全体で算出した featureIndex を保持したまま抽出する */
   function getLayerFeatures(
     layerId: string
   ): Array<{ feature: Feature; anchor: FeatureAnchor; featureIndex: number }> {
-    const result: Array<{ feature: Feature; anchor: FeatureAnchor; featureIndex: number }> = [];
-    for (const feature of features) {
-      const anchor = feature.getActiveAnchor(currentTime);
-      // Phase 2-C-3: shape を持たない錨（コンテナ）は描画対象外。
-      // コンテナの派生形状描画は Phase 2.5-B で対応する。
-      if (anchor && anchor.shape && anchor.placement.layerId === layerId) {
-        result.push({ feature, anchor, featureIndex: result.length });
-      }
-    }
-    return result;
+    return activeFeatureEntries.filter(
+      ({ anchor }) => anchor.placement.layerId === layerId
+    );
   }
 
   function getPolygonPath(feature: Feature, anchor: FeatureAnchor): string {
@@ -94,15 +113,6 @@
 
 {#each visibleLayers as layer (layer.id)}
   {@const layerFeatures = getLayerFeatures(layer.id)}
-  {@const polygonAutoColors = resolvePolygonAutoColors(
-    layerFeatures.map(({ feature, anchor }) => ({
-      featureId: feature.id,
-      shape: anchor.shape,
-      style: anchor.property.style,
-    })),
-    vertices,
-    settings
-  )}
   <g opacity={layer.opacity}>
     {#each layerFeatures as { feature, anchor, featureIndex } (feature.id)}
       {@const isSelected = feature.id === selectedFeatureId}

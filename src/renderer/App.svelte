@@ -294,13 +294,6 @@
   let selectedVertexOwnerFeatureIds = $derived(
     [...collectFeatureIdsForSelectedVertices(selectedVertexIds, visibleVertexOwnerMap)]
   );
-  let lockedLayerIds = $derived(
-    new Set(
-      features.flatMap((feature) =>
-        feature.anchors.map((anchor) => anchor.placement.layerId)
-      )
-    )
-  );
   let addPolygonParentCandidates = $derived(
     buildNewFeatureParentCandidateItems({ features, time: currentTime })
   );
@@ -337,7 +330,6 @@
   function onSettingsSave(
     metaPatch: Partial<WorldMetadata>,
     settingsPatch: Partial<WorldSettings>,
-    nextLayers: readonly Layer[],
     appConfigPatch: Partial<AppConfig>
   ): void {
     const nextProjectSettings = normalizeWorldSettings({ ...projectSettings, ...settingsPatch });
@@ -345,14 +337,10 @@
     const hasProjectChange = hasProjectSettingsChanged(
       projectMetadata,
       projectSettings,
-      layers,
       nextProjectMetadata,
-      nextProjectSettings,
-      nextLayers
+      nextProjectSettings
     );
 
-    saveLoad.setLayers(nextLayers);
-    refreshLayerData();
     projectSettings = nextProjectSettings;
     projectMetadata = nextProjectMetadata;
     saveLoad.setMetadata(nextProjectMetadata);
@@ -2322,8 +2310,6 @@
   metadata={projectMetadata}
   settings={projectSettings}
   {appConfig}
-  {layers}
-  {lockedLayerIds}
   onSave={onSettingsSave}
   onClose={() => { settingsDialogOpen = false; }}
 />

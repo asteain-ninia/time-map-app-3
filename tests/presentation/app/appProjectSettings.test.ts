@@ -1,25 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { Layer } from '@domain/entities/Layer';
 import {
   DEFAULT_METADATA,
   DEFAULT_SETTINGS,
 } from '@domain/entities/World';
 import {
-  areLayersEqual,
   hasProjectSettingsChanged,
   normalizeWorldSettings,
 } from '@presentation/app/appProjectSettings';
-
-function createLayer(overrides: Partial<Layer> = {}): Layer {
-  return {
-    id: 'layer-1',
-    name: 'レイヤー1',
-    order: 0,
-    visible: true,
-    opacity: 1,
-    ...overrides,
-  };
-}
 
 describe('appProjectSettings', () => {
   it('設定値を安全な範囲へ正規化する', () => {
@@ -106,23 +93,17 @@ describe('appProjectSettings', () => {
     expect(normalized.baseMap.svgText).toBe(svgText);
   });
 
-  it('メタデータ・設定・レイヤーの差分を検出する', () => {
-    const currentLayers = [createLayer()];
-    const nextLayers = [createLayer({ opacity: 0.5 })];
-
+  it('メタデータ・設定の差分を検出する', () => {
     expect(hasProjectSettingsChanged(
       DEFAULT_METADATA,
       DEFAULT_SETTINGS,
-      currentLayers,
       DEFAULT_METADATA,
-      DEFAULT_SETTINGS,
-      currentLayers
+      DEFAULT_SETTINGS
     )).toBe(false);
 
     expect(hasProjectSettingsChanged(
       DEFAULT_METADATA,
       DEFAULT_SETTINGS,
-      currentLayers,
       {
         ...DEFAULT_METADATA,
         worldName: '別世界',
@@ -130,8 +111,7 @@ describe('appProjectSettings', () => {
       {
         ...DEFAULT_SETTINGS,
         zoomMax: 64,
-      },
-      nextLayers
+      }
     )).toBe(true);
   });
 
@@ -139,22 +119,18 @@ describe('appProjectSettings', () => {
     expect(hasProjectSettingsChanged(
       DEFAULT_METADATA,
       DEFAULT_SETTINGS,
-      [createLayer()],
       DEFAULT_METADATA,
-      DEFAULT_SETTINGS,
-      [createLayer()]
+      DEFAULT_SETTINGS
     )).toBe(false);
 
     expect(hasProjectSettingsChanged(
       DEFAULT_METADATA,
       DEFAULT_SETTINGS,
-      [createLayer()],
       DEFAULT_METADATA,
       {
         ...DEFAULT_SETTINGS,
         customPalettes: ['海洋::#112244,#335577'],
-      },
-      [createLayer()]
+      }
     )).toBe(true);
   });
 
@@ -171,10 +147,8 @@ describe('appProjectSettings', () => {
     expect(hasProjectSettingsChanged(
       DEFAULT_METADATA,
       currentSettings,
-      [createLayer()],
       DEFAULT_METADATA,
-      nextSettings,
-      [createLayer()]
+      nextSettings
     )).toBe(true);
   });
 
@@ -182,7 +156,6 @@ describe('appProjectSettings', () => {
     expect(hasProjectSettingsChanged(
       DEFAULT_METADATA,
       DEFAULT_SETTINGS,
-      [createLayer()],
       DEFAULT_METADATA,
       {
         ...DEFAULT_SETTINGS,
@@ -191,12 +164,7 @@ describe('appProjectSettings', () => {
           fileName: 'world.svg',
           svgText: '<svg viewBox="0 0 360 180"></svg>',
         },
-      },
-      [createLayer()]
+      }
     )).toBe(true);
-  });
-
-  it('空レイヤー配列同士は等価と判定する', () => {
-    expect(areLayersEqual([], [])).toBe(true);
   });
 });
