@@ -157,8 +157,8 @@
   } from '@presentation/app/appPolygonEditing';
   import {
     collectMovingPolygonEdgeConstraints,
-    collectSameLayerPolygonObstacleRings,
-    collectSameLayerPolygonObstacleVertices,
+    collectPolygonObstacleRings,
+    collectPolygonObstacleVertices,
   } from '@presentation/app/edgeSlideConstraintCollectors';
   import {
     applyFeatureTranslationPreview,
@@ -662,7 +662,7 @@
       : [dragState.vertexId];
     const sourceFeatureIds = collectOwnerFeatureIdsForVertices(draggedVertexIds);
     const currentVertices = addFeature.getVertices();
-    const obstacleRings = collectSameLayerPolygonObstacleRings(
+    const obstacleRings = collectPolygonObstacleRings(
       features,
       currentTime,
       currentVertices,
@@ -677,7 +677,7 @@
       sourceFeatureIds,
       targetCoord
     );
-    const obstaclePoints = collectSameLayerPolygonObstacleVertices(
+    const obstaclePoints = collectPolygonObstacleVertices(
       features,
       currentTime,
       currentVertices,

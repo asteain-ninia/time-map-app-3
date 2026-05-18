@@ -20,8 +20,8 @@ import {
 } from '@presentation/app/appPolygonEditing';
 import {
   collectMovingPolygonEdgeConstraints,
-  collectSameLayerPolygonObstacleRings,
-  collectSameLayerPolygonObstacleVertices,
+  collectPolygonObstacleRings,
+  collectPolygonObstacleVertices,
 } from '@presentation/app/edgeSlideConstraintCollectors';
 
 const time100 = new TimePoint(100);
@@ -280,7 +280,10 @@ describe('appPolygonEditing', () => {
     ).toContain('polygon-1');
   });
 
-  it('同一レイヤーの他ポリゴンだけをエッジ滑り障害物として集める', () => {
+  it('ソース地物を除く全ての面地物の領土リングをエッジ滑り障害物として集める', () => {
+    // Phase 2-D-6-3a: 旧モデルの「同一レイヤー絞り込み」を撤去。
+    // 末端地物排他は地図全体（要件定義書 §2.1 / 開発ガイド §6.6.8）に整合させ、
+    // EdgeSlide も別レイヤーの他ポリゴンを障害物として扱う。
     const vertices = new Map<string, Vertex>([
       ['a1', makeVertex('a1', 0, 0)],
       ['a2', makeVertex('a2', 10, 0)],
@@ -305,7 +308,7 @@ describe('appPolygonEditing', () => {
       { id: 'other-ring', vertexIds: ['c1', 'c2', 'c3', 'c4'], ringType: 'territory', parentId: null },
     ]);
 
-    const rings = collectSameLayerPolygonObstacleRings(
+    const rings = collectPolygonObstacleRings(
       [source, sameLayer, otherLayer],
       time100,
       vertices,
@@ -313,11 +316,13 @@ describe('appPolygonEditing', () => {
       new Coordinate(25, 5)
     );
 
-    expect(rings).toHaveLength(1);
+    expect(rings).toHaveLength(2);
     expect(rings[0][0]).toEqual({ x: 20, y: 0 });
+    expect(rings[1][0]).toEqual({ x: 40, y: 0 });
   });
 
-  it('同一レイヤーの他ポリゴン頂点を移動辺の障害物として集める', () => {
+  it('ソース地物を除く全ての面地物のリング頂点を移動辺の障害物として集める', () => {
+    // Phase 2-D-6-3a: 同一レイヤー絞り込み撤去後の挙動。
     const vertices = new Map<string, Vertex>([
       ['a1', makeVertex('a1', 0, 0)],
       ['a2', makeVertex('a2', 10, 0)],
@@ -341,7 +346,7 @@ describe('appPolygonEditing', () => {
       { id: 'other-ring', vertexIds: ['c1', 'c2', 'c3', 'c4'], ringType: 'territory', parentId: null },
     ]);
 
-    const points = collectSameLayerPolygonObstacleVertices(
+    const points = collectPolygonObstacleVertices(
       [source, sameLayer, otherLayer],
       time100,
       vertices,
@@ -349,8 +354,80 @@ describe('appPolygonEditing', () => {
       new Coordinate(25, 5)
     );
 
-    expect(points).toHaveLength(4);
+    expect(points).toHaveLength(8);
     expect(points[0]).toEqual({ x: 20, y: 0 });
+    expect(points[4]).toEqual({ x: 40, y: 0 });
+  });
+
+  it('移行期間ノード（shape あり + childIds 非空）とコンテナ（shape なし）を EdgeSlide 対象から除外する', () => {
+    // Phase 2-D-6-3a 追補: 障害物 / ソースともに isLeafPolygonAnchor で判定するため、
+    // 移行期間ノードとコンテナは EdgeSlide の対象に含まれない（要件定義書 §2.1 /
+    // 開発ガイド §6.6.8 の「リーフ判定の運用: shape を保持し childIds.length === 0」を全経路で揃える）。
+    const vertices = new Map<string, Vertex>([
+      ['s1', makeVertex('s1', 0, 0)],
+      ['s2', makeVertex('s2', 10, 0)],
+      ['s3', makeVertex('s3', 10, 10)],
+      ['s4', makeVertex('s4', 0, 10)],
+      ['t1', makeVertex('t1', 20, 0)],
+      ['t2', makeVertex('t2', 30, 0)],
+      ['t3', makeVertex('t3', 30, 10)],
+      ['t4', makeVertex('t4', 20, 10)],
+    ]);
+    const source = makePolygonFeature('source', 'layer-1', [
+      { id: 'source-ring', vertexIds: ['s1', 's2', 's3', 's4'], ringType: 'territory', parentId: null },
+    ]);
+    // 移行期間ノード: shape を持つが childIds 非空のため EdgeSlide 対象外
+    const transitional = new Feature('transitional', 'Polygon', [
+      new FeatureAnchor(
+        'transitional-anchor',
+        { start: time100 },
+        { name: 'transitional', description: '' },
+        {
+          type: 'Polygon',
+          rings: [new Ring('t-ring', ['t1', 't2', 't3', 't4'], 'territory', null)],
+        },
+        { layerId: 'layer-1', parentId: null, childIds: ['child-id'], isTopLevel: true }
+      ),
+    ]);
+    // コンテナ: shape を持たないため EdgeSlide 対象外
+    const container = new Feature('container', 'Polygon', [
+      new FeatureAnchor(
+        'container-anchor',
+        { start: time100 },
+        { name: 'container', description: '' },
+        undefined,
+        { layerId: 'layer-1', parentId: null, childIds: ['child-id'], isTopLevel: true }
+      ),
+    ]);
+
+    const rings = collectPolygonObstacleRings(
+      [source, transitional, container],
+      time100,
+      vertices,
+      new Set(['source']),
+      new Coordinate(15, 5)
+    );
+    expect(rings).toHaveLength(0);
+
+    const points = collectPolygonObstacleVertices(
+      [source, transitional, container],
+      time100,
+      vertices,
+      new Set(['source']),
+      new Coordinate(15, 5)
+    );
+    expect(points).toHaveLength(0);
+
+    // ソース側も移行期間ノードを除外: transitional がソース指定でも制約ゼロ
+    const constraints = collectMovingPolygonEdgeConstraints(
+      [transitional],
+      time100,
+      vertices,
+      new Set(['t1']),
+      new Set(['transitional']),
+      new Coordinate(15, 5)
+    );
+    expect(constraints).toHaveLength(0);
   });
 
   it('移動頂点に接続するポリゴン辺を衝突制約として集める', () => {
