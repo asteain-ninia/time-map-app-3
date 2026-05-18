@@ -10,8 +10,8 @@ import { Coordinate } from '@domain/value-objects/Coordinate';
 import { Feature } from '@domain/entities/Feature';
 import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import { Ring } from '@domain/value-objects/Ring';
-import { Layer } from '@domain/entities/Layer';
 import { TimePoint } from '@domain/value-objects/TimePoint';
+import { collectMapSceneEntries } from '@presentation/components/mapSceneEntries';
 
 /** テスト用頂点マップ */
 function makeVertices(
@@ -22,6 +22,13 @@ function makeVertices(
     map.set(id, new Vertex(id, new Coordinate(lon, lat)));
   }
   return map;
+}
+
+/** vertices Map から vertexCoordinates Map (Coordinate ベース) を作る */
+function toCoordsMap(vertices: ReadonlyMap<string, Vertex>): ReadonlyMap<string, Coordinate> {
+  const m = new Map<string, Coordinate>();
+  for (const [id, v] of vertices) m.set(id, v.coordinate);
+  return m;
 }
 
 /** テスト用ポイント地物 */
@@ -89,12 +96,10 @@ describe('pointToSegmentDistance', () => {
   });
 
   it('線分の端点が最近傍の場合', () => {
-    // 点(15, 0), 線分(0,0)-(10,0): 端点(10,0)が最近傍、距離5
     expect(pointToSegmentDistance(15, 0, 0, 0, 10, 0)).toBe(5);
   });
 
   it('線分の垂直方向の場合', () => {
-    // 点(5, 3), 水平線分(0,0)-(10,0): 垂直距離3
     expect(pointToSegmentDistance(5, 3, 0, 0, 10, 0)).toBe(3);
   });
 
@@ -136,49 +141,39 @@ describe('isPointInRing', () => {
 
 describe('hitTest', () => {
   const time = new TimePoint(500);
-  const layer = new Layer('l1', 'レイヤー1', 0);
 
   describe('点情報のヒットテスト', () => {
     it('閾値内のクリックでヒットする', () => {
       const vertices = makeVertices(['v1', 10, 20]);
-      const feature = makePointFeature('p1', 'v1', 'l1');
-      const result = hitTest(
-        new Coordinate(10.5, 20.5),
-        [feature],
-        vertices,
-        [layer],
+      const sceneEntries = collectMapSceneEntries(
+        [makePointFeature('p1', 'v1', 'l1')],
         time,
-        1.0
+        toCoordsMap(vertices)
       );
+      const result = hitTest(new Coordinate(10.5, 20.5), sceneEntries, vertices, 1.0);
       expect(result).not.toBeNull();
       expect(result!.featureId).toBe('p1');
     });
 
     it('閾値外のクリックでヒットしない', () => {
       const vertices = makeVertices(['v1', 10, 20]);
-      const feature = makePointFeature('p1', 'v1', 'l1');
-      const result = hitTest(
-        new Coordinate(15, 25),
-        [feature],
-        vertices,
-        [layer],
+      const sceneEntries = collectMapSceneEntries(
+        [makePointFeature('p1', 'v1', 'l1')],
         time,
-        1.0
+        toCoordsMap(vertices)
       );
+      const result = hitTest(new Coordinate(15, 25), sceneEntries, vertices, 1.0);
       expect(result).toBeNull();
     });
 
     it('隣接ラップ上の生値経度ポイントにもヒットする', () => {
       const vertices = makeVertices(['v1', 190, 20]);
-      const feature = makePointFeature('p-wrap', 'v1', 'l1');
-      const result = hitTest(
-        new Coordinate(-170.2, 20.1),
-        [feature],
-        vertices,
-        [layer],
+      const sceneEntries = collectMapSceneEntries(
+        [makePointFeature('p-wrap', 'v1', 'l1')],
         time,
-        0.5
+        toCoordsMap(vertices)
       );
+      const result = hitTest(new Coordinate(-170.2, 20.1), sceneEntries, vertices, 0.5);
       expect(result).not.toBeNull();
       expect(result!.featureId).toBe('p-wrap');
     });
@@ -187,44 +182,35 @@ describe('hitTest', () => {
   describe('線情報のヒットテスト', () => {
     it('線の近くのクリックでヒットする', () => {
       const vertices = makeVertices(['v1', 0, 0], ['v2', 10, 0]);
-      const feature = makeLineFeature('ln1', ['v1', 'v2'], 'l1');
-      const result = hitTest(
-        new Coordinate(5, 0.3),
-        [feature],
-        vertices,
-        [layer],
+      const sceneEntries = collectMapSceneEntries(
+        [makeLineFeature('ln1', ['v1', 'v2'], 'l1')],
         time,
-        0.5
+        toCoordsMap(vertices)
       );
+      const result = hitTest(new Coordinate(5, 0.3), sceneEntries, vertices, 0.5);
       expect(result).not.toBeNull();
       expect(result!.featureId).toBe('ln1');
     });
 
     it('線から遠いクリックでヒットしない', () => {
       const vertices = makeVertices(['v1', 0, 0], ['v2', 10, 0]);
-      const feature = makeLineFeature('ln1', ['v1', 'v2'], 'l1');
-      const result = hitTest(
-        new Coordinate(5, 5),
-        [feature],
-        vertices,
-        [layer],
+      const sceneEntries = collectMapSceneEntries(
+        [makeLineFeature('ln1', ['v1', 'v2'], 'l1')],
         time,
-        0.5
+        toCoordsMap(vertices)
       );
+      const result = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 0.5);
       expect(result).toBeNull();
     });
 
     it('東西端をまたぐ線でも生値経度のまま seam 付近でヒットする', () => {
       const vertices = makeVertices(['v1', 170, 0], ['v2', 190, 0]);
-      const feature = makeLineFeature('ln-wrap', ['v1', 'v2'], 'l1');
-      const result = hitTest(
-        new Coordinate(179, 0.2),
-        [feature],
-        vertices,
-        [layer],
+      const sceneEntries = collectMapSceneEntries(
+        [makeLineFeature('ln-wrap', ['v1', 'v2'], 'l1')],
         time,
-        1.0
+        toCoordsMap(vertices)
       );
+      const result = hitTest(new Coordinate(179, 0.2), sceneEntries, vertices, 1.0);
       expect(result).not.toBeNull();
       expect(result!.featureId).toBe('ln-wrap');
     });
@@ -238,15 +224,12 @@ describe('hitTest', () => {
         ['v3', 10, 10],
         ['v4', 0, 10]
       );
-      const feature = makePolygonFeature('pg1', ['v1', 'v2', 'v3', 'v4'], 'l1');
-      const result = hitTest(
-        new Coordinate(5, 5),
-        [feature],
-        vertices,
-        [layer],
+      const sceneEntries = collectMapSceneEntries(
+        [makePolygonFeature('pg1', ['v1', 'v2', 'v3', 'v4'], 'l1')],
         time,
-        1.0
+        toCoordsMap(vertices)
       );
+      const result = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
       expect(result).not.toBeNull();
       expect(result!.featureId).toBe('pg1');
     });
@@ -258,15 +241,12 @@ describe('hitTest', () => {
         ['v3', 10, 10],
         ['v4', 0, 10]
       );
-      const feature = makePolygonFeature('pg1', ['v1', 'v2', 'v3', 'v4'], 'l1');
-      const result = hitTest(
-        new Coordinate(15, 15),
-        [feature],
-        vertices,
-        [layer],
+      const sceneEntries = collectMapSceneEntries(
+        [makePolygonFeature('pg1', ['v1', 'v2', 'v3', 'v4'], 'l1')],
         time,
-        1.0
+        toCoordsMap(vertices)
       );
+      const result = hitTest(new Coordinate(15, 15), sceneEntries, vertices, 1.0);
       expect(result).toBeNull();
     });
 
@@ -277,15 +257,12 @@ describe('hitTest', () => {
         ['v3', 190, 10],
         ['v4', 170, 10]
       );
-      const feature = makePolygonFeature('pg-wrap', ['v1', 'v2', 'v3', 'v4'], 'l1');
-      const result = hitTest(
-        new Coordinate(179, 0),
-        [feature],
-        vertices,
-        [layer],
+      const sceneEntries = collectMapSceneEntries(
+        [makePolygonFeature('pg-wrap', ['v1', 'v2', 'v3', 'v4'], 'l1')],
         time,
-        1.0
+        toCoordsMap(vertices)
       );
+      const result = hitTest(new Coordinate(179, 0), sceneEntries, vertices, 1.0);
       expect(result).not.toBeNull();
       expect(result!.featureId).toBe('pg-wrap');
     });
@@ -316,15 +293,9 @@ describe('hitTest', () => {
         { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       );
       const feature = new Feature('pg-hole-wrap', 'Polygon', [anchor]);
+      const sceneEntries = collectMapSceneEntries([feature], time, toCoordsMap(vertices));
 
-      const result = hitTest(
-        new Coordinate(179, 0),
-        [feature],
-        vertices,
-        [layer],
-        time,
-        1.0
-      );
+      const result = hitTest(new Coordinate(179, 0), sceneEntries, vertices, 1.0);
 
       expect(result).toBeNull();
     });
@@ -355,15 +326,9 @@ describe('hitTest', () => {
         { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
       );
       const feature = new Feature('pg-hole-wrap', 'Polygon', [anchor]);
+      const sceneEntries = collectMapSceneEntries([feature], time, toCoordsMap(vertices));
 
-      const result = hitTest(
-        new Coordinate(171, 0),
-        [feature],
-        vertices,
-        [layer],
-        time,
-        1.0
-      );
+      const result = hitTest(new Coordinate(171, 0), sceneEntries, vertices, 1.0);
 
       expect(result).not.toBeNull();
       expect(result!.featureId).toBe('pg-hole-wrap');
@@ -376,86 +341,32 @@ describe('hitTest', () => {
         ['v3', 370, 10],
         ['v4', 350, 10]
       );
-      const feature = makePolygonFeature('pg-f4', ['v1', 'v2', 'v3', 'v4'], 'l1');
-
-      const result = hitTest(
-        new Coordinate(5, 0),
-        [feature],
-        vertices,
-        [layer],
+      const sceneEntries = collectMapSceneEntries(
+        [makePolygonFeature('pg-f4', ['v1', 'v2', 'v3', 'v4'], 'l1')],
         time,
-        1.0
+        toCoordsMap(vertices)
       );
+
+      const result = hitTest(new Coordinate(5, 0), sceneEntries, vertices, 1.0);
 
       expect(result).not.toBeNull();
       expect(result!.featureId).toBe('pg-f4');
     });
   });
 
-  describe('レイヤーとフィルタリング', () => {
-    it('非表示レイヤーの地物はヒットしない', () => {
-      const hiddenLayer = layer.withVisible(false);
+  describe('sceneEntries 経路の制約', () => {
+    it('sceneEntries に含まれない地物はヒットしない', () => {
+      // 描画対象外（sceneEntries に含まれない）地物は hitTest の対象にもならない。
+      // これは「描画されないものはクリックできない」という対概念整合性を固定するテスト
+      // （開発ガイド §6.1.2 / §6.6.9）。
       const vertices = makeVertices(['v1', 10, 20]);
-      const feature = makePointFeature('p1', 'v1', 'l1');
-      const result = hitTest(
-        new Coordinate(10, 20),
-        [feature],
-        vertices,
-        [hiddenLayer],
-        time,
-        1.0
-      );
+      const sceneEntries: never[] = []; // 意図的に空
+      const result = hitTest(new Coordinate(10, 20), sceneEntries, vertices, 1.0);
       expect(result).toBeNull();
     });
 
-    it('上位レイヤーの地物が優先される', () => {
-      const layer1 = new Layer('l1', 'レイヤー1', 0);
-      const layer2 = new Layer('l2', 'レイヤー2', 1);
-      const vertices = makeVertices(['v1', 5, 5], ['v2', 5, 5]);
-      const f1 = makePointFeature('p1', 'v1', 'l1');
-      const f2 = makePointFeature('p2', 'v2', 'l2');
-      const result = hitTest(
-        new Coordinate(5, 5),
-        [f1, f2],
-        vertices,
-        [layer1, layer2],
-        time,
-        1.0
-      );
-      expect(result).not.toBeNull();
-      expect(result!.featureId).toBe('p2'); // layer2(order=1)が優先
-    });
-
-    it('現在時刻でアクティブでない地物はヒットしない', () => {
-      const vertices = makeVertices(['v1', 10, 20]);
-      const anchor = new FeatureAnchor(
-        'a1',
-        { start: new TimePoint(1000) }, // 時刻1000以降のみ有効
-        { name: 'future', description: '' },
-        { type: 'Point', vertexId: 'v1' },
-        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
-      );
-      const feature = new Feature('p1', 'Point', [anchor]);
-      const result = hitTest(
-        new Coordinate(10, 20),
-        [feature],
-        vertices,
-        [layer],
-        new TimePoint(500), // 時刻500ではアクティブでない
-        1.0
-      );
-      expect(result).toBeNull();
-    });
-
-    it('地物がなければnull', () => {
-      const result = hitTest(
-        new Coordinate(5, 5),
-        [],
-        new Map(),
-        [layer],
-        time,
-        1.0
-      );
+    it('sceneEntries が空ならnull', () => {
+      const result = hitTest(new Coordinate(5, 5), [], new Map(), 1.0);
       expect(result).toBeNull();
     });
   });

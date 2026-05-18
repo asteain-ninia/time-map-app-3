@@ -1,5 +1,6 @@
 import type { Vertex } from '@domain/entities/Vertex';
 import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import type { PolygonRings } from '@presentation/components/mapSceneEntries';
 import {
   geoToWrappedSvgX,
   geoToSvgY,
@@ -28,9 +29,32 @@ function getVertexCoordinates(
   return coordinates;
 }
 
+/**
+ * Polygon ラベル算出に使う外周リング座標を、`polygonRings`（解決済み）優先で取得する。
+ *
+ * 開発ガイド §6.6.9: 「LabelRenderer のラベル位置・面積判定も `containerPolygons` 引数で
+ * 同じ派生形状を受け取り、描画と一致させる」。shape あり + childIds 非空 の移行期間ノードで
+ * `polygonRings` には派生形状（または shape fallback）が解決済みで渡されるため、ラベル位置と
+ * 描画領域がずれない。`polygonRings` が無い経路（既存の単独呼び出し）は anchor.shape を fallback。
+ */
+function getPolygonOuterCoords(
+  anchor: FeatureAnchor,
+  vertices: ReadonlyMap<string, Vertex>,
+  polygonRings?: PolygonRings | null
+): Array<{ lon: number; lat: number }> {
+  if (polygonRings && polygonRings.length > 0 && polygonRings[0].length > 0) {
+    return polygonRings[0].map((c) => ({ lon: c.x, lat: c.y }));
+  }
+  if (!anchor.shape || anchor.shape.type !== 'Polygon') return [];
+  const outerRing = anchor.shape.rings[0];
+  if (!outerRing) return [];
+  return getVertexCoordinates(outerRing.vertexIds, vertices);
+}
+
 export function getFeatureLabelPosition(
   anchor: FeatureAnchor,
-  vertices: ReadonlyMap<string, Vertex>
+  vertices: ReadonlyMap<string, Vertex>,
+  polygonRings?: PolygonRings | null
 ): LabelPosition | null {
   if (!anchor.shape) return null;
 
@@ -51,10 +75,7 @@ export function getFeatureLabelPosition(
       : null;
   }
 
-  const outerRing = anchor.shape.rings[0];
-  if (!outerRing) return null;
-
-  const coordinates = getVertexCoordinates(outerRing.vertexIds, vertices);
+  const coordinates = getPolygonOuterCoords(anchor, vertices, polygonRings);
   if (coordinates.length === 0) return null;
 
   const longitudeSum = coordinates.reduce((sum, coordinate) => sum + coordinate.lon, 0);
@@ -68,14 +89,12 @@ export function getFeatureLabelPosition(
 
 export function measureFeatureLabelArea(
   anchor: FeatureAnchor,
-  vertices: ReadonlyMap<string, Vertex>
+  vertices: ReadonlyMap<string, Vertex>,
+  polygonRings?: PolygonRings | null
 ): number {
   if (!anchor.shape || anchor.shape.type !== 'Polygon') return 0;
 
-  const outerRing = anchor.shape.rings[0];
-  if (!outerRing) return 0;
-
-  const coordinates = getVertexCoordinates(outerRing.vertexIds, vertices);
+  const coordinates = getPolygonOuterCoords(anchor, vertices, polygonRings);
   if (coordinates.length < 3) return 0;
 
   let signedArea = 0;
@@ -112,7 +131,8 @@ export function shouldRenderFeatureLabel(
   anchor: FeatureAnchor,
   vertices: ReadonlyMap<string, Vertex>,
   zoom: number,
-  labelAreaThreshold: number
+  labelAreaThreshold: number,
+  polygonRings?: PolygonRings | null
 ): boolean {
   if (!anchor.property.name) return false;
   if (!anchor.shape) return false;
@@ -132,10 +152,10 @@ export function shouldRenderFeatureLabel(
   if (
     anchor.shape.type === 'Polygon' &&
     labelAreaThreshold > 0 &&
-    measureFeatureLabelArea(anchor, vertices) < labelAreaThreshold
+    measureFeatureLabelArea(anchor, vertices, polygonRings) < labelAreaThreshold
   ) {
     return false;
   }
 
-  return getFeatureLabelPosition(anchor, vertices) !== null;
+  return getFeatureLabelPosition(anchor, vertices, polygonRings) !== null;
 }

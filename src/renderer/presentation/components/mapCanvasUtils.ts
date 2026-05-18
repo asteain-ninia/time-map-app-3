@@ -1,8 +1,7 @@
-import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
 import type { Coordinate } from '@domain/value-objects/Coordinate';
 import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
-import type { TimePoint } from '@domain/value-objects/TimePoint';
+import type { MapSceneEntry } from './mapSceneEntries';
 
 export interface MapCanvasVertexHandleEntry {
   readonly featureId: string;
@@ -154,11 +153,9 @@ export function createBaseMapTransform(viewBox: SvgMapViewBox): string {
 
 export function computeRenderWrapOffsets(
   viewBox: MapCanvasViewBoxValues,
-  features: readonly Feature[],
+  sceneEntries: readonly MapSceneEntry[],
   vertices: ReadonlyMap<string, Vertex>,
-  currentTime?: TimePoint,
   options?: {
-    readonly visibleLayerIds?: ReadonlySet<string>;
     readonly extraCoords?: readonly Coordinate[];
     readonly basePaddingTiles?: number;
   }
@@ -168,22 +165,12 @@ export function computeRenderWrapOffsets(
 
   addBaseWrapOffsets(offsets, viewBox, basePaddingTiles);
 
-  if (currentTime) {
-    for (const feature of features) {
-      const anchor = feature.getActiveAnchor(currentTime);
-      if (!anchor) {
-        continue;
-      }
-      if (options?.visibleLayerIds && !options.visibleLayerIds.has(anchor.placement.layerId)) {
-        continue;
-      }
-
-      const bounds = getAnchorLongitudeBounds(anchor, vertices);
-      if (!bounds) {
-        continue;
-      }
-      addGeometryWrapOffsets(offsets, viewBox, bounds);
+  for (const entry of sceneEntries) {
+    const bounds = getSceneEntryLongitudeBounds(entry, vertices);
+    if (!bounds) {
+      continue;
     }
+    addGeometryWrapOffsets(offsets, viewBox, bounds);
   }
 
   const extraBounds = getCoordinateLongitudeBounds(options?.extraCoords ?? []);
@@ -221,10 +208,18 @@ function addGeometryWrapOffsets(
   }
 }
 
-function getAnchorLongitudeBounds(
-  anchor: FeatureAnchor,
+/**
+ * sceneEntry の経度範囲を算出する。
+ *
+ * Polygon は `entry.polygonRings`（描画/hitTest が共通利用する解決済み座標）を直接使う。
+ * これにより、shape あり + childIds 非空 の移行期間ノードで描画と wrapOffsets の対象がずれない
+ * （開発ガイド §6.6.9）。Point / LineString は vertex マップから座標を解決する。
+ */
+function getSceneEntryLongitudeBounds(
+  entry: MapSceneEntry,
   vertices: ReadonlyMap<string, Vertex>
 ): LongitudeBounds | null {
+  const { anchor } = entry;
   if (!anchor.shape) return null;
   const longitudes: number[] = [];
 
@@ -246,12 +241,10 @@ function getAnchorLongitudeBounds(
       break;
     }
     case 'Polygon': {
-      for (const ring of anchor.shape.rings) {
-        for (const vertexId of ring.vertexIds) {
-          const vertex = vertices.get(vertexId);
-          if (vertex) {
-            longitudes.push(vertex.x);
-          }
+      if (!entry.polygonRings) break;
+      for (const ring of entry.polygonRings) {
+        for (const coord of ring) {
+          longitudes.push(coord.x);
         }
       }
       break;

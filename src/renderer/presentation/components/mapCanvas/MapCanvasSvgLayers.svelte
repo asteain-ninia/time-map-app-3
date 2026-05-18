@@ -1,6 +1,4 @@
 <script lang="ts">
-  import type { Feature } from '@domain/entities/Feature';
-  import type { Layer } from '@domain/entities/Layer';
   import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { WorldSettings } from '@domain/entities/World';
@@ -10,6 +8,7 @@
   import type { SurveyMeasurement } from '@infrastructure/rendering/surveyModeManager';
   import type { AddToolType, ToolMode } from '@presentation/state/toolMachine';
   import type { MapCanvasVertexHandleEntry } from '../mapCanvasUtils';
+  import type { MapSceneEntry } from '../mapSceneEntries';
   import DrawingPreview from '../DrawingPreview.svelte';
   import FeatureRenderer from '../FeatureRenderer.svelte';
   import GridRenderer from '../GridRenderer.svelte';
@@ -21,9 +20,8 @@
     baseMapContent = '',
     baseMapTransform = 'matrix(0.08483762926992506 0 0 0.08483762926992506 0 0)',
     currentTime = undefined as TimePoint | undefined,
-    features = [] as readonly Feature[],
+    sceneEntries = [] as readonly MapSceneEntry[],
     vertices = new Map<string, Vertex>() as ReadonlyMap<string, Vertex>,
-    layers = [] as readonly Layer[],
     settings = undefined as WorldSettings | undefined,
     gridInterval = 10,
     gridColor = '#888888',
@@ -62,9 +60,8 @@
     baseMapContent?: string;
     baseMapTransform?: string;
     currentTime?: TimePoint;
-    features?: readonly Feature[];
+    sceneEntries?: readonly MapSceneEntry[];
     vertices?: ReadonlyMap<string, Vertex>;
-    layers?: readonly Layer[];
     settings?: WorldSettings;
     gridInterval?: number;
     gridColor?: string;
@@ -133,10 +130,8 @@
     {#each wrapOffsets as offset}
       <g class="wrap-feature-tile" transform="translate({offset}, 0)">
         <FeatureRenderer
-          {features}
+          {sceneEntries}
           {vertices}
-          {layers}
-          {currentTime}
           {settings}
           zoom={zoomLevel}
           {labelAreaThreshold}

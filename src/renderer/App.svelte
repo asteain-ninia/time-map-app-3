@@ -131,10 +131,11 @@
     shouldBackup,
   } from '@infrastructure/rendering/autoBackupManager';
   import {
-    buildVisibleVertexOwnerMap,
+    buildSceneVertexOwnerMap,
     collectFeatureIdsForSelectedVertices,
     resolveVertexSelectionContext,
   } from '@infrastructure/rendering/vertexSelectionContext';
+  import { collectMapSceneEntries } from '@presentation/components/mapSceneEntries';
   import {
     hasProjectSettingsChanged,
     normalizeWorldSettings,
@@ -277,11 +278,28 @@
       ? projectSettings.autoSaveInterval * 1000
       : DEFAULT_BACKUP_CONFIG.intervalMs
   );
-  let visibleVertexOwnerMap = $derived(
-    buildVisibleVertexOwnerMap(features, layers, currentTime)
-  );
+  /**
+   * 描画・ヒットテスト・頂点選択コンテキスト・wrapOffsets が同時に参照する共通の
+   * 中間表現（現在時刻にアクティブで shape を保持する地物のみ）。
+   * Phase 2-D-6-1+2: 各経路で features を個別フィルタすると「描画されないがクリック
+   * 選択できる」等の対概念矛盾が発生するため、単一の sceneEntries を導出する
+   * （開発ガイド §6.1.2 / §6.6.9 / §6.0.1 検出観点2）。
+   *
+   * Polygon entry の `polygonRings` は描画・hitTest・wrapOffsets で共通利用する解決済み
+   * 座標列のため、`vertexCoordinates` を sceneEntries 導出時に渡して shape 解決を 1 箇所に
+   * 集約する（§6.6.9 「同じ shape 解決経路を共有する」）。
+   */
+  let vertexCoordinates = $derived.by(() => {
+    const coords = new Map<string, Coordinate>();
+    for (const [vertexId, vertex] of vertices) {
+      coords.set(vertexId, vertex.coordinate);
+    }
+    return coords;
+  });
+  let sceneEntries = $derived(collectMapSceneEntries(features, currentTime, vertexCoordinates));
+  let sceneVertexOwnerMap = $derived(buildSceneVertexOwnerMap(sceneEntries));
   let vertexSelectionContext = $derived(
-    resolveVertexSelectionContext(selectedVertexIds, visibleVertexOwnerMap)
+    resolveVertexSelectionContext(selectedVertexIds, sceneVertexOwnerMap)
   );
   let vertexSelectionContextFeatureId = $derived(
     vertexSelectionContext.kind === 'single'
@@ -292,7 +310,7 @@
     selectedFeatureId ?? vertexSelectionContextFeatureId
   );
   let selectedVertexOwnerFeatureIds = $derived(
-    [...collectFeatureIdsForSelectedVertices(selectedVertexIds, visibleVertexOwnerMap)]
+    [...collectFeatureIdsForSelectedVertices(selectedVertexIds, sceneVertexOwnerMap)]
   );
   let addPolygonParentCandidates = $derived(
     buildNewFeatureParentCandidateItems({ features, time: currentTime })
@@ -623,7 +641,7 @@
   function collectOwnerFeatureIdsForVertices(vertexIds: readonly string[]): Set<string> {
     const ownerFeatureIds = new Set<string>();
     for (const vertexId of vertexIds) {
-      const owners = visibleVertexOwnerMap.get(vertexId);
+      const owners = sceneVertexOwnerMap.get(vertexId);
       if (!owners) {
         continue;
       }
@@ -1065,10 +1083,8 @@
       // ヒットテストで地物選択
       const result = hitTest(
         coord,
-        features,
+        sceneEntries,
         vertices,
-        layers,
-        currentTime,
         getHitThreshold()
       );
       selectedFeatureId = result?.featureId ?? null;
@@ -1512,10 +1528,8 @@
     if (!hitFeatureId && selectedFeatureId && currentTime) {
       hitFeatureId = hitTest(
         coord,
-        features,
+        sceneEntries,
         vertices,
-        layers,
-        currentTime,
         getHitThreshold()
       )?.featureId ?? null;
     }
@@ -1624,7 +1638,7 @@
     }
 
     const box = getSelectionBox(boxSelectState);
-    const found = findVerticesInBox(box, [...visibleVertexOwnerMap.keys()], vertices);
+    const found = findVerticesInBox(box, [...sceneVertexOwnerMap.keys()], vertices);
     selectedFeatureId = null;
     selectedVertexIds = mergeSelection(selectedVertexIds, found, boxSelectState.isAdditive);
     boxSelectState = null;
@@ -2163,9 +2177,9 @@
     <div class="map-and-sidebar">
       <div class="map-area">
         <MapCanvas
+          {sceneEntries}
           {features}
           {vertices}
-          {layers}
           settings={projectSettings}
           gridInterval={projectSettings.gridInterval}
           gridColor={projectSettings.gridColor}

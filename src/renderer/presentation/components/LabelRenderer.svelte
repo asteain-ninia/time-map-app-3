@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Vertex } from '@domain/entities/Vertex';
   import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+  import type { PolygonRings } from '@presentation/components/mapSceneEntries';
   import {
     getFeatureLabelPosition,
     shouldRenderFeatureLabel,
@@ -11,19 +12,25 @@
     vertices,
     zoom,
     labelAreaThreshold = 0,
+    polygonRings = null,
   }: {
     anchor: FeatureAnchor;
     vertices: ReadonlyMap<string, Vertex>;
     zoom: number;
     labelAreaThreshold?: number;
+    /**
+     * sceneEntries の解決済み polygon 座標。Polygon ラベルの重心・面積判定を
+     * 描画/hitTest/wrapOffsets と同じ座標で行うため（開発ガイド §6.6.9）。
+     */
+    polygonRings?: PolygonRings | null;
   } = $props();
 
   let canRender = $derived(
-    shouldRenderFeatureLabel(anchor, vertices, zoom, labelAreaThreshold)
+    shouldRenderFeatureLabel(anchor, vertices, zoom, labelAreaThreshold, polygonRings)
   );
 
   let labelPosition = $derived(
-    canRender ? getFeatureLabelPosition(anchor, vertices) : null
+    canRender ? getFeatureLabelPosition(anchor, vertices, polygonRings) : null
   );
 </script>
 

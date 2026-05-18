@@ -1,6 +1,4 @@
-import type { Feature } from '@domain/entities/Feature';
-import type { Layer } from '@domain/entities/Layer';
-import type { TimePoint } from '@domain/value-objects/TimePoint';
+import type { MapSceneEntry } from '@presentation/components/mapSceneEntries';
 import { getUniqueVertexIds } from './vertexHandleUtils';
 
 export interface VertexSelectionContext {
@@ -8,27 +6,23 @@ export interface VertexSelectionContext {
   readonly featureIds: readonly string[];
 }
 
-export function buildVisibleVertexOwnerMap(
-  features: readonly Feature[],
-  layers: readonly Layer[],
-  currentTime?: TimePoint
+/**
+ * sceneEntries（描画・ヒットテストと同じ集合）から、頂点 ID → 所有地物 ID 集合を作る。
+ *
+ * Phase 2-D-6-1+2: 描画・ヒットテスト・頂点選択コンテキスト・wrapOffsets が同じ
+ * `sceneEntries` を参照するように統一した（開発ガイド §6.1.2 / §6.6.9 / §6.0.1 検出観点2）。
+ * これにより「画面に描画されないが頂点所有者として現れる」状態が発生しない。
+ *
+ * 旧 `buildVisibleVertexOwnerMap` は Layer.visible で features を絞っていたが、
+ * sceneEntries 化で同じ責務になったため `buildSceneVertexOwnerMap` へ改名した。
+ */
+export function buildSceneVertexOwnerMap(
+  sceneEntries: readonly MapSceneEntry[]
 ): Map<string, Set<string>> {
   const ownerMap = new Map<string, Set<string>>();
-  if (!currentTime) return ownerMap;
 
-  const visibleLayerIds = new Set(
-    layers
-      .filter((layer) => layer.visible)
-      .map((layer) => layer.id)
-  );
-
-  for (const feature of features) {
-    const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor || !visibleLayerIds.has(anchor.placement.layerId)) {
-      continue;
-    }
+  for (const { feature, anchor } of sceneEntries) {
     if (!anchor.shape) continue;
-
     for (const vertexId of getUniqueVertexIds(anchor.shape)) {
       const owners = ownerMap.get(vertexId);
       if (owners) {

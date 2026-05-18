@@ -15,6 +15,7 @@ import {
   normalizeZoomLimits,
   parseSvgMap,
 } from '@presentation/components/mapCanvasUtils';
+import { collectMapSceneEntries } from '@presentation/components/mapSceneEntries';
 
 function createPolygonAnchor(): FeatureAnchor {
   return new FeatureAnchor(
@@ -138,36 +139,17 @@ describe('mapCanvasUtils', () => {
     const vertices = new Map([
       ['v-wrap', new Vertex('v-wrap', new Coordinate(900, 10))],
     ]);
+    const vertexCoords = new Map([['v-wrap', new Coordinate(900, 10)]]);
+    const sceneEntries = collectMapSceneEntries([feature], time, vertexCoords);
 
     const offsets = computeRenderWrapOffsets(
       { x: 0, y: 0, width: 360, height: 180 },
-      [feature],
-      vertices,
-      time,
-      { visibleLayerIds: new Set(['layer-1']) }
+      sceneEntries,
+      vertices
     );
 
     expect(offsets).toContain(-720);
     expect(offsets).toContain(-1080);
-  });
-
-  it('非表示レイヤーの地物は追加ラップタイル算出に含めない', () => {
-    const time = new TimePoint(100);
-    const feature = createPointFeature('f-hidden', 'v-hidden', 'layer-hidden', time);
-    const vertices = new Map([
-      ['v-hidden', new Vertex('v-hidden', new Coordinate(900, 10))],
-    ]);
-
-    const offsets = computeRenderWrapOffsets(
-      { x: 0, y: 0, width: 360, height: 180 },
-      [feature],
-      vertices,
-      time,
-      { visibleLayerIds: new Set(['layer-visible']) }
-    );
-
-    expect(offsets).not.toContain(-720);
-    expect(offsets).toEqual([-360, 0, 360]);
   });
 
   it('描画中の一時座標だけでも追加ラップタイルを算出できる', () => {
@@ -175,11 +157,27 @@ describe('mapCanvasUtils', () => {
       { x: 0, y: 0, width: 360, height: 180 },
       [],
       new Map(),
-      undefined,
       { extraCoords: [new Coordinate(900, 0)] }
     );
 
     expect(offsets).toContain(-720);
     expect(offsets).toContain(-1080);
+  });
+
+  it('sceneEntries に含まれない地物は wrapOffsets 算出に寄与しない', () => {
+    // 「描画対象外（sceneEntries 外）は wrapOffsets に影響しない」という対概念整合性
+    // を固定するテスト（開発ガイド §6.1.2 / §6.6.9）。
+    const vertices = new Map([
+      ['v-hidden', new Vertex('v-hidden', new Coordinate(900, 10))],
+    ]);
+
+    const offsets = computeRenderWrapOffsets(
+      { x: 0, y: 0, width: 360, height: 180 },
+      [], // sceneEntries 空（描画対象外）
+      vertices
+    );
+
+    expect(offsets).not.toContain(-720);
+    expect(offsets).toEqual([-360, 0, 360]);
   });
 });

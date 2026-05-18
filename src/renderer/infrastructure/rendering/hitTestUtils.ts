@@ -7,12 +7,10 @@
  * ズームレベルに応じた閾値は呼び出し側で調整する。
  */
 
-import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
-import type { Layer } from '@domain/entities/Layer';
-import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { FeatureAnchor, FeatureShape } from '@domain/value-objects/FeatureAnchor';
 import type { Coordinate } from '@domain/value-objects/Coordinate';
+import type { MapSceneEntry, PolygonRings } from '@presentation/components/mapSceneEntries';
 
 /** ヒットテスト結果 */
 export interface HitTestResult {
@@ -138,21 +136,24 @@ function hitTestLine(
 
 /**
  * 面情報のヒットテスト（evenodd判定）
+ *
+ * sceneEntries の `polygonRings` を直接受け取る。`polygonRings` は
+ * `mapSceneEntries.collectMapSceneEntries` が解決済みで保持する座標列であり、
+ * リーフは自身の shape、childIds 非空は派生形状（または fallback）に解決済み。
+ * 描画 (`FeatureRenderer.getPolygonPath`) と wrapOffsets と同じ座標列を共有することで、
+ * 「描画されているのに選択できない」「描画されていないのに選択できる」を構造的に排除する
+ * （開発ガイド §6.6.9）。
  */
 function hitTestPolygon(
   clickLon: number, clickLat: number,
-  shape: FeatureShape & { type: 'Polygon' },
-  vertices: ReadonlyMap<string, Vertex>
+  polygonRings: PolygonRings
 ): boolean {
-  const ringCoordsList = shape.rings
-    .map((ring) => resolveRingCoords(ring.vertexIds, vertices))
-    .filter((coords) => coords.length >= 3);
-  if (ringCoordsList.length === 0) return false;
+  if (polygonRings.length === 0) return false;
 
   for (const candidateLon of getWrappedClickLongitudes(clickLon)) {
     // evenodd: 全リングの内外判定をトグルする
     let inside = false;
-    for (const coords of ringCoordsList) {
+    for (const coords of polygonRings) {
       if (isPointInRing(candidateLon, clickLat, coords)) {
         inside = !inside;
       }
@@ -166,47 +167,28 @@ function hitTestPolygon(
  * クリック位置に最も近い地物を特定する
  *
  * @param clickCoord クリック位置の地理座標
- * @param features 全地物
+ * @param sceneEntries 描画/入力で同時に扱う地物エントリ列（描画対象と一致）
  * @param vertices 全頂点
- * @param layers 全レイヤー
- * @param currentTime 現在時刻
  * @param thresholdDeg 点/線のヒット閾値（度単位）
  * @returns ヒットした地物、なければ null
+ *
+ * Phase 2-D-6-1+2: 描画・ヒットテスト・頂点選択コンテキスト・wrapOffsets が同じ
+ * `sceneEntries` を参照するように統一した（開発ガイド §6.1.2 / §6.6.9 / §6.0.1 検出観点2）。
+ * これにより「画面に描画されないがクリック選択できる」状態が発生しない。
+ * tie-break ポリシーは Phase 2.5-C で depth + DOM target 一致の 3 キー
+ * （開発ガイド §6.2.25 採用ポリシー）として再設計する。
  */
 export function hitTest(
   clickCoord: Coordinate,
-  features: readonly Feature[],
+  sceneEntries: readonly MapSceneEntry[],
   vertices: ReadonlyMap<string, Vertex>,
-  layers: readonly Layer[],
-  currentTime: TimePoint,
   thresholdDeg: number
 ): HitTestResult | null {
   const lon = clickCoord.x;
   const lat = clickCoord.y;
 
-  // 表示中レイヤーをorder降順（上のレイヤーが優先）
-  const visibleLayerIds = new Set(
-    layers.filter((l) => l.visible).map((l) => l.id)
-  );
-
-  // 上のレイヤーから順に検索するため、order降順でソートされた
-  // レイヤーIDの優先度マップを作成
-  const layerPriority = new Map<string, number>();
-  for (const l of layers) {
-    if (l.visible) layerPriority.set(l.id, l.order);
-  }
-
-  // 候補を収集
-  const candidates: Array<{
-    featureId: string;
-    anchor: FeatureAnchor;
-    layerOrder: number;
-  }> = [];
-
-  for (const feature of features) {
-    const anchor = feature.getActiveAnchor(currentTime);
-    if (!anchor) continue;
-    if (!visibleLayerIds.has(anchor.placement.layerId)) continue;
+  for (const entry of sceneEntries) {
+    const { feature, anchor } = entry;
     if (!anchor.shape) continue;
 
     let hit = false;
@@ -215,24 +197,13 @@ export function hitTest(
     } else if (anchor.shape.type === 'LineString') {
       hit = hitTestLine(lon, lat, anchor.shape, vertices, thresholdDeg);
     } else if (anchor.shape.type === 'Polygon') {
-      hit = hitTestPolygon(lon, lat, anchor.shape, vertices);
+      hit = entry.polygonRings ? hitTestPolygon(lon, lat, entry.polygonRings) : false;
     }
 
     if (hit) {
-      candidates.push({
-        featureId: feature.id,
-        anchor,
-        layerOrder: layerPriority.get(anchor.placement.layerId) ?? 0,
-      });
+      return { featureId: feature.id, anchor };
     }
   }
 
-  if (candidates.length === 0) return null;
-
-  // 上のレイヤー（order大）を優先
-  candidates.sort((a, b) => b.layerOrder - a.layerOrder);
-  return {
-    featureId: candidates[0].featureId,
-    anchor: candidates[0].anchor,
-  };
+  return null;
 }

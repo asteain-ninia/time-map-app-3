@@ -10,6 +10,7 @@ import {
   measureFeatureLabelArea,
   shouldRenderFeatureLabel,
 } from '@presentation/components/labelRendererUtils';
+import { geoToWrappedSvgX, geoToSvgY } from '@infrastructure/rendering/featureRenderingUtils';
 
 function createVertices(
   entries: Record<string, { lon: number; lat: number }>
@@ -123,6 +124,60 @@ describe('labelRendererUtils', () => {
       );
 
       expect(area).toBe(4);
+    });
+
+    it('polygonRings を渡すと anchor.shape ではなくその座標で面積を計算する', () => {
+      // 開発ガイド §6.6.9: shape あり + childIds 非空 の移行期間ノードで、
+      // 描画は派生形状（子の和）を使うため、面積判定もその座標で行う必要がある。
+      // ここでは anchor.shape の vertices に対して大きな面積（4）が出るはずだが、
+      // polygonRings の狭い座標（1）が優先されることを確認。
+      const area = measureFeatureLabelArea(
+        createPolygonAnchor(),
+        createVertices({
+          v1: { lon: 0, lat: 0 },
+          v2: { lon: 2, lat: 0 },
+          v3: { lon: 2, lat: 2 },
+          v4: { lon: 0, lat: 2 },
+        }),
+        [
+          [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 1, y: 1 },
+            { x: 0, y: 1 },
+          ],
+        ]
+      );
+
+      expect(area).toBe(1);
+    });
+  });
+
+  describe('getFeatureLabelPosition (polygonRings 優先)', () => {
+    it('polygonRings を渡すと anchor.shape ではなくその座標の重心がラベル位置になる', () => {
+      // anchor.shape の重心は (1, 1)（lon/lat 平均）だが、polygonRings の重心は (10, 10)。
+      // 移行期間ノードで描画が polygonRings ベースなら、ラベル位置もそれに揃う。
+      const position = getFeatureLabelPosition(
+        createPolygonAnchor(),
+        createVertices({
+          v1: { lon: 0, lat: 0 },
+          v2: { lon: 2, lat: 0 },
+          v3: { lon: 2, lat: 2 },
+          v4: { lon: 0, lat: 2 },
+        }),
+        [
+          [
+            { x: 5, y: 5 },
+            { x: 15, y: 5 },
+            { x: 15, y: 15 },
+            { x: 5, y: 15 },
+          ],
+        ]
+      );
+
+      // polygonRings の重心 = (10, 10)
+      expect(position?.x).toBe(geoToWrappedSvgX(10));
+      expect(position?.y).toBe(geoToSvgY(10));
     });
   });
 

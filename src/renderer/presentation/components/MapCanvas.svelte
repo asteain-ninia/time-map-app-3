@@ -5,7 +5,6 @@
   import { Coordinate } from '@domain/value-objects/Coordinate';
   import type { Feature } from '@domain/entities/Feature';
   import type { Vertex } from '@domain/entities/Vertex';
-  import type { Layer } from '@domain/entities/Layer';
   import type { WorldSettings } from '@domain/entities/World';
   import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
   import type { TimePoint } from '@domain/value-objects/TimePoint';
@@ -16,6 +15,7 @@
   import type { ParentCandidateItem } from './parentTransferDialogUtils';
   import MapCanvasHud from './mapCanvas/MapCanvasHud.svelte';
   import MapCanvasSvgLayers from './mapCanvas/MapCanvasSvgLayers.svelte';
+  import type { MapSceneEntry } from './mapSceneEntries';
   import {
     computeRenderWrapOffsets,
     createBaseMapTransform,
@@ -32,9 +32,9 @@
   ];
 
   let {
+    sceneEntries = [] as readonly MapSceneEntry[],
     features = [] as readonly Feature[],
     vertices = new Map<string, Vertex>() as ReadonlyMap<string, Vertex>,
-    layers = [] as readonly Layer[],
     settings = undefined as WorldSettings | undefined,
     gridInterval = 10,
     gridColor = '#888888',
@@ -103,9 +103,9 @@
     boxSelectBox = null as { minX: number; minY: number; maxX: number; maxY: number } | null,
     validationMessage = '',
   }: {
+    sceneEntries?: readonly MapSceneEntry[];
     features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
-    layers?: readonly Layer[];
     settings?: WorldSettings;
     gridInterval?: number;
     gridColor?: string;
@@ -204,10 +204,6 @@
         : drawingCoords.length >= 2)
   );
 
-  let visibleLayerIds = $derived(
-    new Set(layers.filter((layer) => layer.visible).map((layer) => layer.id))
-  );
-
   /** 選択コンテキスト地物のアンカー */
   let selectionAnchor = $derived(() => {
     if (!selectionFeatureId || !currentTime) return null;
@@ -236,12 +232,7 @@
 
     const entries: MapCanvasVertexHandleEntry[] = [];
 
-    for (const feature of features) {
-      const anchor = feature.getActiveAnchor(currentTime);
-      if (!anchor || !visibleLayerIds.has(anchor.placement.layerId)) {
-        continue;
-      }
-
+    for (const { feature, anchor } of sceneEntries) {
       entries.push({
         featureId: feature.id,
         anchor,
@@ -300,13 +291,9 @@
 
     wrapOffsets = computeRenderWrapOffsets(
       viewBoxValues,
-      features,
+      sceneEntries,
       vertices,
-      currentTime,
-      {
-        visibleLayerIds,
-        extraCoords,
-      }
+      { extraCoords }
     );
   });
 
@@ -651,9 +638,8 @@
       {baseMapContent}
       {baseMapTransform}
       {currentTime}
-      {features}
+      {sceneEntries}
       {vertices}
-      {layers}
       {settings}
       {gridInterval}
       {gridColor}
