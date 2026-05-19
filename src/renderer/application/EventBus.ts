@@ -31,15 +31,6 @@ export interface TimeChangedEvent {
   time: TimePoint;
 }
 
-/** レイヤー表示切替 */
-export interface LayerVisibilityChangedEvent {
-  layerId: string;
-  visible: boolean;
-}
-
-/** レイヤー一覧変更 */
-export type LayersChangedEvent = Record<string, never>;
-
 /** 地物追加 */
 export interface FeatureAddedEvent {
   featureId: string;
@@ -67,8 +58,6 @@ export interface EventMap {
   'cursor:left': CursorLeftEvent;
   'viewport:zoomChanged': ZoomChangedEvent;
   'time:changed': TimeChangedEvent;
-  'layer:visibilityChanged': LayerVisibilityChangedEvent;
-  'layers:changed': LayersChangedEvent;
   'feature:added': FeatureAddedEvent;
   'feature:removed': FeatureRemovedEvent;
   'world:loaded': WorldLoadedEvent;

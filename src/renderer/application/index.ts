@@ -9,7 +9,6 @@ export type {
   CursorLeftEvent,
   ZoomChangedEvent,
   TimeChangedEvent,
-  LayerVisibilityChangedEvent,
   FeatureAddedEvent,
   FeatureRemovedEvent,
 } from './EventBus';
