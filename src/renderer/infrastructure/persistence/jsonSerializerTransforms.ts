@@ -130,10 +130,6 @@ function serializeAnchorProperty(p: AnchorProperty): JsonAnchorProperty {
 
 function serializeAnchorPlacement(pl: AnchorPlacement): JsonAnchorPlacement {
   return {
-    // Phase 2-D-6-3b で in-memory ドメイン経路から `layerId` を撤去済み。
-    // JSON 永続化型 (`JsonAnchorPlacement.layerId`) は D-6-3c で撤去予定のため、
-    // それまでは `pl.layerId` が undefined なら default プレースホルダを書き戻す。
-    layerId: pl.layerId ?? 'default',
     parentId: pl.parentId,
     childIds: [...pl.childIds],
     isTopLevel: pl.isTopLevel,
@@ -282,9 +278,6 @@ function deserializeAnchorProperty(json: JsonAnchorProperty): AnchorProperty {
 }
 
 function deserializeAnchorPlacement(json: JsonAnchorPlacement): AnchorPlacement {
-  // Phase 2-D-6-3b で in-memory ドメイン経路から `layerId` を撤去済み。
-  // JSON 側の `json.layerId` は読み捨て、in-memory placement には保持しない。
-  // 再保存時は `serializeAnchorPlacement` が default プレースホルダで書き戻す。
   return {
     parentId: json.parentId,
     childIds: json.childIds,

@@ -17,7 +17,6 @@ describe('AddFeatureCommand', () => {
   let reassignParent: ReassignFeatureParentUseCase;
   let undoRedo: UndoRedoManager;
   const time = new TimePoint(1000);
-  const layerId = 'l1';
 
   beforeEach(() => {
     addFeature = new AddFeatureUseCase();
@@ -229,7 +228,7 @@ describe('AddFeatureCommand', () => {
         { start: time },
         { name: '穴あき地物', description: '' },
         { type: 'Polygon', rings },
-        { layerId, parentId: null, childIds: [], isTopLevel: true }
+        { parentId: null, childIds: [], isTopLevel: true }
       );
       addFeature.restore(
         new Map([['f-existing', new Feature('f-existing', 'Polygon', [anchor])]]),

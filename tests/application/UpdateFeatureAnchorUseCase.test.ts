@@ -241,7 +241,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
       const anchorId = feature.anchors[0].id;
 
       anchorEdit.updatePlacement(feature.id, anchorId, {
-        layerId: 'l2',
         parentId: null,
         childIds: [],
         isTopLevel: false,

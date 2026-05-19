@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { JSONWorldRepository, type FileSystemPort } from '@infrastructure/persistence/JSONWorldRepository';
 import { serialize } from '@infrastructure/persistence/JSONSerializer';
+import { SerializationError } from '@infrastructure/persistence/jsonSerializerErrors';
 import {
   base64ToBytes,
   bytesToBase64,
@@ -42,7 +43,7 @@ function createTestWorld(): World {
     { start: new TimePoint(1000) },
     { name: 'テスト', description: '' },
     { type: 'Point', vertexId: 'v1' },
-    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
   const features = new Map<string, Feature>();
   features.set('f1', new Feature('f1', 'Point', [anchor]));
@@ -149,19 +150,17 @@ describe('JSONWorldRepository', () => {
       expect(loaded.vertices.size).toBe(1);
     });
 
-    it('JSONファイルの互換性警告をloadWithReportで返す', async () => {
+    it('バージョンフィールドのないJSONファイルは読み込みエラーで拒否される', async () => {
+      // 要件定義書 §2.5.2「旧モデル（レイヤー概念を含む形式バージョン）のファイルは
+      // 互換性なしとして読み込みエラーで拒否する。マイグレーションは提供しない。」
       const fs = createMockFs();
       const legacy = JSON.parse(serialize(createTestWorld())) as Record<string, unknown>;
       delete legacy.version;
       fs.readFile.mockResolvedValue(JSON.stringify(legacy));
       const repo = new JSONWorldRepository(fs);
 
-      const result = await repo.loadWithReport('/path/to/file.json');
-
-      expect(result.world.version).toBe('1.0.0');
-      expect(result.compatibilityWarnings).toContain(
-        '形式バージョンがない旧形式を 1.0.0 として読み込みました。'
-      );
+      await expect(repo.loadWithReport('/path/to/file.json')).rejects.toThrow(SerializationError);
+      await expect(repo.loadWithReport('/path/to/file.json')).rejects.toThrow('Missing version field');
     });
 
     it('不正なJSONでエラーを投げる', async () => {
@@ -259,7 +258,8 @@ describe('JSONWorldRepository', () => {
       );
     });
 
-    it('.gimozaの互換性警告をloadWithReportで返す', async () => {
+    it('バージョンフィールドのない.gimozaは読み込みエラーで拒否される', async () => {
+      // 要件定義書 §2.5.2 同上。
       const saveFs = createMockFs();
       saveFs.writeBinaryFile.mockResolvedValue(undefined);
       const original = createTestWorld();
@@ -276,13 +276,10 @@ describe('JSONWorldRepository', () => {
 
       const loadFs = createMockFs();
       loadFs.readBinaryFile.mockResolvedValue(bytesToBase64(legacyArchive));
-      const result = await new JSONWorldRepository(loadFs).loadWithReport('/test.gimoza');
 
-      expect(result.world.version).toBe('1.0.0');
-      expect(result.compatibilityWarnings).toEqual(expect.arrayContaining([
-        '形式バージョンがない旧形式を 1.0.0 として読み込みました。',
-        '.gimoza 内にベースマップアセットがないため、プリセット地図設定で読み込みました。',
-      ]));
+      const repo = new JSONWorldRepository(loadFs);
+      await expect(repo.loadWithReport('/test.gimoza')).rejects.toThrow(SerializationError);
+      await expect(repo.loadWithReport('/test.gimoza')).rejects.toThrow('Missing version field');
     });
   });
 });

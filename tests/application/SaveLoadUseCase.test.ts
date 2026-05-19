@@ -44,7 +44,7 @@ function createTestWorld(): World {
     { start: new TimePoint(1000) },
     { name: '城', description: '' },
     { type: 'Point', vertexId: 'v1' },
-    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
   const features = new Map<string, Feature>();
   features.set('f1', new Feature('f1', 'Point', [anchor]));
@@ -68,14 +68,14 @@ function createTestWorldWithSharedVertices(): World {
     { start: new TimePoint(1000) },
     { name: '国A', description: '' },
     { type: 'Point', vertexId: 'v1' },
-    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
   const anchor2 = new FeatureAnchor(
     'a2',
     { start: new TimePoint(1000) },
     { name: '国B', description: '' },
     { type: 'Point', vertexId: 'v2' },
-    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
   const features = new Map<string, Feature>();
   features.set('f1', new Feature('f1', 'Point', [anchor1]));

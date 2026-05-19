@@ -66,10 +66,9 @@ function migrateJsonWorld(raw: unknown): JsonMigrationResult {
     ctx.warn('レイヤー情報が空の旧形式を読み込んだため、既定レイヤーを追加しました。');
   }
 
-  const defaultLayerId = layers[0]?.id ?? 'default';
   const featureIds = collectFeatureIds(featureSources);
   const features = featureSources.map((item, index) =>
-    normalizeFeature(item, index, defaultLayerId, featureIds, ctx)
+    normalizeFeature(item, index, featureIds, ctx)
   );
   const sharedVertexGroups = optionalArray(raw, 'sharedVertexGroups', ctx).map((item, index) =>
     normalizeSharedVertexGroup(item, index)
@@ -93,37 +92,24 @@ function migrateJsonWorld(raw: unknown): JsonMigrationResult {
   };
 }
 
-function resolveVersion(raw: JsonRecord, ctx: MigrationContext): void {
+function resolveVersion(raw: JsonRecord, _ctx: MigrationContext): void {
   const version = raw.version;
 
+  // 要件定義書 §2.5.2「旧モデル（レイヤー概念を含む形式バージョン）のファイルは
+  // 互換性なしとして読み込みエラーで拒否する。マイグレーションは提供しない。」
+  // 現状.md §6.2「既存 .gimoza 互換性は破棄する（移行マイグレーションは実装しない）」。
+  // version 欠落は旧形式（0.x 系）のマーカー、0.x 系も旧モデル時代のバージョンとして拒否する。
   if (typeof version !== 'string' || version.trim().length === 0) {
-    if (!looksLikeLegacyProject(raw)) {
-      throw new SerializationError('Missing version field');
-    }
-    ctx.warn(`形式バージョンがない旧形式を ${SUPPORTED_VERSION} として読み込みました。`);
-    return;
+    throw new SerializationError('Missing version field');
   }
 
   if (version === SUPPORTED_VERSION) {
     return;
   }
 
-  if (isMigratableLegacyVersion(version) && looksLikeLegacyProject(raw)) {
-    ctx.warn(`形式バージョン ${version} を ${SUPPORTED_VERSION} へ変換しました。`);
-    return;
-  }
-
   throw new SerializationError(
     `Unsupported version "${version}" (expected "${SUPPORTED_VERSION}")`
   );
-}
-
-function looksLikeLegacyProject(raw: JsonRecord): boolean {
-  return Array.isArray(raw.layers) && Array.isArray(raw.vertices) && Array.isArray(raw.features);
-}
-
-function isMigratableLegacyVersion(version: string): boolean {
-  return /^0\.\d+(?:\.\d+)?$/.test(version);
 }
 
 function requireArray(raw: JsonRecord, key: string): readonly unknown[] {
@@ -207,7 +193,6 @@ function normalizeTimelineMarker(value: unknown, index: number): JsonTimelineMar
 function normalizeFeature(
   value: unknown,
   index: number,
-  defaultLayerId: string,
   featureIds: ReadonlySet<string>,
   ctx: MigrationContext
 ): JsonFeature {
@@ -219,9 +204,9 @@ function normalizeFeature(
   );
   const anchors = Array.isArray(record.anchors)
     ? record.anchors.map((anchor, anchorIndex) =>
-        normalizeAnchor(anchor, id, anchorIndex, featureType, defaultLayerId, featureIds, ctx)
+        normalizeAnchor(anchor, id, anchorIndex, featureType, featureIds, ctx)
       )
-    : [normalizeLegacyFeatureAnchor(record, id, featureType, defaultLayerId, featureIds, ctx)];
+    : [normalizeLegacyFeatureAnchor(record, id, featureType, featureIds, ctx)];
 
   return {
     id,
@@ -277,7 +262,6 @@ function normalizeAnchor(
   featureId: string,
   anchorIndex: number,
   featureType: string,
-  defaultLayerId: string,
   featureIds: ReadonlySet<string>,
   ctx: MigrationContext
 ): JsonFeatureAnchor {
@@ -287,7 +271,7 @@ function normalizeAnchor(
     ctx.warn('IDがない歴史の錨を検出したため、既定IDを補完しました。');
   }
 
-  const placement = normalizePlacement(record.placement, record, defaultLayerId, ctx);
+  const placement = normalizePlacement(record.placement, record, ctx);
   return {
     id,
     timeRange: normalizeTimeRange(record.timeRange, record, id, ctx),
@@ -301,13 +285,12 @@ function normalizeLegacyFeatureAnchor(
   record: JsonRecord,
   featureId: string,
   featureType: string,
-  defaultLayerId: string,
   featureIds: ReadonlySet<string>,
   ctx: MigrationContext
 ): JsonFeatureAnchor {
   ctx.warn('anchors がない旧形式の地物を、単一の歴史の錨へ変換しました。');
   const anchorId = `${featureId}-anchor-1`;
-  const placement = normalizePlacement(record.placement, record, defaultLayerId, ctx);
+  const placement = normalizePlacement(record.placement, record, ctx);
   return {
     id: anchorId,
     timeRange: normalizeTimeRange(record.timeRange, record, anchorId, ctx),
@@ -556,10 +539,21 @@ function normalizeParentId(
 function normalizePlacement(
   value: unknown,
   fallbackSource: JsonRecord,
-  defaultLayerId: string,
   ctx: MigrationContext
 ): JsonAnchorPlacement {
   const source = isRecord(value) ? value : fallbackSource;
+
+  // 要件定義書 §2.5.2「旧モデル（レイヤー概念を含む形式バージョン）のファイルは
+  // 互換性なしとして読み込みエラーで拒否する。マイグレーションは提供しない。」
+  // 現状.md §6.2「既存 .gimoza 互換性は破棄する（移行マイグレーションは実装しない）」。
+  // Phase 2-D-6-3c で `placement.layerId` を完全撤去したため、本フィールドを含むファイルは
+  // 旧モデルのマーカーとして拒否する。fallback 用 warning より先に判定する。
+  if ('layerId' in source) {
+    throw new SerializationError(
+      '旧モデル（placement.layerId を含む形式）のファイルは互換性なしとして拒否されました。新規プロジェクトを開始してください。'
+    );
+  }
+
   if (!isRecord(value)) {
     ctx.warn('placement がない旧形式の錨を検出したため、所属情報を補完しました。');
   }
@@ -567,7 +561,6 @@ function normalizePlacement(
   const parentId = typeof source.parentId === 'string' ? source.parentId : null;
   const isTopLevel = normalizeIsTopLevel(source.isTopLevel, parentId, ctx);
   return {
-    layerId: optionalString(source, 'layerId') ?? defaultLayerId,
     parentId,
     childIds: Array.isArray(source.childIds)
       ? source.childIds.filter((id): id is string => typeof id === 'string')

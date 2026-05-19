@@ -30,7 +30,7 @@ function createWorldWithPoint(): World {
     { start: new TimePoint(1000, 3, 15) },
     { name: '城', description: '要塞' },
     { type: 'Point', vertexId: 'v1' },
-    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
   const feature = new Feature('f1', 'Point', [anchor]);
   const features = new Map<string, Feature>();
@@ -53,7 +53,7 @@ function createWorldWithLine(): World {
     { start: new TimePoint(500), end: new TimePoint(1500) },
     { name: '街道', description: '主要街道' },
     { type: 'LineString', vertexIds: ['v1', 'v2', 'v3'] },
-    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
   const feature = new Feature('f1', 'Line', [anchor]);
   const features = new Map<string, Feature>();
@@ -87,7 +87,7 @@ function createWorldWithPolygon(): World {
       },
     },
     { type: 'Polygon', rings: [ring] },
-    { layerId: 'l1', parentId: null, childIds: ['f2'], isTopLevel: true }
+    { parentId: null, childIds: ['f2'], isTopLevel: true }
   );
   const feature = new Feature('f1', 'Polygon', [anchor]);
   const features = new Map<string, Feature>();
@@ -110,7 +110,7 @@ function createFullWorld(): World {
     { start: new TimePoint(100) },
     { name: 'ポイント', description: '' },
     { type: 'Point', vertexId: 'v1' },
-    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
   features.set('f1', new Feature('f1', 'Point', [anchor]));
 
@@ -148,7 +148,7 @@ function createValidJsonWorld(overrides: Record<string, unknown> = {}): Record<s
         timeRange: { start: { year: 100 } },
         property: { name: 'test', description: '' },
         shape: { type: 'Point', vertexId: 'v1' },
-        placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+        placement: { parentId: null, childIds: [], isTopLevel: true },
       }],
     }],
     sharedVertexGroups: [],
@@ -458,27 +458,23 @@ describe('JSONSerializer', () => {
       expect(() => deserialize('{"layers":[]}')).toThrow('Missing version field');
     });
 
-    it('バージョンフィールドがない旧形式プロジェクトを現在形式へ移行できる', () => {
+    it('バージョンフィールドがない旧形式プロジェクトは読み込みエラーで拒否される', () => {
+      // 要件定義書 §2.5.2「旧モデル（レイヤー概念を含む形式バージョン）のファイルは
+      // 互換性なしとして読み込みエラーで拒否する。マイグレーションは提供しない。」
       const world = createValidJsonWorld();
       delete world.version;
 
-      const result = deserializeWithReport(JSON.stringify(world));
-
-      expect(result.world.version).toBe('1.0.0');
-      expect(result.compatibilityWarnings).toContain(
-        '形式バージョンがない旧形式を 1.0.0 として読み込みました。'
-      );
+      expect(() => deserialize(JSON.stringify(world))).toThrow(SerializationError);
+      expect(() => deserialize(JSON.stringify(world))).toThrow('Missing version field');
     });
 
-    it('0.x系の旧バージョンを現在形式へ移行できる', () => {
+    it('0.x系の旧バージョンは読み込みエラーで拒否される', () => {
+      // 要件定義書 §2.5.2 同上。0.x 系は旧モデル時代のバージョンとして拒否する。
       const world = createValidJsonWorld({ version: '0.9.0' });
 
-      const result = deserializeWithReport(JSON.stringify(world));
-
-      expect(result.world.version).toBe('1.0.0');
-      expect(result.compatibilityWarnings).toContain(
-        '形式バージョン 0.9.0 を 1.0.0 へ変換しました。'
-      );
+      expect(() => deserialize(JSON.stringify(world))).toThrow(SerializationError);
+      expect(() => deserialize(JSON.stringify(world))).toThrow('Unsupported version "0.9.0"');
+      expect(() => deserialize(JSON.stringify(world))).toThrow(`expected "${'1.0.0'}"`);
     });
 
     it('サポートされないバージョンの場合エラー', () => {
@@ -507,7 +503,7 @@ describe('JSONSerializer', () => {
             timeRange: { start: { year: 100 } },
             property: { name: 'test', description: '' },
             shape: { type: 'Point', vertexId: 'v-nonexistent' },
-            placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+            placement: { parentId: null, childIds: [], isTopLevel: true },
           }],
         }],
         sharedVertexGroups: [],
@@ -516,12 +512,6 @@ describe('JSONSerializer', () => {
       });
       expect(() => deserialize(json)).toThrow('non-existent vertex');
     });
-
-    // Phase 2-D-6-3b で `validateLayerReferences` を撤去。
-    // in-memory placement から `layerId` を撤去した一方で `serializeAnchorPlacement` が
-    // `'default'` を固定値出力する shim を持つため、旧形式（layers: [l1, l2]）→ 再保存で
-    // anchor 側だけ `'default'` になり validation がクラッシュする経路を塞いだ。
-    // `placement.layerId` 自体は D-6-3c で JSON 型側からも完全撤去予定。
 
     it('終了時間が開始時間より前の場合エラー', () => {
       const json = JSON.stringify({
@@ -536,7 +526,7 @@ describe('JSONSerializer', () => {
             timeRange: { start: { year: 1500 }, end: { year: 1000 } },
             property: { name: 'test', description: '' },
             shape: { type: 'Point', vertexId: 'v1' },
-            placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+            placement: { parentId: null, childIds: [], isTopLevel: true },
           }],
         }],
         sharedVertexGroups: [],
@@ -559,7 +549,7 @@ describe('JSONSerializer', () => {
             timeRange: { start: { year: 100 } },
             property: { name: 'test', description: '' },
             shape: { type: 'Point', vertexId: 'v1' },
-            placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+            placement: { parentId: null, childIds: [], isTopLevel: true },
           }],
         }],
         sharedVertexGroups: [],
@@ -582,7 +572,7 @@ describe('JSONSerializer', () => {
             timeRange: { start: { year: 100 } },
             property: { name: 'test', description: '' },
             shape: { type: 'Circle' },
-            placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+            placement: { parentId: null, childIds: [], isTopLevel: true },
           }],
         }],
         sharedVertexGroups: [],
@@ -607,7 +597,7 @@ describe('JSONSerializer', () => {
             timeRange: { start: { year: 100 } },
             property: { name: 'test', description: '' },
             shape: { type: 'LineString' },
-            placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+            placement: { parentId: null, childIds: [], isTopLevel: true },
           }],
         }],
         sharedVertexGroups: [],
@@ -626,7 +616,12 @@ describe('JSONSerializer', () => {
       expect(restored.sharedVertexGroups.size).toBe(0);
     });
 
-    it('旧形式の単一形状地物をanchors形式へ移行できる', () => {
+    it('旧形式の単一形状地物（version 0.8.0）は読み込みエラーで拒否される', () => {
+      // 要件定義書 §2.5.2「旧モデル（レイヤー概念を含む形式バージョン）のファイルは
+      // 互換性なしとして読み込みエラーで拒否する。マイグレーションは提供しない。」
+      // 0.x 系は旧モデル時代の形式バージョンとして拒否されるため、
+      // 内部の旧形式 migration ロジック（anchors 補完、vertexIds → territory リング等）には
+      // 到達しない。
       const world = createValidJsonWorld({
         version: '0.8.0',
         vertices: [
@@ -641,28 +636,12 @@ describe('JSONSerializer', () => {
           description: '旧形式の地物',
           type: 'Polygon',
           vertexIds: ['v1', 'v2', 'v3'],
-          layerId: 'l1',
           startYear: 1200,
         }],
       });
 
-      const result = deserializeWithReport(JSON.stringify(world));
-      const feature = result.world.features.get('f-legacy');
-      const anchor = feature?.anchors[0];
-
-      expect(feature?.featureType).toBe('Polygon');
-      expect(anchor?.property.name).toBe('旧国家');
-      expect(anchor?.timeRange.start.year).toBe(1200);
-      expect(anchor?.shape.type).toBe('Polygon');
-      if (anchor?.shape.type === 'Polygon') {
-        expect(anchor.shape.rings[0].vertexIds).toEqual(['v1', 'v2', 'v3']);
-      }
-      expect(result.compatibilityWarnings).toContain(
-        'anchors がない旧形式の地物を、単一の歴史の錨へ変換しました。'
-      );
-      expect(result.compatibilityWarnings).toContain(
-        '旧形式の Polygon.vertexIds を territory リングに変換しました。'
-      );
+      expect(() => deserialize(JSON.stringify(world))).toThrow(SerializationError);
+      expect(() => deserialize(JSON.stringify(world))).toThrow('Unsupported version "0.8.0"');
     });
 
     it('旧形式の欠損した追加フィールドを補完し警告を返す', () => {
@@ -772,7 +751,7 @@ describe('JSONSerializer', () => {
                 parentId: null,
               }],
             },
-            placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+            placement: { parentId: null, childIds: [], isTopLevel: true },
           }],
         }],
       }));
@@ -816,7 +795,7 @@ describe('JSONSerializer', () => {
                 },
               ],
             },
-            placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+            placement: { parentId: null, childIds: [], isTopLevel: true },
           }],
         }],
       }));
@@ -838,14 +817,14 @@ describe('JSONSerializer', () => {
         { start: new TimePoint(1000), end: new TimePoint(1200) },
         { name: '旧領土', description: '' },
         { type: 'Polygon', rings: [new Ring('r1', ['v1', 'v2', 'v3'], 'territory', null)] },
-        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+        { parentId: null, childIds: [], isTopLevel: true }
       );
       const anchor2 = new FeatureAnchor(
         'a2',
         { start: new TimePoint(1200) },
         { name: '新領土', description: '拡大後' },
         { type: 'Polygon', rings: [new Ring('r2', ['v1', 'v2', 'v4', 'v3'], 'territory', null)] },
-        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+        { parentId: null, childIds: [], isTopLevel: true }
       );
 
       const feature = new Feature('f1', 'Polygon', [anchor1, anchor2]);
@@ -874,7 +853,7 @@ describe('JSONSerializer', () => {
         { start: new TimePoint(1000) },
         { name: '東京都', description: '', kind: '都' },
         { type: 'Point', vertexId: 'v1' },
-        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+        { parentId: null, childIds: [], isTopLevel: true }
       );
       const feature = new Feature('f1', 'Point', [anchor]);
       const features = new Map<string, Feature>();
@@ -923,7 +902,7 @@ describe('JSONSerializer', () => {
         { start: new TimePoint(1000) },
         { name: '子', description: '' },
         { type: 'Point', vertexId: 'v1' },
-        { layerId: 'l1', parentId: 'p1', childIds: [], isTopLevel: false }
+        { parentId: 'p1', childIds: [], isTopLevel: false }
       );
       const features = new Map<string, Feature>();
       features.set('f-child', new Feature('f-child', 'Point', [child]));
@@ -970,14 +949,14 @@ describe('JSONSerializer', () => {
         { start: new TimePoint(0) },
         { name: '合衆国', description: '' },
         undefined,
-        { layerId: 'l1', parentId: null, childIds: ['f-child'], isTopLevel: true }
+        { parentId: null, childIds: ['f-child'], isTopLevel: true }
       );
       const childAnchor = new FeatureAnchor(
         'a-child',
         { start: new TimePoint(0) },
         { name: 'ヴァージニア', description: '' },
         { type: 'Polygon', rings: [new Ring('r1', ['v1', 'v2', 'v3'], 'territory', null)] },
-        { layerId: 'l1', parentId: 'f-c', childIds: [], isTopLevel: false }
+        { parentId: 'f-c', childIds: [], isTopLevel: false }
       );
       const features = new Map<string, Feature>();
       features.set('f-c', new Feature('f-c', 'Polygon', [containerAnchor]));
@@ -1015,7 +994,7 @@ describe('JSONSerializer', () => {
                 id: 'a-c',
                 timeRange: { start: { year: 0 } },
                 property: { name: '合衆国', description: '' },
-                placement: { layerId: 'l1', parentId: null, childIds: ['f-child'], isTopLevel: true },
+                placement: { parentId: null, childIds: ['f-child'], isTopLevel: true },
               },
             ],
           },
@@ -1033,7 +1012,7 @@ describe('JSONSerializer', () => {
                     { id: 'r1', vertexIds: ['v1', 'v2', 'v3'], ringType: 'territory', parentId: null },
                   ],
                 },
-                placement: { layerId: 'l1', parentId: 'f-c', childIds: [], isTopLevel: false },
+                placement: { parentId: 'f-c', childIds: [], isTopLevel: false },
               },
             ],
           },
@@ -1057,7 +1036,7 @@ describe('JSONSerializer', () => {
                 id: 'a1',
                 timeRange: { start: { year: 0 } },
                 property: { name: 'p', description: '' },
-                placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+                placement: { parentId: null, childIds: [], isTopLevel: true },
               },
             ],
           },
@@ -1077,7 +1056,7 @@ describe('JSONSerializer', () => {
                 id: 'a1',
                 timeRange: { start: { year: 0 } },
                 property: { name: 'p', description: '' },
-                placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+                placement: { parentId: null, childIds: [], isTopLevel: true },
               },
             ],
           },
@@ -1098,7 +1077,6 @@ describe('JSONSerializer', () => {
                 timeRange: { start: { year: 0 } },
                 property: { name: '合衆国', description: '' },
                 placement: {
-                  layerId: 'l1',
                   parentId: null,
                   childIds: ['ghost'],
                   isTopLevel: true,
@@ -1122,7 +1100,7 @@ describe('JSONSerializer', () => {
                 id: 'a1',
                 timeRange: { start: { year: 0 } },
                 property: { name: 'p', description: '' },
-                placement: { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true },
+                placement: { parentId: null, childIds: [], isTopLevel: true },
               },
             ],
           },
@@ -1151,7 +1129,7 @@ describe('JSONSerializer', () => {
         { start: new TimePoint(0) },
         { name: '穴あき', description: '' },
         { type: 'Polygon', rings: [outerRing, holeRing] },
-        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+        { parentId: null, childIds: [], isTopLevel: true }
       );
       const feature = new Feature('f1', 'Polygon', [anchor]);
       const features = new Map<string, Feature>();

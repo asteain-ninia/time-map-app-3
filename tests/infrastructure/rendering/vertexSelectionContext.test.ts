@@ -23,7 +23,7 @@ function createPointFeature(
       { start: time },
       { name: featureId, description: '' },
       { type: 'Point', vertexId },
-      { layerId, parentId: null, childIds: [], isTopLevel: true }
+      { parentId: null, childIds: [], isTopLevel: true }
     ),
   ]);
 }
@@ -43,7 +43,7 @@ function createPolygonFeature(
         type: 'Polygon',
         rings: [new Ring(`${featureId}-ring`, vertexIds, 'territory', null)],
       },
-      { layerId, parentId: null, childIds: [], isTopLevel: true }
+      { parentId: null, childIds: [], isTopLevel: true }
     ),
   ]);
 }
@@ -70,7 +70,7 @@ describe('vertexSelectionContext', () => {
             { start: new TimePoint(1300) },
             { name: 'f3', description: '' },
             { type: 'Point', vertexId: 'v3' },
-            { layerId: 'visible', parentId: null, childIds: [], isTopLevel: true }
+            { parentId: null, childIds: [], isTopLevel: true }
           ),
         ]),
       ];

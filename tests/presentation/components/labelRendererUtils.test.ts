@@ -29,7 +29,7 @@ function createPointAnchor(): FeatureAnchor {
     { start: new TimePoint(1000) },
     { name: '拠点', description: '' },
     { type: 'Point', vertexId: 'p1' },
-    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
 }
 
@@ -43,7 +43,7 @@ function createLineAnchor(minDisplayLength?: number): FeatureAnchor {
       labelVisibility: minDisplayLength === undefined ? undefined : { minDisplayLength },
     },
     { type: 'LineString', vertexIds: ['l1', 'l2', 'l3'] },
-    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
 }
 
@@ -63,7 +63,7 @@ function createPolygonAnchor(overrides?: {
       type: 'Polygon',
       rings: [new Ring('r1', ['v1', 'v2', 'v3', 'v4'], 'territory', null)],
     },
-    { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
 }
 

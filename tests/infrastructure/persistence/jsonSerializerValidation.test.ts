@@ -16,7 +16,6 @@ const PROPERTY: JsonAnchorProperty = { name: 'test', description: '' };
 
 function createPlacement(overrides: Partial<JsonAnchorPlacement> = {}): JsonAnchorPlacement {
   return {
-    layerId: LAYER_ID,
     parentId: null,
     childIds: [],
     isTopLevel: true,
@@ -190,20 +189,25 @@ describe('validateJsonWorld - shape 保持規則 (Phase 2-C-4)', () => {
 });
 
 /**
- * Phase 2-D-6-3b で in-memory `placement.layerId` を撤去し、
- * `serializeAnchorPlacement` は `'default'` を固定値出力する shim を持つ。
- * 旧 .gimoza（layers: [l1, l2]、anchor.placement.layerId: 'l1' など）を
- * 読込→再保存すると anchor 側だけ `'default'` に置き換わり、`world.layers` には
- * `'default'` が含まれない状態が生まれる。`validateLayerReferences` を残したままだと
- * その再保存ファイルが「next open で reject」になり、ユーザーから観たら「保存できるが次に開けない」
- * という壊れた挙動になる。本サブフェーズで `validateLayerReferences` を撤去し、
- * 開発ガイド §6.4.15「永続化 shim は read/write/validate/round-trip を同期する」を新規教訓として追加した。
+ * Phase 2-D-6-3c で `JsonAnchorPlacement.layerId` を JSON 型から完全撤去した。
+ * 要件定義書 §2.5.2「旧モデル（レイヤー概念を含む形式バージョン）のファイルは
+ * 互換性なしとして読み込みエラーで拒否する。マイグレーションは提供しない。」
+ * 現状.md §6.2「既存 .gimoza 互換性は破棄する（移行マイグレーションは実装しない）」。
  *
- * このテストは「保存後に同じファイルを再ロードできる」往復不変条件を固定する。
+ * 旧 .gimoza（anchor.placement.layerId フィールドを含む形式）は本サブフェーズで
+ * 互換破棄が完成する地点となり、読み込み時に `SerializationError` で拒否される。
+ *
+ * 開発ガイド §6.4.15「永続化 shim は read / write / validate / round-trip test を
+ * 同じ変更単位で同期する」に従い、本テストでは
+ *   - 旧形式（layerId 含む）→ 読み込み拒否
+ *   - 新形式（layerId なし）→ 読込 → 再保存 → 再読み込みが通る
+ *   - 新形式の再保存ファイルに `placement.layerId` フィールドが残っていない
+ * を固定する。
  */
-describe('永続化 shim の round-trip 整合性 (Phase 2-D-6-3b)', () => {
-  it('複数 layers を持つ旧形式 → 再保存ファイルが validateJsonWorld を通る', async () => {
-    const { serialize, deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+describe('互換破棄の検証 (Phase 2-D-6-3c)', () => {
+  it('旧形式（placement.layerId を含む）は読み込みエラーで拒否される', async () => {
+    const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+    const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
     const oldJsonString = JSON.stringify({
       version: '1.0.0',
       layers: [
@@ -227,22 +231,14 @@ describe('永続化 shim の round-trip 整合性 (Phase 2-D-6-3b)', () => {
       metadata: DEFAULT_METADATA,
     });
 
-    // 旧形式 → in-memory World
-    const world = deserialize(oldJsonString);
-    // in-memory → 再保存
-    const resavedJsonString = serialize(world);
-    const resaved = JSON.parse(resavedJsonString);
-
-    // 再保存ファイルが validateJsonWorld を通る（layerId が 'default' に置き換わっても reject されない）
-    const errors = validateJsonWorld(resaved);
-    expect(errors).toEqual([]);
-
-    // さらにこのファイルを再ロードできる（例外を投げない）
-    expect(() => deserialize(resavedJsonString)).not.toThrow();
+    expect(() => deserialize(oldJsonString)).toThrow(SerializationError);
+    expect(() => deserialize(oldJsonString)).toThrow('placement.layerId を含む形式');
+    expect(() => deserialize(oldJsonString)).toThrow('新規プロジェクトを開始してください');
   });
 
-  it('default layer を持たない旧形式でも再保存後に再ロードできる', async () => {
-    const { serialize, deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+  it('カスタムレイヤーを持つ旧形式も同様に拒否される', async () => {
+    const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+    const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
     const oldJsonString = JSON.stringify({
       version: '1.0.0',
       layers: [{ id: 'custom-layer', name: 'Custom', order: 0, visible: true, opacity: 1.0 }],
@@ -263,8 +259,47 @@ describe('永続化 shim の round-trip 整合性 (Phase 2-D-6-3b)', () => {
       metadata: DEFAULT_METADATA,
     });
 
-    const world = deserialize(oldJsonString);
+    expect(() => deserialize(oldJsonString)).toThrow(SerializationError);
+    expect(() => deserialize(oldJsonString)).toThrow('placement.layerId を含む形式');
+  });
+
+  it('新形式（layerId なし）→ 再保存 → 再読み込みは正常に往復する', async () => {
+    const { serialize, deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+    const newJsonString = JSON.stringify({
+      version: '1.0.0',
+      layers: [{ id: 'default', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
+      vertices: [{ id: 'v1', x: 0, y: 0 }],
+      features: [{
+        id: 'f1',
+        featureType: 'Point',
+        anchors: [{
+          id: 'a1',
+          timeRange: { start: { year: 100 } },
+          property: { name: 'test', description: '' },
+          shape: { type: 'Point', vertexId: 'v1' },
+          placement: { parentId: null, childIds: [], isTopLevel: true },
+        }],
+      }],
+      sharedVertexGroups: [],
+      timelineMarkers: [],
+      metadata: DEFAULT_METADATA,
+    });
+
+    // 新形式 → in-memory World
+    const world = deserialize(newJsonString);
+    // in-memory → 再保存
     const resavedJsonString = serialize(world);
+    const resaved = JSON.parse(resavedJsonString);
+
+    // 再保存ファイルの placement に layerId が含まれない
+    const resavedPlacement = resaved.features[0].anchors[0].placement;
+    expect('layerId' in resavedPlacement).toBe(false);
+
+    // 再保存ファイルが validateJsonWorld を通る
+    const errors = validateJsonWorld(resaved);
+    expect(errors).toEqual([]);
+
+    // さらにこのファイルを再ロードできる（例外を投げない）
     expect(() => deserialize(resavedJsonString)).not.toThrow();
   });
 });

@@ -42,7 +42,7 @@ function makePointFeature(
     { start: new TimePoint(0) },
     { name: id, description: '' },
     { type: 'Point', vertexId },
-    { layerId, parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
   return new Feature(id, 'Point', [anchor]);
 }
@@ -58,7 +58,7 @@ function makeLineFeature(
     { start: new TimePoint(0) },
     { name: id, description: '' },
     { type: 'LineString', vertexIds },
-    { layerId, parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
   return new Feature(id, 'Line', [anchor]);
 }
@@ -75,7 +75,7 @@ function makePolygonFeature(
     { start: new TimePoint(0) },
     { name: id, description: '' },
     { type: 'Polygon', rings: [ring] },
-    { layerId, parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
   return new Feature(id, 'Polygon', [anchor]);
 }
@@ -290,7 +290,7 @@ describe('hitTest', () => {
         { start: new TimePoint(0) },
         { name: 'hole-wrap', description: '' },
         shape,
-        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+        { parentId: null, childIds: [], isTopLevel: true }
       );
       const feature = new Feature('pg-hole-wrap', 'Polygon', [anchor]);
       const sceneEntries = collectMapSceneEntries([feature], time, toCoordsMap(vertices));
@@ -323,7 +323,7 @@ describe('hitTest', () => {
         { start: new TimePoint(0) },
         { name: 'hole-wrap', description: '' },
         shape,
-        { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+        { parentId: null, childIds: [], isTopLevel: true }
       );
       const feature = new Feature('pg-hole-wrap', 'Polygon', [anchor]);
       const sceneEntries = collectMapSceneEntries([feature], time, toCoordsMap(vertices));

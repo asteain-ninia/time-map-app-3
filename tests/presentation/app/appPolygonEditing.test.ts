@@ -49,7 +49,7 @@ function makePolygonFeature(
         type: 'Polygon',
         rings: rings.map((ring) => new Ring(ring.id, ring.vertexIds, ring.ringType, ring.parentId)),
       },
-      { layerId, parentId: null, childIds: [], isTopLevel: true }
+      { parentId: null, childIds: [], isTopLevel: true }
     ),
   ]);
 }
@@ -61,7 +61,7 @@ function makePointFeature(featureId: string, layerId: string, vertexId: string):
       { start: time100 },
       { name: featureId, description: '' },
       { type: 'Point', vertexId },
-      { layerId, parentId: null, childIds: [], isTopLevel: true }
+      { parentId: null, childIds: [], isTopLevel: true }
     ),
   ]);
 }
@@ -73,7 +73,7 @@ function makeLineFeature(featureId: string, layerId: string, vertexIds: string[]
       { start: time100 },
       { name: featureId, description: '' },
       { type: 'LineString', vertexIds },
-      { layerId, parentId: null, childIds: [], isTopLevel: true }
+      { parentId: null, childIds: [], isTopLevel: true }
     ),
   ]);
 }
@@ -384,7 +384,7 @@ describe('appPolygonEditing', () => {
           type: 'Polygon',
           rings: [new Ring('t-ring', ['t1', 't2', 't3', 't4'], 'territory', null)],
         },
-        { layerId: 'layer-1', parentId: null, childIds: ['child-id'], isTopLevel: true }
+        { parentId: null, childIds: ['child-id'], isTopLevel: true }
       ),
     ]);
     // コンテナ: shape を持たないため EdgeSlide 対象外
@@ -394,7 +394,7 @@ describe('appPolygonEditing', () => {
         { start: time100 },
         { name: 'container', description: '' },
         undefined,
-        { layerId: 'layer-1', parentId: null, childIds: ['child-id'], isTopLevel: true }
+        { parentId: null, childIds: ['child-id'], isTopLevel: true }
       ),
     ]);
 

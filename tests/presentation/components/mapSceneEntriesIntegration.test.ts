@@ -42,7 +42,7 @@ describe('sceneEntries 経路の対概念整合性', () => {
         { start: new TimePoint(0) },
         { name: id, description: '' },
         { type: 'Point', vertexId },
-        { layerId, parentId: null, childIds: [], isTopLevel: true }
+        { parentId: null, childIds: [], isTopLevel: true }
       ),
     ]);
   }
@@ -57,7 +57,7 @@ describe('sceneEntries 経路の対概念整合性', () => {
           type: 'Polygon',
           rings: [new Ring(`${id}-ring`, vertexIds, 'territory', null)],
         },
-        { layerId, parentId: null, childIds: [], isTopLevel: true }
+        { parentId: null, childIds: [], isTopLevel: true }
       ),
     ]);
   }
@@ -82,7 +82,7 @@ describe('sceneEntries 経路の対概念整合性', () => {
         { start: new TimePoint(0) },
         { name: id, description: '' },
         shape,
-        { layerId, parentId: null, childIds, isTopLevel: true }
+        { parentId: null, childIds, isTopLevel: true }
       ),
     ]);
   }
@@ -144,7 +144,7 @@ describe('sceneEntries 経路の対概念整合性', () => {
           { start: new TimePoint(3000) },
           { name: 'inactive', description: '' },
           { type: 'Point', vertexId: 'v-inactive' },
-          { layerId: 'layer-a', parentId: null, childIds: [], isTopLevel: true }
+          { parentId: null, childIds: [], isTopLevel: true }
         ),
       ]),
     ];

@@ -40,13 +40,8 @@ export interface AnchorProperty {
  * 所属と階層情報。
  * 不変条件: 同一錨内で `isTopLevel === (parentId === null)`。
  * 最上位フラグは錨ごとに保持することで時間軸上の位相変化（独立 / 帰属 / 連邦化）を表現できる。
- *
- * `layerId` は Phase 2-D-6-3b で in-memory ドメイン経路からの読み取りを撤去済み。
- * Phase 2-D-6-3c（JSON 永続化撤去）で完全削除予定。テスト fixture / JSON migration が
- * リテラルとして書き込み続けるための一時的 optional として保持中。
  */
 export interface AnchorPlacement {
-  readonly layerId?: string;
   readonly parentId: string | null;
   readonly childIds: readonly string[];
   readonly isTopLevel: boolean;

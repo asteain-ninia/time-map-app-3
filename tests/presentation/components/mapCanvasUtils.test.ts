@@ -29,7 +29,7 @@ function createPolygonAnchor(): FeatureAnchor {
         new Ring('ring-2', ['v4', 'v5', 'v6'], 'hole', 'ring-1'),
       ],
     },
-    { layerId: 'layer-1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
 }
 
@@ -39,7 +39,7 @@ function createPointAnchor(): FeatureAnchor {
     { start: new TimePoint(100) },
     { name: '点', description: '' },
     { type: 'Point', vertexId: 'point-v1' },
-    { layerId: 'layer-1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
 }
 
@@ -49,7 +49,7 @@ function createLineAnchor(): FeatureAnchor {
     { start: new TimePoint(100) },
     { name: '線', description: '' },
     { type: 'LineString', vertexIds: ['line-v1', 'line-v2', 'line-v3'] },
-    { layerId: 'layer-1', parentId: null, childIds: [], isTopLevel: true }
+    { parentId: null, childIds: [], isTopLevel: true }
   );
 }
 
@@ -65,7 +65,7 @@ function createPointFeature(
       { start: time },
       { name: featureId, description: '' },
       { type: 'Point', vertexId },
-      { layerId, parentId: null, childIds: [], isTopLevel: true }
+      { parentId: null, childIds: [], isTopLevel: true }
     ),
   ]);
 }

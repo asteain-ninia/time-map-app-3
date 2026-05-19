@@ -19,7 +19,7 @@ function createAnchor(overrides?: {
     overrides?.timeRange ?? { start: new TimePoint(1000), end: new TimePoint(2000) },
     overrides?.property ?? { name: 'テスト国', description: '説明' },
     overrides && 'shape' in overrides ? overrides.shape : { type: 'Point', vertexId: 'v1' },
-    overrides?.placement ?? { layerId: 'l1', parentId: null, childIds: [], isTopLevel: true }
+    overrides?.placement ?? { parentId: null, childIds: [], isTopLevel: true }
   );
 }
 
