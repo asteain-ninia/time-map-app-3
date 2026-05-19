@@ -21,7 +21,7 @@ describe('MoveVertexCommand', () => {
     undoRedo = new UndoRedoManager();
 
     // 点を追加して頂点IDを取得
-    const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', new TimePoint(1000));
+    const feature = addFeature.addPoint(new Coordinate(10, 20), new TimePoint(1000));
     const anchor = feature.anchors[0];
     if (anchor.shape.type === 'Point') {
       vertexId = anchor.shape.vertexId;
@@ -92,7 +92,7 @@ describe('MoveVertexCommand', () => {
   });
 
   it('共有頂点グループに属する頂点を移動すると関連頂点も連動する', () => {
-    const other = addFeature.addPoint(new Coordinate(10, 20), 'l1', new TimePoint(1000));
+    const other = addFeature.addPoint(new Coordinate(10, 20), new TimePoint(1000));
     const otherVertexId =
       other.anchors[0].shape.type === 'Point' ? other.anchors[0].shape.vertexId : '';
     const sharedGroups = addFeature.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
@@ -116,7 +116,7 @@ describe('MoveVertexCommand', () => {
   });
 
   it('mergeTargetVertexIdを指定するとドロップ時に共有頂点化する', () => {
-    const target = addFeature.addPoint(new Coordinate(50, 60), 'l1', new TimePoint(1000));
+    const target = addFeature.addPoint(new Coordinate(50, 60), new TimePoint(1000));
     const targetVertexId =
       target.anchors[0].shape.type === 'Point' ? target.anchors[0].shape.vertexId : '';
 
@@ -146,7 +146,6 @@ describe('MoveVertexCommand', () => {
   it('同一線形内の別頂点には共有頂点化しない', () => {
     const line = addFeature.addLine(
       [new Coordinate(10, 20), new Coordinate(50, 60)],
-      'l1',
       new TimePoint(1000)
     );
     const lineAnchor = line.anchors[0];
@@ -181,7 +180,6 @@ describe('MoveVertexCommand', () => {
         new Coordinate(30, 30),
         new Coordinate(0, 30),
       ],
-      'l1',
       time
     );
 
@@ -242,10 +240,9 @@ describe('MoveVertexCommand', () => {
     const time = new TimePoint(1000);
     const line = addFeature.addLine(
       [new Coordinate(10, 20), new Coordinate(30, 40), new Coordinate(50, 60)],
-      'l1',
       time
     );
-    const target = addFeature.addPoint(new Coordinate(100, 80), 'l1', time);
+    const target = addFeature.addPoint(new Coordinate(100, 80), time);
 
     const lineAnchor = line.anchors[0];
     const lineVertexIds =
@@ -293,7 +290,6 @@ describe('MoveVertexCommand', () => {
         new Coordinate(10, 10),
         new Coordinate(0, 10),
       ],
-      'l1',
       time
     );
     const anchor = polygon.getActiveAnchor(time)!;
@@ -322,7 +318,6 @@ describe('MoveVertexCommand', () => {
         new Coordinate(20, 20),
         new Coordinate(0, 20),
       ],
-      'l1',
       time
     );
 

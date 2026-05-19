@@ -14,8 +14,8 @@ describe('appFeatureDragging', () => {
   it('緯度クランプ後のプレビューも開始時スナップショットへ厳密復元する', () => {
     const addFeature = new AddFeatureUseCase();
     const time = new TimePoint(2000);
-    const pointA = addFeature.addPoint(new Coordinate(10, 89), 'l1', time);
-    const pointB = addFeature.addPoint(new Coordinate(10, 89), 'l1', time);
+    const pointA = addFeature.addPoint(new Coordinate(10, 89), time);
+    const pointB = addFeature.addPoint(new Coordinate(10, 89), time);
     const anchorA = pointA.getActiveAnchor(time)!;
     const anchorB = pointB.getActiveAnchor(time)!;
     if (anchorA.shape.type !== 'Point' || anchorB.shape.type !== 'Point') {

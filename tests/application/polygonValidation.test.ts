@@ -71,7 +71,6 @@ describe('polygonValidation', () => {
   it('createTransientPolygonFeatureは3頂点から一時ポリゴンを生成する', () => {
     const { feature, vertices } = createTransientPolygonFeature(
       [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-      'layer-1',
       time100,
       'temp-feature',
       'temp-ring',
@@ -92,7 +91,6 @@ describe('polygonValidation', () => {
   it('createTransientPolygonFeatureは緯度を±90にクランプする', () => {
     const { vertices } = createTransientPolygonFeature(
       [new Coordinate(0, 120), new Coordinate(10, -120), new Coordinate(20, 45)],
-      'layer-1',
       time100
     );
 

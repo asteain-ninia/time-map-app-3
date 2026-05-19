@@ -10,7 +10,7 @@
  */
 
 import type { TimePoint } from './TimePoint';
-import type { FeatureAnchor, AnchorProperty, FeatureShape, AnchorPlacement, PolygonStyle } from './FeatureAnchor';
+import type { FeatureAnchor, PolygonStyle } from './FeatureAnchor';
 import type { Feature } from '@domain/entities/Feature';
 
 /** 表示用の読み取り専用投影 */
@@ -29,8 +29,6 @@ export class PropertyProjection {
   readonly end: TimePoint | undefined;
   /** 地物種別 */
   readonly featureType: string;
-  /** 所属レイヤーID */
-  readonly layerId: string;
   /** 親地物ID */
   readonly parentId: string | null;
   /** 子地物ID群 */
@@ -52,7 +50,6 @@ export class PropertyProjection {
     start: TimePoint;
     end: TimePoint | undefined;
     featureType: string;
-    layerId: string;
     parentId: string | null;
     childIds: readonly string[];
     isTopLevel: boolean;
@@ -67,7 +64,6 @@ export class PropertyProjection {
     this.start = params.start;
     this.end = params.end;
     this.featureType = params.featureType;
-    this.layerId = params.layerId;
     this.parentId = params.parentId;
     this.childIds = params.childIds;
     this.isTopLevel = params.isTopLevel;
@@ -93,7 +89,6 @@ export function projectFromAnchor(
     start: anchor.timeRange.start,
     end: anchor.timeRange.end,
     featureType,
-    layerId: anchor.placement.layerId,
     parentId: anchor.placement.parentId,
     childIds: anchor.placement.childIds,
     isTopLevel: anchor.placement.isTopLevel,

@@ -91,7 +91,7 @@ export class MergeFeatureCommand implements UndoableCommand {
       }
       validationTargets.push({
         id: feature.id,
-        layerId: anchor.placement.layerId,
+        layerId: 'default',
         hasChildren: anchor.placement.childIds.length > 0,
       });
 

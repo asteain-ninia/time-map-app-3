@@ -212,11 +212,6 @@
       </div>
     {/if}
 
-    <div class="field">
-      <label class="field-label">レイヤー</label>
-      <span class="field-value">{anchor.placement.layerId}</span>
-    </div>
-
     {#if anchor.shape?.type === 'Polygon'}
       <div class="field">
         <label class="field-label">親</label>

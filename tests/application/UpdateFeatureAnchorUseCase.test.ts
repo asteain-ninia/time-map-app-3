@@ -9,7 +9,6 @@ import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 describe('UpdateFeatureAnchorUseCase', () => {
   let addFeature: AddFeatureUseCase;
   let anchorEdit: UpdateFeatureAnchorUseCase;
-  const layerId = 'l1';
 
   beforeEach(() => {
     addFeature = new AddFeatureUseCase();
@@ -24,7 +23,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('アクティブな錨を分割して新しい錨を作成できる', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
 
@@ -44,7 +42,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('分割された錨は元の錨の状態をコピーする', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000),
         '城'
       );
@@ -53,13 +50,11 @@ describe('UpdateFeatureAnchorUseCase', () => {
 
       expect(newAnchor.property.name).toBe('城');
       expect(newAnchor.shape.type).toBe('Point');
-      expect(newAnchor.placement.layerId).toBe(layerId);
     });
 
     it('元の錨に終了時刻がある場合、新しい錨に引き継がれる', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
 
@@ -77,7 +72,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('分割時刻が既存錨の開始時刻と同じだとエラー', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
 
@@ -89,7 +83,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('アクティブな錨がない時刻だとエラー', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
 
@@ -113,7 +106,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('3回分割して4つの錨を持てる', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
 
@@ -137,7 +129,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('錨のプロパティを更新できる', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000),
         '旧名'
       );
@@ -156,7 +147,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('存在しない錨でエラー', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
 
@@ -173,7 +163,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('錨の時間範囲を更新できる', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
       const anchorId = feature.anchors[0].id;
@@ -191,7 +180,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('終了時刻が開始時刻より前だとエラー', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
       const anchorId = feature.anchors[0].id;
@@ -209,7 +197,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('錨の形状を更新できる', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
       const anchorId = feature.anchors[0].id;
@@ -230,7 +217,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('錨の配置を更新できる', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
       const anchorId = feature.anchors[0].id;
@@ -238,11 +224,10 @@ describe('UpdateFeatureAnchorUseCase', () => {
       anchorEdit.updatePlacement(
         feature.id,
         anchorId,
-        createAnchorPlacement('l2', 'parent1', ['child1'])
+        createAnchorPlacement('parent1', ['child1'])
       );
 
       const updated = addFeature.getFeatureById(feature.id)!;
-      expect(updated.anchors[0].placement.layerId).toBe('l2');
       expect(updated.anchors[0].placement.parentId).toBe('parent1');
       expect(updated.anchors[0].placement.childIds).toEqual(['child1']);
       expect(updated.anchors[0].placement.isTopLevel).toBe(false);
@@ -251,7 +236,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('updatePlacement は不変条件違反の placement を渡されても再派生する', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
       const anchorId = feature.anchors[0].id;
@@ -273,7 +257,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('錨を削除できる', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
       // 2つ目の錨を追加
@@ -292,7 +275,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('最後の錨を削除すると地物自体が削除される', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
       const anchorId = feature.anchors[0].id;
@@ -306,7 +288,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('地物削除時にfeature:removedイベントが発行される', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
 
@@ -322,7 +303,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('存在しない錨でエラー', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
 
@@ -336,7 +316,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('地物の全錨を取得できる', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
       anchorEdit.addAnchor(feature.id, new TimePoint(1500));
@@ -350,7 +329,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('錨追加時にfeature:addedイベントが発行される', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
 
@@ -366,7 +344,6 @@ describe('UpdateFeatureAnchorUseCase', () => {
     it('プロパティ更新時にfeature:addedイベントが発行される', () => {
       const feature = addFeature.addPoint(
         new Coordinate(10, 20),
-        layerId,
         new TimePoint(1000)
       );
 

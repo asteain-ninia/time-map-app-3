@@ -28,7 +28,7 @@ function makeFeature(
   childIds: readonly string[] = [],
   featureType: Feature['featureType'] = 'Polygon'
 ): Feature {
-  const placement: AnchorPlacement = createAnchorPlacement('l1', parentId, childIds);
+  const placement: AnchorPlacement = createAnchorPlacement(parentId, childIds);
   const shape = featureType === 'Polygon'
     ? { type: 'Polygon' as const, rings: [new Ring(`${id}-ring`, ['v1', 'v2', 'v3'], 'territory', null)] }
     : featureType === 'Point'
@@ -154,7 +154,7 @@ describe('parentTransferDialogUtils', () => {
     });
 
     expect(candidates).toEqual([
-      { id: 'durable-parent', name: 'durable-parent', layerId: 'l1' },
+      { id: 'durable-parent', name: 'durable-parent' },
     ]);
   });
 

@@ -21,7 +21,6 @@ describe('AddFeatureUseCase', () => {
       useCase = new AddFeatureUseCase();
       const feature = useCase.addPoint(
         new Coordinate(10, 20),
-        'layer1',
         time
       );
       expect(feature.featureType).toBe('Point');
@@ -32,7 +31,6 @@ describe('AddFeatureUseCase', () => {
       useCase = new AddFeatureUseCase();
       const feature = useCase.addPoint(
         new Coordinate(10, 20),
-        'layer1',
         time
       );
       const anchor = feature.anchors[0];
@@ -45,20 +43,10 @@ describe('AddFeatureUseCase', () => {
       }
     });
 
-    it('レイヤーIDが錨のplacementに設定される', () => {
-      useCase = new AddFeatureUseCase();
-      const feature = useCase.addPoint(
-        new Coordinate(0, 0),
-        'my-layer',
-        time
-      );
-      expect(feature.anchors[0].placement.layerId).toBe('my-layer');
-    });
-
     it('現在時刻が錨の開始時刻になる', () => {
       useCase = new AddFeatureUseCase();
       const t = new TimePoint(500, 3, 15);
-      const feature = useCase.addPoint(new Coordinate(0, 0), 'l1', t);
+      const feature = useCase.addPoint(new Coordinate(0, 0), t);
       expect(feature.anchors[0].timeRange.start.equals(t)).toBe(true);
       expect(feature.anchors[0].timeRange.end).toBeUndefined();
     });
@@ -67,7 +55,6 @@ describe('AddFeatureUseCase', () => {
       useCase = new AddFeatureUseCase();
       const feature = useCase.addPoint(
         new Coordinate(0, 0),
-        'l1',
         time,
         '首都'
       );
@@ -76,7 +63,7 @@ describe('AddFeatureUseCase', () => {
 
     it('名前を省略すると自動採番される', () => {
       useCase = new AddFeatureUseCase();
-      const f1 = useCase.addPoint(new Coordinate(0, 0), 'l1', time);
+      const f1 = useCase.addPoint(new Coordinate(0, 0), time);
       expect(f1.anchors[0].property.name).toMatch(/^点/);
     });
 
@@ -85,7 +72,7 @@ describe('AddFeatureUseCase', () => {
       const listener = vi.fn();
       const unsub = eventBus.on('feature:added', listener);
 
-      const feature = useCase.addPoint(new Coordinate(0, 0), 'l1', time);
+      const feature = useCase.addPoint(new Coordinate(0, 0), time);
 
       expect(listener).toHaveBeenCalledWith({ featureId: feature.id });
       unsub();
@@ -97,7 +84,6 @@ describe('AddFeatureUseCase', () => {
       useCase = new AddFeatureUseCase();
       const feature = useCase.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 10)],
-        'l1',
         time
       );
       expect(feature.featureType).toBe('Line');
@@ -107,7 +93,6 @@ describe('AddFeatureUseCase', () => {
       useCase = new AddFeatureUseCase();
       const feature = useCase.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 10), new Coordinate(20, 0)],
-        'l1',
         time
       );
       const anchor = feature.anchors[0];
@@ -120,7 +105,7 @@ describe('AddFeatureUseCase', () => {
     it('2点未満ならエラーを投げる', () => {
       useCase = new AddFeatureUseCase();
       expect(() =>
-        useCase.addLine([new Coordinate(0, 0)], 'l1', time)
+        useCase.addLine([new Coordinate(0, 0)], time)
       ).toThrow('2点以上');
     });
 
@@ -131,7 +116,6 @@ describe('AddFeatureUseCase', () => {
 
       useCase.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 10)],
-        'l1',
         time
       );
 
@@ -145,7 +129,6 @@ describe('AddFeatureUseCase', () => {
       useCase = new AddFeatureUseCase();
       const feature = useCase.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1',
         time
       );
       expect(feature.featureType).toBe('Polygon');
@@ -155,7 +138,6 @@ describe('AddFeatureUseCase', () => {
       useCase = new AddFeatureUseCase();
       const feature = useCase.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1',
         time
       );
       const anchor = feature.anchors[0];
@@ -172,7 +154,6 @@ describe('AddFeatureUseCase', () => {
       expect(() =>
         useCase.addPolygon(
           [new Coordinate(0, 0), new Coordinate(10, 0)],
-          'l1',
           time
         )
       ).toThrow('3点以上');
@@ -185,7 +166,6 @@ describe('AddFeatureUseCase', () => {
 
       useCase.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1',
         time
       );
 
@@ -197,7 +177,6 @@ describe('AddFeatureUseCase', () => {
       useCase = new AddFeatureUseCase();
       const feature = useCase.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1',
         time,
         undefined,
         {
@@ -220,10 +199,9 @@ describe('AddFeatureUseCase', () => {
   describe('getFeatures / getVertices', () => {
     it('追加した地物の一覧を取得できる', () => {
       useCase = new AddFeatureUseCase();
-      useCase.addPoint(new Coordinate(0, 0), 'l1', time);
+      useCase.addPoint(new Coordinate(0, 0), time);
       useCase.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 10)],
-        'l1',
         time
       );
       expect(useCase.getFeatures()).toHaveLength(2);
@@ -231,7 +209,7 @@ describe('AddFeatureUseCase', () => {
 
     it('追加した頂点がverticesマップに含まれる', () => {
       useCase = new AddFeatureUseCase();
-      useCase.addPoint(new Coordinate(5, 10), 'l1', time);
+      useCase.addPoint(new Coordinate(5, 10), time);
       const vertices = useCase.getVertices();
       expect(vertices.size).toBe(1);
       const vertex = [...vertices.values()][0];
@@ -241,7 +219,7 @@ describe('AddFeatureUseCase', () => {
 
     it('getFeatureById で個別取得できる', () => {
       useCase = new AddFeatureUseCase();
-      const feature = useCase.addPoint(new Coordinate(0, 0), 'l1', time);
+      const feature = useCase.addPoint(new Coordinate(0, 0), time);
       expect(useCase.getFeatureById(feature.id)).toBe(feature);
     });
 
@@ -276,7 +254,7 @@ describe('AddFeatureUseCase', () => {
 
     it('復元前のデータは上書きされる', () => {
       useCase = new AddFeatureUseCase();
-      useCase.addPoint(new Coordinate(0, 0), 'l1', time);
+      useCase.addPoint(new Coordinate(0, 0), time);
       expect(useCase.getFeatures()).toHaveLength(1);
 
       useCase.restore(new Map(), new Map());
@@ -303,7 +281,7 @@ describe('AddFeatureUseCase', () => {
       useCase.restore(features, vertices);
 
       // 新しく追加
-      const newFeature = useCase.addPoint(new Coordinate(50, 60), 'l1', time);
+      const newFeature = useCase.addPoint(new Coordinate(50, 60), time);
       // f-10の次はf-11以降
       expect(newFeature.id).not.toBe('f-10');
       // IDの重複なし
@@ -334,7 +312,6 @@ describe('AddFeatureUseCase', () => {
       // 新しいポリゴンを追加してリングIDが衝突しないことを確認
       const newPoly = useCase.addPolygon(
         [new Coordinate(20, 20), new Coordinate(30, 20), new Coordinate(30, 30)],
-        'l1',
         time
       );
       if (newPoly.anchors[0].shape.type === 'Polygon') {
@@ -344,8 +321,8 @@ describe('AddFeatureUseCase', () => {
 
     it('getFeaturesMapで全地物のMapを取得できる', () => {
       useCase = new AddFeatureUseCase();
-      useCase.addPoint(new Coordinate(0, 0), 'l1', time);
-      useCase.addPoint(new Coordinate(10, 10), 'l1', time);
+      useCase.addPoint(new Coordinate(0, 0), time);
+      useCase.addPoint(new Coordinate(10, 10), time);
 
       const map = useCase.getFeaturesMap();
       expect(map.size).toBe(2);
@@ -356,14 +333,14 @@ describe('AddFeatureUseCase', () => {
   describe('座標保存', () => {
     it('経度は生値のまま保持される', () => {
       useCase = new AddFeatureUseCase();
-      useCase.addPoint(new Coordinate(200, 0), 'l1', time);
+      useCase.addPoint(new Coordinate(200, 0), time);
       const vertex = [...useCase.getVertices().values()][0];
       expect(vertex.x).toBe(200);
     });
 
     it('緯度がクランプされる', () => {
       useCase = new AddFeatureUseCase();
-      useCase.addPoint(new Coordinate(0, 100), 'l1', time);
+      useCase.addPoint(new Coordinate(0, 100), time);
       const vertex = [...useCase.getVertices().values()][0];
       expect(vertex.y).toBe(90);
     });

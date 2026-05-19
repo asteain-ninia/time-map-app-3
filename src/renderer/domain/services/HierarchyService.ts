@@ -14,7 +14,7 @@
  */
 
 import type { Feature } from '@domain/entities/Feature';
-import type { FeatureAnchor, FeatureShape } from '@domain/value-objects/FeatureAnchor';
+import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { RingCoords } from './GeometryService';
@@ -378,9 +378,6 @@ export function shouldParentDisappear(
  * 親子関係を設定するための錨更新情報を生成する
  *
  * @returns 更新が必要な錨の [featureId, updatedAnchor] ペアの配列
- *
- * ※ `placement.layerId` の引き渡しは Phase 2-D-6（`placement.layerId` フィールド削除）で消える経路。
- *   現時点では `createAnchorPlacement` の第1引数として必須のため既存値を透過保持する。
  */
 export function buildParentChildLink(
   parentFeature: Feature,
@@ -393,7 +390,6 @@ export function buildParentChildLink(
 
   const updatedParentAnchor = parentActive.withPlacement(
     createAnchorPlacement(
-      parentActive.placement.layerId,
       parentActive.placement.parentId,
       [...parentActive.placement.childIds, childFeature.id]
     )
@@ -401,7 +397,6 @@ export function buildParentChildLink(
 
   const updatedChildAnchor = childActive.withPlacement(
     createAnchorPlacement(
-      childActive.placement.layerId,
       parentFeature.id,
       childActive.placement.childIds
     )
@@ -415,9 +410,6 @@ export function buildParentChildLink(
 
 /**
  * 親子関係を解除するための錨更新情報を生成する
- *
- * ※ `placement.layerId` の引き渡しは Phase 2-D-6（`placement.layerId` フィールド削除）で消える経路。
- *   現時点では `createAnchorPlacement` の第1引数として必須のため既存値を透過保持する。
  */
 export function buildParentChildUnlink(
   parentFeature: Feature,
@@ -430,7 +422,6 @@ export function buildParentChildUnlink(
 
   const updatedParentAnchor = parentActive.withPlacement(
     createAnchorPlacement(
-      parentActive.placement.layerId,
       parentActive.placement.parentId,
       parentActive.placement.childIds.filter(id => id !== childFeature.id)
     )
@@ -438,7 +429,6 @@ export function buildParentChildUnlink(
 
   const updatedChildAnchor = childActive.withPlacement(
     createAnchorPlacement(
-      childActive.placement.layerId,
       null,
       childActive.placement.childIds
     )

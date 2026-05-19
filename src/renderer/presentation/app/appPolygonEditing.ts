@@ -236,16 +236,14 @@ export function validatePendingPolygon(
   coords: readonly Coordinate[],
   addToolType: AddToolType,
   currentTime: TimePoint | undefined,
-  layerId: string | null,
   features: readonly Feature[],
   vertices: ReadonlyMap<string, Vertex>
 ): string | null {
-  if (addToolType !== 'polygon' || !currentTime || !layerId) return null;
+  if (addToolType !== 'polygon' || !currentTime) return null;
 
   try {
     const transient = createTransientPolygonFeature(
       coords,
-      layerId,
       currentTime,
       'pending-drawing',
       'pending-drawing-ring',

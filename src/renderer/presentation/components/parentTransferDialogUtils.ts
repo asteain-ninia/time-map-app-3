@@ -8,7 +8,6 @@ export type ParentTransferScope = 'selected' | 'children';
 export interface ParentCandidateItem {
   readonly id: string;
   readonly name: string;
-  readonly layerId: string;
 }
 
 export interface ParentTransferConfirmDetail {
@@ -144,7 +143,6 @@ export function buildParentCandidateItems(params: {
       return {
         id: feature.id,
         name: anchor.property.name || feature.id,
-        layerId: anchor.placement.layerId,
       };
     })
     .filter((item): item is ParentCandidateItem => item !== null)
@@ -161,13 +159,11 @@ export function buildNewFeatureParentCandidateItems(params: {
   return features
     .map((feature) => {
       const anchor = getActivePolygonAnchor(feature, time);
-      // 所属変更の既存仕様に合わせ、親候補はレイヤーで絞り込まない。
       // 要件定義書 §2.3.2: 現行の新規面は終了時刻なし。終端指定を追加したら第3引数を置き換える。
       if (!anchor || !featureCoversRange(feature, time, undefined)) return null;
       return {
         id: feature.id,
         name: anchor.property.name || feature.id,
-        layerId: anchor.placement.layerId,
       };
     })
     .filter((item): item is ParentCandidateItem => item !== null)

@@ -72,22 +72,14 @@ function validateTimeRanges(json: JsonWorld): string[] {
   return errors;
 }
 
-function validateLayerReferences(json: JsonWorld): string[] {
-  const errors: string[] = [];
-  const layerIds = new Set(json.layers.map((layer) => layer.id));
-
-  for (const feature of json.features) {
-    for (const anchor of feature.anchors) {
-      if (!layerIds.has(anchor.placement.layerId)) {
-        errors.push(
-          `Feature "${feature.id}" anchor "${anchor.id}" references non-existent layer "${anchor.placement.layerId}"`
-        );
-      }
-    }
-  }
-
-  return errors;
-}
+// Phase 2-D-6-3b で `validateLayerReferences` を撤去。
+// in-memory ドメイン経路から `placement.layerId` が消えた一方で、
+// `serializeAnchorPlacement` は `'default'` を固定値出力する shim を持つ。
+// 旧 .gimoza（layers: [l1, l2] など）を読込→再保存すると anchor 側だけ
+// `'default'` に置き換わり、`world.layers` に `'default'` がない状態が生まれる。
+// この再保存ファイルを再ロードする経路を validateLayerReferences が拒否していたため、
+// レビュー指摘（永続化 shim の read/write/validate 非同期）を受けて前倒し撤去した。
+// `placement.layerId` は D-6-3c で JSON 型側からも完全撤去予定。
 
 function validatePlacementInvariants(json: JsonWorld): string[] {
   const errors: string[] = [];
@@ -301,7 +293,6 @@ function validateJsonWorld(json: JsonWorld): string[] {
   return [
     ...validateOrphanedVertices(json),
     ...validateTimeRanges(json),
-    ...validateLayerReferences(json),
     ...validatePlacementInvariants(json),
     ...validateShapePresence(json),
     ...validateSharedVertexGroups(json),

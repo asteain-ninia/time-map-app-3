@@ -203,26 +203,24 @@
     // 描画確定時のコールバック — UndoRedoManager経由で実行
     const targetLayer = getAddTargetLayer();
     if (!targetLayer) return;
-    const layerId = targetLayer.id;
     const time = timelineQueries.getCurrentTime();
-    const polygonIndexInLayer = features.filter((feature) => {
+    const polygonIndex = features.filter((feature) => {
       const anchor = feature.getActiveAnchor(time);
-      return anchor?.shape?.type === 'Polygon' && anchor.placement.layerId === layerId;
+      return anchor?.shape?.type === 'Polygon';
     }).length;
 
     try {
       if (addToolType === 'point' && coords.length >= 1) {
-        executeAddFeatureCommand({ type: 'point', coord: coords[0], layerId, time });
+        executeAddFeatureCommand({ type: 'point', coord: coords[0], time });
       } else if (addToolType === 'line' && coords.length >= 2) {
-        executeAddFeatureCommand({ type: 'line', coords, layerId, time });
+        executeAddFeatureCommand({ type: 'line', coords, time });
       } else if (addToolType === 'polygon' && coords.length >= 3) {
         const parentId = getAddPolygonParentId();
         const params: Extract<AddFeatureParams, { type: 'polygon' }> = {
           type: 'polygon',
           coords,
-          layerId,
           time,
-          style: createDefaultPolygonStyle(polygonIndexInLayer, projectSettings),
+          style: createDefaultPolygonStyle(polygonIndex, projectSettings),
         };
         if (parentId) {
           params.parentId = parentId;
@@ -1067,7 +1065,6 @@
           undoRedo.execute(new AddFeatureCommand(addFeature, {
             type: 'point',
             coord: alignedCoord,
-            layerId: targetLayer.id,
             time: timelineQueries.getCurrentTime(),
           }, reassignParent));
           refreshFeatureData();
@@ -1100,7 +1097,6 @@
         nextCoords,
         addToolType,
         currentTime,
-        getAddTargetLayer()?.id ?? null,
         features,
         addFeature.getVertices()
       );
@@ -1131,7 +1127,6 @@
         drawingCoords,
         addToolType,
         currentTime,
-        getAddTargetLayer()?.id ?? null,
         features,
         addFeature.getVertices()
       );

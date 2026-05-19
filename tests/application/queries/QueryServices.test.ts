@@ -25,7 +25,6 @@ describe('Query services', () => {
     const addFeature = new AddFeatureUseCase();
     const feature = addFeature.addPoint(
       new Coordinate(10, 20),
-      'layer-1',
       new TimePoint(1200)
     );
     const query = new FeatureQueryService(addFeature);
@@ -41,7 +40,6 @@ describe('Query services', () => {
     const addFeature = new AddFeatureUseCase();
     const feature = addFeature.addPoint(
       new Coordinate(10, 20),
-      'layer-1',
       new TimePoint(1200)
     );
 

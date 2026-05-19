@@ -517,28 +517,11 @@ describe('JSONSerializer', () => {
       expect(() => deserialize(json)).toThrow('non-existent vertex');
     });
 
-    it('存在しないレイヤーへの参照でエラー', () => {
-      const json = JSON.stringify({
-        version: '1.0.0',
-        layers: [],
-        vertices: [{ id: 'v1', x: 0, y: 0 }],
-        features: [{
-          id: 'f1',
-          featureType: 'Point',
-          anchors: [{
-            id: 'a1',
-            timeRange: { start: { year: 100 } },
-            property: { name: 'test', description: '' },
-            shape: { type: 'Point', vertexId: 'v1' },
-            placement: { layerId: 'l-nonexistent', parentId: null, childIds: [], isTopLevel: true },
-          }],
-        }],
-        sharedVertexGroups: [],
-        timelineMarkers: [],
-        metadata: DEFAULT_METADATA,
-      });
-      expect(() => deserialize(json)).toThrow('non-existent layer');
-    });
+    // Phase 2-D-6-3b で `validateLayerReferences` を撤去。
+    // in-memory placement から `layerId` を撤去した一方で `serializeAnchorPlacement` が
+    // `'default'` を固定値出力する shim を持つため、旧形式（layers: [l1, l2]）→ 再保存で
+    // anchor 側だけ `'default'` になり validation がクラッシュする経路を塞いだ。
+    // `placement.layerId` 自体は D-6-3c で JSON 型側からも完全撤去予定。
 
     it('終了時間が開始時間より前の場合エラー', () => {
       const json = JSON.stringify({
@@ -670,7 +653,6 @@ describe('JSONSerializer', () => {
       expect(feature?.featureType).toBe('Polygon');
       expect(anchor?.property.name).toBe('旧国家');
       expect(anchor?.timeRange.start.year).toBe(1200);
-      expect(anchor?.placement.layerId).toBe('l1');
       expect(anchor?.shape.type).toBe('Polygon');
       if (anchor?.shape.type === 'Polygon') {
         expect(anchor.shape.rings[0].vertexIds).toEqual(['v1', 'v2', 'v3']);

@@ -96,7 +96,6 @@ export class ReassignFeatureParentUseCase {
         params.effectiveTime,
         usedAnchorIds,
         (placement) => createAnchorPlacement(
-          placement.layerId,
           params.newParentId,
           placement.childIds
         )
@@ -115,7 +114,6 @@ export class ReassignFeatureParentUseCase {
         params.effectiveTime,
         usedAnchorIds,
         (placement) => createAnchorPlacement(
-          placement.layerId,
           placement.parentId,
           placement.childIds.filter((id) => !featureIds.includes(id))
         )
@@ -569,8 +567,7 @@ function appendUnique(baseIds: readonly string[], idsToAdd: readonly string[]): 
 }
 
 function samePlacement(a: AnchorPlacement, b: AnchorPlacement): boolean {
-  return a.layerId === b.layerId &&
-    a.parentId === b.parentId &&
+  return a.parentId === b.parentId &&
     a.isTopLevel === b.isTopLevel &&
     sameStringArray(a.childIds, b.childIds);
 }
@@ -648,7 +645,6 @@ function buildParentPlacementForSegment(
     .filter((feature) => feature.getActiveAnchor(time) !== undefined)
     .map((feature) => feature.id);
   return createAnchorPlacement(
-    basePlacement.layerId,
     basePlacement.parentId,
     appendUnique(baseChildIds, activeTransferredChildIds)
   );

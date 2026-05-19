@@ -48,7 +48,6 @@ describe('DIContainer', () => {
     // editFeatureがvertexEditと同じaddFeatureを共有していることを確認
     const feature = container.commands.addFeature.addPoint(
       new Coordinate(10, 20),
-      'l1',
       new TimePoint(2000)
     );
     // editFeatureからも同じ地物が取得できる

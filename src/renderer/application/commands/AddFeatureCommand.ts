@@ -22,12 +22,11 @@ import {
 
 /** 追加する地物の種類とパラメータ */
 export type AddFeatureParams =
-  | { type: 'point'; coord: Coordinate; layerId: string; time: TimePoint; name?: string }
-  | { type: 'line'; coords: readonly Coordinate[]; layerId: string; time: TimePoint; name?: string }
+  | { type: 'point'; coord: Coordinate; time: TimePoint; name?: string }
+  | { type: 'line'; coords: readonly Coordinate[]; time: TimePoint; name?: string }
   | {
       type: 'polygon';
       coords: readonly Coordinate[];
-      layerId: string;
       time: TimePoint;
       name?: string;
       style?: PolygonStyle;
@@ -67,7 +66,6 @@ export class AddFeatureCommand implements UndoableCommand {
     if (this.params.type === 'polygon') {
       const transient = createTransientPolygonFeature(
         this.params.coords,
-        this.params.layerId,
         this.params.time,
         'pending-add',
         'pending-add-ring',
@@ -95,17 +93,17 @@ export class AddFeatureCommand implements UndoableCommand {
     switch (this.params.type) {
       case 'point':
         feature = this.featureUseCase.addPoint(
-          this.params.coord, this.params.layerId, this.params.time, this.params.name
+          this.params.coord, this.params.time, this.params.name
         );
         break;
       case 'line':
         feature = this.featureUseCase.addLine(
-          this.params.coords, this.params.layerId, this.params.time, this.params.name
+          this.params.coords, this.params.time, this.params.name
         );
         break;
       case 'polygon':
         feature = this.featureUseCase.addPolygon(
-          this.params.coords, this.params.layerId, this.params.time, this.params.name, this.params.style
+          this.params.coords, this.params.time, this.params.name, this.params.style
         );
         break;
     }

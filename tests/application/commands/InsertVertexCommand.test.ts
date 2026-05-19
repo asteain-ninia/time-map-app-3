@@ -22,7 +22,6 @@ describe('InsertVertexCommand', () => {
   it('線の頂点挿入をUndo/Redoできる', () => {
     const line = addFeature.addLine(
       [new Coordinate(0, 0), new Coordinate(10, 0)],
-      'l1',
       time
     );
     const originalVertexIds = line.getActiveAnchor(time)!.shape.type === 'LineString'
@@ -72,7 +71,6 @@ describe('InsertVertexCommand', () => {
         new Coordinate(10, 10),
         new Coordinate(0, 10),
       ],
-      'l1',
       time
     );
     const anchor = polygon.getActiveAnchor(time)!;

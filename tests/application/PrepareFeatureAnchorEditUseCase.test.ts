@@ -17,7 +17,7 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
 
   describe('prepare', () => {
     it('プロパティのみの編集案を生成できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time, 'original');
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time, 'original');
 
       const result = prepare.prepare(feature.id, 'property_only', time, {
         property: { name: '新名称', description: '説明' },
@@ -30,7 +30,7 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
     });
 
     it('形状付き編集案を生成できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
 
       const result = prepare.prepare(feature.id, 'shape_and_property', time, {
         shape: { type: 'Point', vertexId: 'v-new' },
@@ -42,7 +42,7 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
     });
 
     it('property_only モードでは形状変更を無視する', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const originalShape = feature.anchors[0].shape;
 
       const result = prepare.prepare(feature.id, 'property_only', time, {
@@ -54,17 +54,17 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
     });
 
     it('配置の更新を適用できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
 
       const result = prepare.prepare(feature.id, 'property_only', time, {
-        placement: { layerId: 'l2' },
+        placement: { parentId: 'parent-id' },
       });
 
-      expect(result.candidateAnchors[0].placement.layerId).toBe('l2');
+      expect(result.candidateAnchors[0].placement.parentId).toBe('parent-id');
     });
 
     it('境界編集を適用できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const anchorId = feature.anchors[0].id;
 
       const result = prepare.prepare(feature.id, 'property_only', time, {
@@ -84,7 +84,7 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
     });
 
     it('draftIdがユニークである', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
 
       const r1 = prepare.prepare(feature.id, 'property_only', time, {});
       const r2 = prepare.prepare(feature.id, 'property_only', time, {});
@@ -93,7 +93,7 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
     });
 
     it('affectedTimeRange を正しく計算する', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
 
       const result = prepare.prepare(feature.id, 'property_only', time, {});
 
@@ -103,7 +103,7 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
 
   describe('getDraft', () => {
     it('準備したドラフトを取得できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const result = prepare.prepare(feature.id, 'property_only', time, {});
 
       const draft = prepare.getDraft(result.draftId);
@@ -118,7 +118,7 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
 
   describe('discardDraft', () => {
     it('ドラフトを破棄できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const result = prepare.prepare(feature.id, 'property_only', time, {});
 
       prepare.discardDraft(result.draftId);
@@ -131,11 +131,11 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
       // 2つの重なるポリゴンを作成
       addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1', time, 'poly1'
+        time, 'poly1'
       );
       const poly2 = addFeature.addPolygon(
         [new Coordinate(5, 0), new Coordinate(15, 0), new Coordinate(15, 10)],
-        'l1', time, 'poly2'
+        time, 'poly2'
       );
 
       const result = prepare.prepare(poly2.id, 'property_only', time, {});
@@ -146,7 +146,7 @@ describe('PrepareFeatureAnchorEditUseCase', () => {
     });
 
     it('ポイント地物は競合なし', () => {
-      const point = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const point = addFeature.addPoint(new Coordinate(10, 20), time);
 
       const result = prepare.prepare(point.id, 'property_only', time, {});
 

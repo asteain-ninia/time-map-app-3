@@ -47,7 +47,7 @@ function makeFeature(
 }
 
 function placement(parentId: string | null, childIds: readonly string[] = []): AnchorPlacement {
-  return createAnchorPlacement('l1', parentId, childIds);
+  return createAnchorPlacement(parentId, childIds);
 }
 
 describe('ReassignFeatureParentUseCase', () => {

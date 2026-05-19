@@ -32,7 +32,7 @@ describe('AddFeatureCommand', () => {
   describe('点情報の追加', () => {
     it('executeで点が追加される', () => {
       const cmd = createCommand({
-        type: 'point', coord: new Coordinate(10, 20), layerId, time,
+        type: 'point', coord: new Coordinate(10, 20), time,
       });
 
       undoRedo.execute(cmd);
@@ -43,7 +43,7 @@ describe('AddFeatureCommand', () => {
 
     it('undoで点と頂点が除去される', () => {
       const cmd = createCommand({
-        type: 'point', coord: new Coordinate(10, 20), layerId, time,
+        type: 'point', coord: new Coordinate(10, 20), time,
       });
       undoRedo.execute(cmd);
 
@@ -55,7 +55,7 @@ describe('AddFeatureCommand', () => {
 
     it('redo で再追加される', () => {
       const cmd = createCommand({
-        type: 'point', coord: new Coordinate(10, 20), layerId, time,
+        type: 'point', coord: new Coordinate(10, 20), time,
       });
       undoRedo.execute(cmd);
       undoRedo.undo();
@@ -68,7 +68,7 @@ describe('AddFeatureCommand', () => {
 
     it('redoで初回追加IDを復元し後続の地物移動を再実行できる', () => {
       const addCommand = createCommand({
-        type: 'point', coord: new Coordinate(10, 20), layerId, time,
+        type: 'point', coord: new Coordinate(10, 20), time,
       });
       undoRedo.execute(addCommand);
 
@@ -105,7 +105,7 @@ describe('AddFeatureCommand', () => {
 
     it('executeで線が追加される', () => {
       const cmd = createCommand({
-        type: 'line', coords, layerId, time,
+        type: 'line', coords, time,
       });
       undoRedo.execute(cmd);
 
@@ -116,7 +116,7 @@ describe('AddFeatureCommand', () => {
 
     it('undoで線と全頂点が除去される', () => {
       const cmd = createCommand({
-        type: 'line', coords, layerId, time,
+        type: 'line', coords, time,
       });
       undoRedo.execute(cmd);
       undoRedo.undo();
@@ -131,7 +131,7 @@ describe('AddFeatureCommand', () => {
 
     it('executeで面が追加される', () => {
       const cmd = createCommand({
-        type: 'polygon', coords, layerId, time,
+        type: 'polygon', coords, time,
       });
       undoRedo.execute(cmd);
 
@@ -144,7 +144,6 @@ describe('AddFeatureCommand', () => {
       const cmd = createCommand({
         type: 'polygon',
         coords,
-        layerId,
         time,
         style: {
           fillColor: '#abcdef',
@@ -166,7 +165,7 @@ describe('AddFeatureCommand', () => {
 
     it('undoで面と全頂点が除去される', () => {
       const cmd = createCommand({
-        type: 'polygon', coords, layerId, time,
+        type: 'polygon', coords, time,
       });
       undoRedo.execute(cmd);
       undoRedo.undo();
@@ -183,17 +182,16 @@ describe('AddFeatureCommand', () => {
         new Coordinate(0, 10),
       ];
       const cmd = createCommand({
-        type: 'polygon', coords: bowTie, layerId, time,
+        type: 'polygon', coords: bowTie, time,
       });
 
       expect(() => undoRedo.execute(cmd)).toThrow('自己交差');
       expect(addFeature.getFeatures()).toHaveLength(0);
     });
 
-    it('同一レイヤーの既存ポリゴンと重なる面は追加を拒否する', () => {
+    it('既存ポリゴンと重なる面は追加を拒否する', () => {
       addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10), new Coordinate(0, 10)],
-        layerId,
         time
       );
       const cmd = createCommand({
@@ -204,7 +202,6 @@ describe('AddFeatureCommand', () => {
           new Coordinate(15, 10),
           new Coordinate(5, 10),
         ],
-        layerId,
         time,
       });
 
@@ -247,7 +244,6 @@ describe('AddFeatureCommand', () => {
           new Coordinate(13, 13),
           new Coordinate(11, 13),
         ],
-        layerId,
         time,
       });
 
@@ -263,7 +259,6 @@ describe('AddFeatureCommand', () => {
           new Coordinate(-20, -20),
           new Coordinate(-30, -20),
         ],
-        layerId,
         time,
         '親地物'
       );
@@ -276,7 +271,6 @@ describe('AddFeatureCommand', () => {
           new Coordinate(35, 35),
           new Coordinate(30, 35),
         ],
-        layerId,
         time,
         parentId: parent.id,
       });
@@ -306,7 +300,6 @@ describe('AddFeatureCommand', () => {
           new Coordinate(-20, -20),
           new Coordinate(-30, -20),
         ],
-        layerId,
         parentTime,
         '親地物'
       );
@@ -319,7 +312,6 @@ describe('AddFeatureCommand', () => {
           new Coordinate(35, 35),
           new Coordinate(30, 35),
         ],
-        layerId,
         time: childTime,
         parentId: parent.id,
       });
@@ -358,7 +350,6 @@ describe('AddFeatureCommand', () => {
             new Coordinate(35, 35),
             new Coordinate(30, 35),
           ],
-          layerId,
           time,
           parentId: 'missing-parent',
         });
@@ -377,21 +368,21 @@ describe('AddFeatureCommand', () => {
   describe('descriptionの生成', () => {
     it('点コマンドの説明', () => {
       const cmd = createCommand({
-        type: 'point', coord: new Coordinate(0, 0), layerId, time,
+        type: 'point', coord: new Coordinate(0, 0), time,
       });
       expect(cmd.description).toBe('点情報を追加');
     });
 
     it('線コマンドの説明', () => {
       const cmd = createCommand({
-        type: 'line', coords: [new Coordinate(0, 0), new Coordinate(1, 1)], layerId, time,
+        type: 'line', coords: [new Coordinate(0, 0), new Coordinate(1, 1)], time,
       });
       expect(cmd.description).toBe('線情報を追加');
     });
 
     it('面コマンドの説明', () => {
       const cmd = createCommand({
-        type: 'polygon', coords: [new Coordinate(0, 0), new Coordinate(1, 0), new Coordinate(1, 1)], layerId, time,
+        type: 'polygon', coords: [new Coordinate(0, 0), new Coordinate(1, 0), new Coordinate(1, 1)], time,
       });
       expect(cmd.description).toBe('面情報を追加');
     });
@@ -400,11 +391,11 @@ describe('AddFeatureCommand', () => {
   describe('既存地物への影響なし', () => {
     it('undo時に他の地物は影響を受けない', () => {
       // 先に地物を1つ追加
-      addFeature.addPoint(new Coordinate(50, 50), layerId, time);
+      addFeature.addPoint(new Coordinate(50, 50), time);
 
       // コマンドで2つ目を追加
       const cmd = createCommand({
-        type: 'point', coord: new Coordinate(10, 20), layerId, time,
+        type: 'point', coord: new Coordinate(10, 20), time,
       });
       undoRedo.execute(cmd);
       expect(addFeature.getFeatures()).toHaveLength(2);

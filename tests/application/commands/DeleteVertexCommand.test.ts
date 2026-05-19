@@ -24,7 +24,6 @@ describe('DeleteVertexCommand', () => {
   it('線の頂点削除をUndo/Redoできる', () => {
     const line = addFeature.addLine(
       [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(20, 0)],
-      'l1',
       time
     );
     const vertexIds = getLineVertexIds(line.id);
@@ -51,7 +50,6 @@ describe('DeleteVertexCommand', () => {
   it('挿入した線上の点を削除した直後のUndoで挿入点が復元される', () => {
     const line = addFeature.addLine(
       [new Coordinate(0, 0), new Coordinate(10, 0)],
-      'l1',
       time
     );
     const originalVertexIds = getLineVertexIds(line.id);
@@ -93,7 +91,6 @@ describe('DeleteVertexCommand', () => {
   it('挿入と削除を連続Undo後にRedoしても削除対象IDがずれない', () => {
     const line = addFeature.addLine(
       [new Coordinate(0, 0), new Coordinate(10, 0)],
-      'l1',
       time
     );
     const originalVertexIds = getLineVertexIds(line.id);
@@ -136,7 +133,6 @@ describe('DeleteVertexCommand', () => {
   it('頂点削除で地物が消える場合もUndoで復元できる', () => {
     const polygon = addFeature.addPolygon(
       [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-      'l1',
       time
     );
     const anchor = polygon.getActiveAnchor(time)!;
@@ -164,10 +160,9 @@ describe('DeleteVertexCommand', () => {
   it('共有頂点を削除すると共有グループからも除去される', () => {
     const line = addFeature.addLine(
       [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(20, 0)],
-      'l1',
       time
     );
-    const point = addFeature.addPoint(new Coordinate(10, 0), 'l1', time);
+    const point = addFeature.addPoint(new Coordinate(10, 0), time);
     const lineVertexIds = getLineVertexIds(line.id);
     const targetVertexId = lineVertexIds[1];
     const pointShape = point.getActiveAnchor(time)!.shape;
@@ -203,7 +198,6 @@ describe('DeleteVertexCommand', () => {
         new Coordinate(20, 0),
         new Coordinate(30, 0),
       ],
-      'l1',
       time
     );
     const vertexIds = getLineVertexIds(line.id);

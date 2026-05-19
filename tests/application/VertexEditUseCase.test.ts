@@ -9,7 +9,6 @@ describe('VertexEditUseCase', () => {
   let addFeature: AddFeatureUseCase;
   let vertexEdit: VertexEditUseCase;
   const time = new TimePoint(1000);
-  const layerId = 'l1';
 
   beforeEach(() => {
     addFeature = new AddFeatureUseCase();
@@ -22,7 +21,7 @@ describe('VertexEditUseCase', () => {
 
   describe('moveVertex', () => {
     it('頂点を新しい座標に移動できる', () => {
-      addFeature.addPoint(new Coordinate(10, 20), layerId, time);
+      addFeature.addPoint(new Coordinate(10, 20), time);
       const vertexId = [...addFeature.getVertices().keys()][0];
 
       vertexEdit.moveVertex(vertexId, new Coordinate(30, 40));
@@ -33,7 +32,7 @@ describe('VertexEditUseCase', () => {
     });
 
     it('経度を保持したまま緯度だけを範囲内に収める', () => {
-      addFeature.addPoint(new Coordinate(10, 20), layerId, time);
+      addFeature.addPoint(new Coordinate(10, 20), time);
       const vertexId = [...addFeature.getVertices().keys()][0];
 
       vertexEdit.moveVertex(vertexId, new Coordinate(200, 100));
@@ -54,7 +53,6 @@ describe('VertexEditUseCase', () => {
     it('線のエッジに頂点を挿入できる', () => {
       const line = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(20, 0)],
-        layerId,
         time
       );
 
@@ -80,7 +78,6 @@ describe('VertexEditUseCase', () => {
     it('末尾エッジにも挿入できる', () => {
       const line = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
-        layerId,
         time
       );
 
@@ -96,7 +93,6 @@ describe('VertexEditUseCase', () => {
     it('挿入頂点の経度は生値のまま保持し緯度だけクランプする', () => {
       const line = addFeature.addLine(
         [new Coordinate(170, 0), new Coordinate(190, 0)],
-        layerId,
         time
       );
 
@@ -115,7 +111,6 @@ describe('VertexEditUseCase', () => {
     it('範囲外のエッジインデックスでエラー', () => {
       const line = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
-        layerId,
         time
       );
 
@@ -125,7 +120,7 @@ describe('VertexEditUseCase', () => {
     });
 
     it('ポイント地物に対して実行するとエラー', () => {
-      const point = addFeature.addPoint(new Coordinate(0, 0), layerId, time);
+      const point = addFeature.addPoint(new Coordinate(0, 0), time);
 
       expect(() => {
         vertexEdit.insertVertexOnLine(point.id, time, 0, new Coordinate(5, 0));
@@ -143,7 +138,6 @@ describe('VertexEditUseCase', () => {
     it('ポリゴンのリングエッジに頂点を挿入できる', () => {
       const polygon = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        layerId,
         time
       );
 
@@ -170,7 +164,6 @@ describe('VertexEditUseCase', () => {
     it('最後のエッジ（閉合辺）にも挿入できる', () => {
       const polygon = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        layerId,
         time
       );
 
@@ -190,7 +183,6 @@ describe('VertexEditUseCase', () => {
     it('ポリゴン挿入頂点も生値経度のまま保持する', () => {
       const polygon = addFeature.addPolygon(
         [new Coordinate(170, 0), new Coordinate(190, 0), new Coordinate(190, 10)],
-        layerId,
         time
       );
 
@@ -213,7 +205,6 @@ describe('VertexEditUseCase', () => {
     it('存在しないリングでエラー', () => {
       const polygon = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        layerId,
         time
       );
 
@@ -227,7 +218,6 @@ describe('VertexEditUseCase', () => {
     it('線の頂点を削除できる', () => {
       const line = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(20, 0)],
-        layerId,
         time
       );
 
@@ -249,7 +239,6 @@ describe('VertexEditUseCase', () => {
     it('2点未満になる場合は線自体が削除される', () => {
       const line = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
-        layerId,
         time
       );
 
@@ -265,7 +254,6 @@ describe('VertexEditUseCase', () => {
     it('線に属さない頂点でエラー', () => {
       const line = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
-        layerId,
         time
       );
 
@@ -284,7 +272,6 @@ describe('VertexEditUseCase', () => {
           new Coordinate(10, 10),
           new Coordinate(0, 10),
         ],
-        layerId,
         time
       );
 
@@ -306,7 +293,6 @@ describe('VertexEditUseCase', () => {
     it('3点未満になる場合は面自体が削除される', () => {
       const polygon = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        layerId,
         time
       );
 
@@ -324,7 +310,6 @@ describe('VertexEditUseCase', () => {
     it('リングに属さない頂点でエラー', () => {
       const polygon = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        layerId,
         time
       );
 
@@ -341,7 +326,6 @@ describe('VertexEditUseCase', () => {
     it('頂点挿入後にfeature:addedイベントが発行される', () => {
       const line = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
-        layerId,
         time
       );
 
@@ -357,7 +341,6 @@ describe('VertexEditUseCase', () => {
     it('地物削除時にfeature:removedイベントが発行される', () => {
       const line = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
-        layerId,
         time
       );
 

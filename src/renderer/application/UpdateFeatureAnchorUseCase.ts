@@ -152,7 +152,7 @@ export class UpdateFeatureAnchorUseCase {
     const feature = this.getFeatureOrThrow(featureId);
     const anchor = this.getAnchorOrThrow(feature, anchorId);
     const updated = anchor.withPlacement(
-      createAnchorPlacement(placement.layerId, placement.parentId, placement.childIds)
+      createAnchorPlacement(placement.parentId, placement.childIds)
     );
     this.replaceAnchor(feature, anchorId, updated);
   }

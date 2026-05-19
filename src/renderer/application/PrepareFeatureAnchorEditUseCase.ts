@@ -168,7 +168,7 @@ export class PrepareFeatureAnchorEditUseCase {
       if (patch.placement) {
         const merged = { ...updated.placement, ...patch.placement };
         updated = updated.withPlacement(
-          createAnchorPlacement(merged.layerId, merged.parentId, merged.childIds)
+          createAnchorPlacement(merged.parentId, merged.childIds)
         );
       }
 

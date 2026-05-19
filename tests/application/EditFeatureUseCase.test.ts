@@ -27,7 +27,7 @@ describe('EditFeatureUseCase', () => {
     });
 
     it('getFeatureById は追加した地物を返す', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       expect(edit.getFeatureById(feature.id)?.id).toBe(feature.id);
     });
 
@@ -38,7 +38,7 @@ describe('EditFeatureUseCase', () => {
 
   describe('頂点編集', () => {
     it('moveVertex で頂点を移動できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const anchor = feature.getActiveAnchor(time)!;
       const vertexId = (anchor.shape as { type: 'Point'; vertexId: string }).vertexId;
 
@@ -52,7 +52,7 @@ describe('EditFeatureUseCase', () => {
     it('insertVertexOnLine で頂点を挿入できる', () => {
       const feature = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
-        'l1', time
+        time
       );
       const newVid = edit.insertVertexOnLine(feature.id, time, 0, new Coordinate(5, 0));
       expect(newVid).toBeTruthy();
@@ -65,7 +65,7 @@ describe('EditFeatureUseCase', () => {
     it('insertVertexOnPolygon で頂点を挿入できる', () => {
       const feature = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1', time
+        time
       );
       const anchor = feature.getActiveAnchor(time)!;
       const ring = (anchor.shape as { type: 'Polygon'; rings: readonly { id: string }[] }).rings[0];
@@ -77,7 +77,7 @@ describe('EditFeatureUseCase', () => {
     it('deleteVertexFromLine で頂点削除（地物削除判定含む）', () => {
       const feature = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
-        'l1', time
+        time
       );
       const anchor = feature.getActiveAnchor(time)!;
       const vertexIds = (anchor.shape as { type: 'LineString'; vertexIds: readonly string[] }).vertexIds;
@@ -90,14 +90,14 @@ describe('EditFeatureUseCase', () => {
 
   describe('錨編集', () => {
     it('addAnchor で時間分割できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const newAnchor = edit.addAnchor(feature.id, new TimePoint(2050));
       expect(newAnchor).toBeDefined();
       expect(edit.getAnchors(feature.id)).toHaveLength(2);
     });
 
     it('updateProperty で属性更新できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time, 'original');
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time, 'original');
       const anchorId = feature.anchors[0].id;
       edit.updateProperty(feature.id, anchorId, { name: '新名称', description: '説明' });
 
@@ -106,7 +106,7 @@ describe('EditFeatureUseCase', () => {
     });
 
     it('deleteAnchor で最後の錨を削除すると地物削除', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const deleted = edit.deleteAnchor(feature.id, feature.anchors[0].id);
       expect(deleted).toBe(true);
       expect(edit.getFeatureById(feature.id)).toBeUndefined();
@@ -115,8 +115,8 @@ describe('EditFeatureUseCase', () => {
 
   describe('共有頂点操作', () => {
     it('findSnapCandidates が候補を返す', () => {
-      const f1 = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
-      const f2 = addFeature.addPoint(new Coordinate(10.001, 20.001), 'l1', time);
+      const f1 = addFeature.addPoint(new Coordinate(10, 20), time);
+      const f2 = addFeature.addPoint(new Coordinate(10.001, 20.001), time);
       const v1Id = (f1.getActiveAnchor(time)!.shape as { type: 'Point'; vertexId: string }).vertexId;
 
       const candidates = edit.findSnapCandidates(v1Id, 1);
@@ -127,7 +127,7 @@ describe('EditFeatureUseCase', () => {
 
   describe('リング編集', () => {
     it('validateRingPlacement がポリゴン以外でエラー', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const errors = edit.validateRingPlacement(
         feature.id, time,
         [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
@@ -137,13 +137,13 @@ describe('EditFeatureUseCase', () => {
     });
 
     it('addHoleRing がポイント地物でnullを返す', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const result = edit.addHoleRing(feature.id, time, 'r1', ['v1', 'v2', 'v3']);
       expect(result).toBeNull();
     });
 
     it('addExclaveRing がポイント地物でnullを返す', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const result = edit.addExclaveRing(feature.id, time, ['v1', 'v2', 'v3']);
       expect(result).toBeNull();
     });
@@ -163,7 +163,7 @@ describe('EditFeatureUseCase', () => {
     it('detectConflictsForFeature で単一ポリゴンは競合なし', () => {
       const feature = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1', time
+        time
       );
       const result = edit.detectConflictsForFeature(feature.id, time);
       expect(result).toHaveLength(0);

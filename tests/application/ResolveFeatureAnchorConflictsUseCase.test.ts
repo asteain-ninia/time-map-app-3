@@ -27,7 +27,7 @@ describe('ResolveFeatureAnchorConflictsUseCase', () => {
     });
 
     it('競合のないドラフトはエラー', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const result = prepare.prepare(feature.id, 'property_only', time, {});
 
       expect(() =>
@@ -36,8 +36,8 @@ describe('ResolveFeatureAnchorConflictsUseCase', () => {
     });
 
     it('非優先ポリゴンへ差分形状を新しい頂点で反映する', () => {
-      const preferred = addFeature.addPolygon(polygon(0, 0, 10, 10), 'l1', time, 'preferred');
-      const nonPreferred = addFeature.addPolygon(polygon(5, 0, 15, 10), 'l1', time, 'other');
+      const preferred = addFeature.addPolygon(polygon(0, 0, 10, 10), time, 'preferred');
+      const nonPreferred = addFeature.addPolygon(polygon(5, 0, 15, 10), time, 'other');
       const originalAnchor = nonPreferred.getActiveAnchor(time)!;
 
       const prepared = prepare.prepare(preferred.id, 'property_only', time, {});
@@ -66,8 +66,8 @@ describe('ResolveFeatureAnchorConflictsUseCase', () => {
     });
 
     it('差分結果が複数片でも全territory ringを保持する', () => {
-      const preferred = addFeature.addPolygon(polygon(10, 0, 20, 10), 'l1', time, 'barrier');
-      const nonPreferred = addFeature.addPolygon(polygon(0, 0, 30, 10), 'l1', time, 'wide');
+      const preferred = addFeature.addPolygon(polygon(10, 0, 20, 10), time, 'barrier');
+      const nonPreferred = addFeature.addPolygon(polygon(0, 0, 30, 10), time, 'wide');
 
       const prepared = prepare.prepare(preferred.id, 'property_only', time, {});
       expect(prepared.status).toBe('requires_resolution');
@@ -97,8 +97,8 @@ describe('ResolveFeatureAnchorConflictsUseCase', () => {
     });
 
     it('180度超に延伸した競合でも差分形状を反映できる', () => {
-      const preferred = addFeature.addPolygon(polygon(190, 0, 200, 10), 'l1', time, 'wrapped');
-      const nonPreferred = addFeature.addPolygon(polygon(-175, 0, -165, 10), 'l1', time, 'primary');
+      const preferred = addFeature.addPolygon(polygon(190, 0, 200, 10), time, 'wrapped');
+      const nonPreferred = addFeature.addPolygon(polygon(-175, 0, -165, 10), time, 'primary');
 
       const prepared = prepare.prepare(preferred.id, 'property_only', time, {});
       expect(prepared.status).toBe('requires_resolution');
@@ -120,8 +120,8 @@ describe('ResolveFeatureAnchorConflictsUseCase', () => {
     });
 
     it('resolve段階では新規頂点をストアへ反映せずcreatedVerticesへ返す', () => {
-      const preferred = addFeature.addPolygon(polygon(0, 0, 10, 10), 'l1', time, 'preferred');
-      addFeature.addPolygon(polygon(5, 0, 15, 10), 'l1', time, 'other');
+      const preferred = addFeature.addPolygon(polygon(0, 0, 10, 10), time, 'preferred');
+      addFeature.addPolygon(polygon(5, 0, 15, 10), time, 'other');
       const vertexCountBefore = addFeature.getVertices().size;
 
       const prepared = prepare.prepare(preferred.id, 'property_only', time, {});
@@ -138,8 +138,8 @@ describe('ResolveFeatureAnchorConflictsUseCase', () => {
     });
 
     it('同じドラフトを再解決しても生成IDが安定する', () => {
-      const preferred = addFeature.addPolygon(polygon(0, 0, 10, 10), 'l1', time, 'preferred');
-      addFeature.addPolygon(polygon(5, 0, 15, 10), 'l1', time, 'other');
+      const preferred = addFeature.addPolygon(polygon(0, 0, 10, 10), time, 'preferred');
+      addFeature.addPolygon(polygon(5, 0, 15, 10), time, 'other');
 
       const prepared = prepare.prepare(preferred.id, 'property_only', time, {});
       const resolutions = [{ conflictIndex: 0, preferFeatureId: preferred.id }] as const;

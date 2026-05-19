@@ -21,7 +21,7 @@ describe('CommitFeatureAnchorEditUseCase', () => {
 
   describe('commitDirect', () => {
     it('プロパティ編集を確定できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time, 'original');
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time, 'original');
       const prepResult = prepare.prepare(feature.id, 'property_only', time, {
         property: { name: '更新後', description: '説明' },
       });
@@ -37,7 +37,7 @@ describe('CommitFeatureAnchorEditUseCase', () => {
     });
 
     it('確定後にドラフトが破棄される', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const prepResult = prepare.prepare(feature.id, 'property_only', time, {});
 
       commit.commitDirect(prepResult.draftId);
@@ -52,19 +52,19 @@ describe('CommitFeatureAnchorEditUseCase', () => {
     });
 
     it('配置の更新を確定できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const prepResult = prepare.prepare(feature.id, 'property_only', time, {
-        placement: { layerId: 'l2' },
+        placement: { parentId: 'parent-id' },
       });
 
       commit.commitDirect(prepResult.draftId);
 
       const updated = addFeature.getFeatureById(feature.id)!;
-      expect(updated.getActiveAnchor(time)!.placement.layerId).toBe('l2');
+      expect(updated.getActiveAnchor(time)!.placement.parentId).toBe('parent-id');
     });
 
     it('境界編集を確定できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const anchorId = feature.anchors[0].id;
 
       const prepResult = prepare.prepare(feature.id, 'property_only', time, {
@@ -81,8 +81,8 @@ describe('CommitFeatureAnchorEditUseCase', () => {
     });
 
     it('historyEntryId がユニーク', () => {
-      const f1 = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
-      const f2 = addFeature.addPoint(new Coordinate(20, 30), 'l1', time);
+      const f1 = addFeature.addPoint(new Coordinate(10, 20), time);
+      const f2 = addFeature.addPoint(new Coordinate(20, 30), time);
 
       const p1 = prepare.prepare(f1.id, 'property_only', time, {});
       const p2 = prepare.prepare(f2.id, 'property_only', time, {});
@@ -96,7 +96,7 @@ describe('CommitFeatureAnchorEditUseCase', () => {
 
   describe('commitResolved', () => {
     it('resolvedAnchorsByFeature を使って確定できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time, 'orig');
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time, 'orig');
       const prepResult = prepare.prepare(feature.id, 'property_only', time, {
         property: { name: 'resolved', description: '' },
       });
@@ -114,7 +114,7 @@ describe('CommitFeatureAnchorEditUseCase', () => {
     });
 
     it('createdVertices を頂点ストアへ反映してから確定する', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time, 'orig');
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time, 'orig');
       const prepResult = prepare.prepare(feature.id, 'property_only', time, {});
       const createdVertices = new Map([
         ['v-resolve-test', new Vertex('v-resolve-test', new Coordinate(30, 40))],

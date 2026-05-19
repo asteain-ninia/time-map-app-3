@@ -77,9 +77,10 @@ describe('FeatureAnchor', () => {
     });
 
     it('withPlacement は所属のみ変更する', () => {
-      const updated = anchor.withPlacement({ layerId: 'l2', parentId: 'p1', childIds: ['c1'], isTopLevel: false });
-      expect(updated.placement.layerId).toBe('l2');
+      const updated = anchor.withPlacement({ parentId: 'p1', childIds: ['c1'], isTopLevel: false });
       expect(updated.placement.parentId).toBe('p1');
+      expect(updated.placement.childIds).toEqual(['c1']);
+      expect(updated.placement.isTopLevel).toBe(false);
     });
 
     it('元のインスタンスは変更しない', () => {
@@ -90,21 +91,21 @@ describe('FeatureAnchor', () => {
 
   describe('placement.isTopLevel（最上位フラグ）', () => {
     it('createAnchorPlacement は parentId === null から isTopLevel=true を派生する', () => {
-      const placement = createAnchorPlacement('l1', null, []);
+      const placement = createAnchorPlacement(null, []);
       expect(placement.isTopLevel).toBe(true);
       expect(placement.parentId).toBeNull();
     });
 
     it('createAnchorPlacement は parentId 指定時に isTopLevel=false を派生する', () => {
-      const placement = createAnchorPlacement('l1', 'parent-id', ['c1']);
+      const placement = createAnchorPlacement('parent-id', ['c1']);
       expect(placement.isTopLevel).toBe(false);
       expect(placement.parentId).toBe('parent-id');
       expect(placement.childIds).toEqual(['c1']);
     });
 
     it('withPlacement で最上位フラグも反映される', () => {
-      const a = createAnchor({ placement: createAnchorPlacement('l1', null, []) });
-      const updated = a.withPlacement(createAnchorPlacement('l1', 'p1', []));
+      const a = createAnchor({ placement: createAnchorPlacement(null, []) });
+      const updated = a.withPlacement(createAnchorPlacement('p1', []));
       expect(updated.placement.isTopLevel).toBe(false);
       expect(updated.placement.parentId).toBe('p1');
     });
@@ -149,7 +150,7 @@ describe('FeatureAnchor', () => {
     it('shape あり (Polygon) + childIds 空 → true（リーフ）', () => {
       const a = createAnchor({
         shape: polygonShape,
-        placement: createAnchorPlacement('l1', null, []),
+        placement: createAnchorPlacement(null, []),
       });
       expect(isLeafPolygonAnchor(a)).toBe(true);
     });
@@ -157,7 +158,7 @@ describe('FeatureAnchor', () => {
     it('shape あり (Polygon) + childIds 非空 → false（移行期間ノードを排他検証から除外）', () => {
       const a = createAnchor({
         shape: polygonShape,
-        placement: createAnchorPlacement('l1', null, ['c1']),
+        placement: createAnchorPlacement(null, ['c1']),
       });
       expect(isLeafPolygonAnchor(a)).toBe(false);
     });
@@ -165,7 +166,7 @@ describe('FeatureAnchor', () => {
     it('shape なし + childIds 非空 → false（コンテナ）', () => {
       const a = createAnchor({
         shape: undefined,
-        placement: createAnchorPlacement('l1', null, ['c1']),
+        placement: createAnchorPlacement(null, ['c1']),
       });
       expect(isLeafPolygonAnchor(a)).toBe(false);
     });
@@ -173,7 +174,7 @@ describe('FeatureAnchor', () => {
     it('shape あり (Point) + childIds 空 → false（Polygon 限定）', () => {
       const a = createAnchor({
         shape: { type: 'Point', vertexId: 'v1' },
-        placement: createAnchorPlacement('l1', null, []),
+        placement: createAnchorPlacement(null, []),
       });
       expect(isLeafPolygonAnchor(a)).toBe(false);
     });

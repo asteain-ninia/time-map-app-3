@@ -70,7 +70,6 @@ export class DeleteFeatureUseCase {
         if (anchor) {
           const updatedAnchor = anchor.withPlacement(
             createAnchorPlacement(
-              anchor.placement.layerId,
               null,
               anchor.placement.childIds
             )

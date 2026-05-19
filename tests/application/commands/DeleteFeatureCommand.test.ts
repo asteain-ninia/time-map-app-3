@@ -11,7 +11,6 @@ describe('DeleteFeatureCommand', () => {
   let deleteFeatureUseCase: DeleteFeatureUseCase;
   let undoRedo: UndoRedoManager;
   const time = new TimePoint(1000);
-  const layerId = 'l1';
 
   beforeEach(() => {
     addFeature = new AddFeatureUseCase();
@@ -21,7 +20,7 @@ describe('DeleteFeatureCommand', () => {
 
   describe('点の削除', () => {
     it('executeで点が削除される', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), layerId, time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
 
       const cmd = new DeleteFeatureCommand(deleteFeatureUseCase, addFeature, feature.id, time);
       undoRedo.execute(cmd);
@@ -31,7 +30,7 @@ describe('DeleteFeatureCommand', () => {
     });
 
     it('undoで点と頂点が復元される', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), layerId, time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const featureId = feature.id;
 
       const cmd = new DeleteFeatureCommand(deleteFeatureUseCase, addFeature, featureId, time);
@@ -44,7 +43,7 @@ describe('DeleteFeatureCommand', () => {
     });
 
     it('redo で再削除される', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), layerId, time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
 
       const cmd = new DeleteFeatureCommand(deleteFeatureUseCase, addFeature, feature.id, time);
       undoRedo.execute(cmd);
@@ -60,7 +59,7 @@ describe('DeleteFeatureCommand', () => {
     const coords = [new Coordinate(0, 0), new Coordinate(10, 10), new Coordinate(20, 20)];
 
     it('executeで線が削除される', () => {
-      const feature = addFeature.addLine(coords, layerId, time);
+      const feature = addFeature.addLine(coords, time);
 
       const cmd = new DeleteFeatureCommand(deleteFeatureUseCase, addFeature, feature.id, time);
       undoRedo.execute(cmd);
@@ -70,7 +69,7 @@ describe('DeleteFeatureCommand', () => {
     });
 
     it('undoで線と全頂点が復元される', () => {
-      const feature = addFeature.addLine(coords, layerId, time);
+      const feature = addFeature.addLine(coords, time);
 
       const cmd = new DeleteFeatureCommand(deleteFeatureUseCase, addFeature, feature.id, time);
       undoRedo.execute(cmd);
@@ -86,7 +85,7 @@ describe('DeleteFeatureCommand', () => {
     const coords = [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)];
 
     it('executeで面が削除される', () => {
-      const feature = addFeature.addPolygon(coords, layerId, time);
+      const feature = addFeature.addPolygon(coords, time);
 
       const cmd = new DeleteFeatureCommand(deleteFeatureUseCase, addFeature, feature.id, time);
       undoRedo.execute(cmd);
@@ -96,7 +95,7 @@ describe('DeleteFeatureCommand', () => {
     });
 
     it('undoで面と全頂点が復元される', () => {
-      const feature = addFeature.addPolygon(coords, layerId, time);
+      const feature = addFeature.addPolygon(coords, time);
 
       const cmd = new DeleteFeatureCommand(deleteFeatureUseCase, addFeature, feature.id, time);
       undoRedo.execute(cmd);
@@ -110,7 +109,7 @@ describe('DeleteFeatureCommand', () => {
 
   describe('存在しない地物', () => {
     it('存在しない地物IDでは何も起こらない', () => {
-      addFeature.addPoint(new Coordinate(10, 20), layerId, time);
+      addFeature.addPoint(new Coordinate(10, 20), time);
 
       const cmd = new DeleteFeatureCommand(deleteFeatureUseCase, addFeature, 'nonexistent', time);
       undoRedo.execute(cmd);
@@ -121,8 +120,8 @@ describe('DeleteFeatureCommand', () => {
 
   describe('既存地物への影響なし', () => {
     it('削除時に他の地物は影響を受けない', () => {
-      const f1 = addFeature.addPoint(new Coordinate(10, 20), layerId, time);
-      addFeature.addPoint(new Coordinate(30, 40), layerId, time);
+      const f1 = addFeature.addPoint(new Coordinate(10, 20), time);
+      addFeature.addPoint(new Coordinate(30, 40), time);
 
       const cmd = new DeleteFeatureCommand(deleteFeatureUseCase, addFeature, f1.id, time);
       undoRedo.execute(cmd);
@@ -132,8 +131,8 @@ describe('DeleteFeatureCommand', () => {
     });
 
     it('undo時に他の地物は影響を受けない', () => {
-      const f1 = addFeature.addPoint(new Coordinate(10, 20), layerId, time);
-      addFeature.addPoint(new Coordinate(30, 40), layerId, time);
+      const f1 = addFeature.addPoint(new Coordinate(10, 20), time);
+      addFeature.addPoint(new Coordinate(30, 40), time);
 
       const cmd = new DeleteFeatureCommand(deleteFeatureUseCase, addFeature, f1.id, time);
       undoRedo.execute(cmd);

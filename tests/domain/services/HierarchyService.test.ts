@@ -38,7 +38,7 @@ function makePolygonFeature(
       { start: new TimePoint(1900) },
       { name: id, description: '' },
       { type: 'Polygon', rings: [ring] },
-      createAnchorPlacement('l1', parentId, childIds)
+      createAnchorPlacement(parentId, childIds)
     ),
   ]);
 }
@@ -54,7 +54,7 @@ function makePointFeature(
       { start: new TimePoint(1900) },
       { name: id, description: '' },
       { type: 'Point', vertexId: 'v1' },
-      createAnchorPlacement('l1', parentId, childIds)
+      createAnchorPlacement(parentId, childIds)
     ),
   ]);
 }

@@ -27,7 +27,6 @@ describe('SplitFeatureCommand', () => {
         new Coordinate(10, 10),
         new Coordinate(0, 10),
       ],
-      'l1',
       time,
       'テスト面'
     );
@@ -152,7 +151,6 @@ describe('SplitFeatureCommand', () => {
           new Coordinate(10, 10),
           new Coordinate(20, 0),
         ],
-        'l1',
         time,
         '共有先面'
       );
@@ -409,7 +407,7 @@ describe('SplitFeatureCommand', () => {
         throw new Error('existing cut vertex expected');
       }
 
-      const featureC = addFeature.addPoint(new Coordinate(0, 2), 'l1', time, '共有先点C');
+      const featureC = addFeature.addPoint(new Coordinate(0, 2), time, '共有先点C');
       const shapeC = featureC.getActiveAnchor(time)?.shape;
       if (shapeC?.type !== 'Point') {
         throw new Error('point expected');
@@ -464,8 +462,8 @@ describe('SplitFeatureCommand', () => {
     });
 
     it('Undoで分割時に追加された共有頂点グループだけを戻す', () => {
-      const pointA = addFeature.addPoint(new Coordinate(100, 0), 'l1', time, '点A');
-      const pointB = addFeature.addPoint(new Coordinate(100, 0), 'l1', time, '点B');
+      const pointA = addFeature.addPoint(new Coordinate(100, 0), time, '点A');
+      const pointB = addFeature.addPoint(new Coordinate(100, 0), time, '点B');
       const pointAShape = pointA.getActiveAnchor(time)?.shape;
       const pointBShape = pointB.getActiveAnchor(time)?.shape;
       if (pointAShape?.type !== 'Point' || pointBShape?.type !== 'Point') {
@@ -546,7 +544,6 @@ describe('SplitFeatureCommand', () => {
           new Coordinate(10, 10),
           new Coordinate(0, 10),
         ],
-        'l1',
         time,
         'C字面'
       );
@@ -582,7 +579,6 @@ describe('SplitFeatureCommand', () => {
           new Coordinate(10, 10),
           new Coordinate(0, 10),
         ],
-        'l1',
         time,
         'C字面'
       );
@@ -626,7 +622,6 @@ describe('SplitFeatureCommand', () => {
           new Coordinate(20, 20),
           new Coordinate(0, 20),
         ],
-        'l1',
         time,
         '穴内島つき面'
       );
@@ -845,7 +840,6 @@ describe('SplitFeatureCommand', () => {
 
     const featureA = addFeature.addPolygon(
       featureACoordinates,
-      'l1',
       time,
       'テスト面'
     );
@@ -861,7 +855,6 @@ describe('SplitFeatureCommand', () => {
 
     const featureB = addFeature.addPolygon(
       featureBCoordinates,
-      'l1',
       time,
       '左隣面'
     );

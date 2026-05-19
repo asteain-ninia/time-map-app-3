@@ -19,8 +19,8 @@ describe('MoveVerticesCommand', () => {
   });
 
   it('executeで複数頂点が同じ移動量で移動する', () => {
-    const pointA = addFeature.addPoint(new Coordinate(10, 20), 'l1', new TimePoint(1000));
-    const pointB = addFeature.addPoint(new Coordinate(30, 40), 'l1', new TimePoint(1000));
+    const pointA = addFeature.addPoint(new Coordinate(10, 20), new TimePoint(1000));
+    const pointB = addFeature.addPoint(new Coordinate(30, 40), new TimePoint(1000));
     const vertexIdA = pointA.anchors[0].shape.type === 'Point' ? pointA.anchors[0].shape.vertexId : '';
     const vertexIdB = pointB.anchors[0].shape.type === 'Point' ? pointB.anchors[0].shape.vertexId : '';
 
@@ -38,8 +38,8 @@ describe('MoveVerticesCommand', () => {
   });
 
   it('複数頂点移動でも180度を超える経度を保持する', () => {
-    const pointA = addFeature.addPoint(new Coordinate(170, 20), 'l1', new TimePoint(1000));
-    const pointB = addFeature.addPoint(new Coordinate(175, 40), 'l1', new TimePoint(1000));
+    const pointA = addFeature.addPoint(new Coordinate(170, 20), new TimePoint(1000));
+    const pointB = addFeature.addPoint(new Coordinate(175, 40), new TimePoint(1000));
     const vertexIdA = pointA.anchors[0].shape.type === 'Point' ? pointA.anchors[0].shape.vertexId : '';
     const vertexIdB = pointB.anchors[0].shape.type === 'Point' ? pointB.anchors[0].shape.vertexId : '';
 
@@ -58,8 +58,8 @@ describe('MoveVerticesCommand', () => {
   });
 
   it('undoで全頂点を元座標に戻す', () => {
-    const pointA = addFeature.addPoint(new Coordinate(10, 20), 'l1', new TimePoint(1000));
-    const pointB = addFeature.addPoint(new Coordinate(30, 40), 'l1', new TimePoint(1000));
+    const pointA = addFeature.addPoint(new Coordinate(10, 20), new TimePoint(1000));
+    const pointB = addFeature.addPoint(new Coordinate(30, 40), new TimePoint(1000));
     const vertexIdA = pointA.anchors[0].shape.type === 'Point' ? pointA.anchors[0].shape.vertexId : '';
     const vertexIdB = pointB.anchors[0].shape.type === 'Point' ? pointB.anchors[0].shape.vertexId : '';
 
@@ -79,9 +79,9 @@ describe('MoveVerticesCommand', () => {
   });
 
   it('共有頂点グループを含む複数頂点移動では代表座標も更新する', () => {
-    const pointA = addFeature.addPoint(new Coordinate(10, 20), 'l1', new TimePoint(1000));
-    const pointB = addFeature.addPoint(new Coordinate(30, 40), 'l1', new TimePoint(1000));
-    const pointC = addFeature.addPoint(new Coordinate(10, 20), 'l1', new TimePoint(1000));
+    const pointA = addFeature.addPoint(new Coordinate(10, 20), new TimePoint(1000));
+    const pointB = addFeature.addPoint(new Coordinate(30, 40), new TimePoint(1000));
+    const pointC = addFeature.addPoint(new Coordinate(10, 20), new TimePoint(1000));
     const vertexIdA = pointA.anchors[0].shape.type === 'Point' ? pointA.anchors[0].shape.vertexId : '';
     const vertexIdB = pointB.anchors[0].shape.type === 'Point' ? pointB.anchors[0].shape.vertexId : '';
     const vertexIdC = pointC.anchors[0].shape.type === 'Point' ? pointC.anchors[0].shape.vertexId : '';
@@ -108,9 +108,9 @@ describe('MoveVerticesCommand', () => {
   });
 
   it('共有頂点グループの一部だけを含む複数頂点移動では全メンバーを移動する', () => {
-    const pointA = addFeature.addPoint(new Coordinate(10, 20), 'l1', new TimePoint(1000));
-    const pointB = addFeature.addPoint(new Coordinate(30, 40), 'l1', new TimePoint(1000));
-    const pointC = addFeature.addPoint(new Coordinate(10, 20), 'l1', new TimePoint(1000));
+    const pointA = addFeature.addPoint(new Coordinate(10, 20), new TimePoint(1000));
+    const pointB = addFeature.addPoint(new Coordinate(30, 40), new TimePoint(1000));
+    const pointC = addFeature.addPoint(new Coordinate(10, 20), new TimePoint(1000));
     const vertexIdA = pointA.anchors[0].shape.type === 'Point' ? pointA.anchors[0].shape.vertexId : '';
     const vertexIdB = pointB.anchors[0].shape.type === 'Point' ? pointB.anchors[0].shape.vertexId : '';
     const vertexIdC = pointC.anchors[0].shape.type === 'Point' ? pointC.anchors[0].shape.vertexId : '';
@@ -143,7 +143,7 @@ describe('MoveVerticesCommand', () => {
     expect(sharedGroups.get('sg-1')!.representativeCoordinate).toEqual(new Coordinate(10, 20));
   });
 
-  it('同一レイヤーの面重複を生む複数頂点移動は拒否する', () => {
+  it('面重複を生む複数頂点移動は拒否する', () => {
     const time = new TimePoint(1000);
     const polygonA = addFeature.addPolygon(
       [
@@ -152,7 +152,6 @@ describe('MoveVerticesCommand', () => {
         new Coordinate(10, 10),
         new Coordinate(0, 10),
       ],
-      'l1',
       time
     );
     addFeature.addPolygon(
@@ -162,7 +161,6 @@ describe('MoveVerticesCommand', () => {
         new Coordinate(30, 10),
         new Coordinate(20, 10),
       ],
-      'l1',
       time
     );
 

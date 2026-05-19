@@ -52,7 +52,6 @@ describe('PropertyProjection', () => {
       expect(proj.start.year).toBe(2000);
       expect(proj.end?.year).toBe(2100);
       expect(proj.featureType).toBe('Polygon');
-      expect(proj.layerId).toBe('layer1');
       expect(proj.parentId).toBe('parent1');
       expect(proj.childIds).toEqual(['child1', 'child2']);
       expect(proj.isTopLevel).toBe(false);

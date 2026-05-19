@@ -263,7 +263,6 @@ describe('appPolygonEditing', () => {
         [new Coordinate(20, 0), new Coordinate(30, 0), new Coordinate(30, 10), new Coordinate(20, 10)],
         'polygon',
         time100,
-        'layer-1',
         [existing],
         vertices
       )
@@ -273,7 +272,6 @@ describe('appPolygonEditing', () => {
         [new Coordinate(5, 0), new Coordinate(15, 0), new Coordinate(15, 10), new Coordinate(5, 10)],
         'polygon',
         time100,
-        'layer-1',
         [existing],
         vertices
       )

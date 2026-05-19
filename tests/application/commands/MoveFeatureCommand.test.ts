@@ -15,7 +15,7 @@ describe('MoveFeatureCommand', () => {
 
   describe('ポイント地物の移動', () => {
     it('dx, dy だけ頂点が移動する', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const anchor = feature.getActiveAnchor(time)!;
       const vid = (anchor.shape as { type: 'Point'; vertexId: string }).vertexId;
 
@@ -30,7 +30,7 @@ describe('MoveFeatureCommand', () => {
     });
 
     it('Undoで元の座標に戻る', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const anchor = feature.getActiveAnchor(time)!;
       const vid = (anchor.shape as { type: 'Point'; vertexId: string }).vertexId;
 
@@ -46,7 +46,7 @@ describe('MoveFeatureCommand', () => {
     });
 
     it('横方向ラップをまたぐ移動でも生値経度を保持する', () => {
-      const feature = addFeature.addPoint(new Coordinate(170, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(170, 20), time);
       const anchor = feature.getActiveAnchor(time)!;
       const vid = (anchor.shape as { type: 'Point'; vertexId: string }).vertexId;
 
@@ -65,7 +65,7 @@ describe('MoveFeatureCommand', () => {
     it('全頂点が同じベクトルで移動する', () => {
       const feature = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1', time
+        time
       );
       const anchor = feature.getActiveAnchor(time)!;
       const vertexIds = (anchor.shape as { type: 'LineString'; vertexIds: readonly string[] }).vertexIds;
@@ -91,7 +91,7 @@ describe('MoveFeatureCommand', () => {
     it('全リングの頂点が移動する', () => {
       const feature = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1', time
+        time
       );
 
       const cmd = new MoveFeatureCommand(addFeature, {
@@ -110,12 +110,10 @@ describe('MoveFeatureCommand', () => {
     it('他のポリゴンと重なる移動は拒否する', () => {
       const featureA = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10), new Coordinate(0, 10)],
-        'l1',
         time
       );
       addFeature.addPolygon(
         [new Coordinate(20, 0), new Coordinate(30, 0), new Coordinate(30, 10), new Coordinate(20, 10)],
-        'l1',
         time
       );
 
@@ -133,8 +131,8 @@ describe('MoveFeatureCommand', () => {
     });
 
     it('共有頂点を含む地物移動ではリンク先頂点と代表座標も維持して移動する', () => {
-      const featureA = addFeature.addPoint(new Coordinate(10, 0), 'l1', time);
-      const featureB = addFeature.addPoint(new Coordinate(10, 0), 'l1', time);
+      const featureA = addFeature.addPoint(new Coordinate(10, 0), time);
+      const featureB = addFeature.addPoint(new Coordinate(10, 0), time);
       const anchorA = featureA.getActiveAnchor(time)!;
       const anchorB = featureB.getActiveAnchor(time)!;
       if (anchorA.shape.type !== 'Point' || anchorB.shape.type !== 'Point') {
@@ -178,8 +176,8 @@ describe('MoveFeatureCommand', () => {
     });
 
     it('存在しない地物のUndoでも共有頂点グループを保持する', () => {
-      const pointA = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
-      const pointB = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const pointA = addFeature.addPoint(new Coordinate(10, 20), time);
+      const pointB = addFeature.addPoint(new Coordinate(10, 20), time);
       const anchorA = pointA.getActiveAnchor(time)!;
       const anchorB = pointB.getActiveAnchor(time)!;
       if (anchorA.shape.type !== 'Point' || anchorB.shape.type !== 'Point') {

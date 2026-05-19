@@ -131,7 +131,6 @@ export class SplitFeatureCommand implements UndoableCommand {
     const pieceBShape = this.createPolygonShape(result.pieceBPolygons, 'b');
     const newFeature = this.featureUseCase.addPolygonFromShape(
       pieceBShape,
-      anchor.placement.layerId,
       currentTime,
       newFeatureName ?? `${anchor.property.name}(分割)`
     );

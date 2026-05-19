@@ -4,7 +4,7 @@
  * 要件定義書 §5.3.0: AddFeatureUseCase — 点・線・面の追加
  * 要件定義書 §2.3.2: 追加ツール仕様
  *
- * 頂点とFeatureAnchorを生成し、指定レイヤーに地物を追加する。
+ * 頂点とFeatureAnchorを生成して地物を追加する。
  * 追加後に feature:added イベントを発行する。
  */
 
@@ -116,31 +116,27 @@ export class AddFeatureUseCase {
   /**
    * 点情報を追加する
    * @param coord 配置座標
-   * @param layerId 所属レイヤーID
    * @param currentTime 現在時刻（錨の開始時刻になる）
    * @param name 地物名（省略時は自動採番）
    */
   addPoint(
     coord: Coordinate,
-    layerId: string,
     currentTime: TimePoint,
     name?: string
   ): Feature {
     const vertex = this.createVertex(coord);
     const shape: FeatureShape = { type: 'Point', vertexId: vertex.id };
-    return this.createFeature('Point', shape, layerId, currentTime, name);
+    return this.createFeature('Point', shape, currentTime, name);
   }
 
   /**
    * 線情報を追加する
    * @param coords 頂点座標の配列（2点以上）
-   * @param layerId 所属レイヤーID
    * @param currentTime 現在時刻
    * @param name 地物名（省略時は自動採番）
    */
   addLine(
     coords: readonly Coordinate[],
-    layerId: string,
     currentTime: TimePoint,
     name?: string
   ): Feature {
@@ -149,19 +145,17 @@ export class AddFeatureUseCase {
     }
     const vertexIds = coords.map((c) => this.createVertex(c).id);
     const shape: FeatureShape = { type: 'LineString', vertexIds };
-    return this.createFeature('Line', shape, layerId, currentTime, name);
+    return this.createFeature('Line', shape, currentTime, name);
   }
 
   /**
    * 面情報を追加する（単一の外部リング）
    * @param coords 頂点座標の配列（3点以上）
-   * @param layerId 所属レイヤーID
    * @param currentTime 現在時刻
    * @param name 地物名（省略時は自動採番）
    */
   addPolygon(
     coords: readonly Coordinate[],
-    layerId: string,
     currentTime: TimePoint,
     name?: string,
     style?: PolygonStyle
@@ -173,7 +167,7 @@ export class AddFeatureUseCase {
     const ringId = `ring-${this.nextRingNum++}`;
     const ring = new Ring(ringId, vertexIds, 'territory', null);
     const shape: FeatureShape = { type: 'Polygon', rings: [ring] };
-    return this.createFeature('Polygon', shape, layerId, currentTime, name, style ? { style } : undefined);
+    return this.createFeature('Polygon', shape, currentTime, name, style ? { style } : undefined);
   }
 
   /**
@@ -184,12 +178,11 @@ export class AddFeatureUseCase {
    */
   addPolygonFromShape(
     shape: FeatureShape & { type: 'Polygon' },
-    layerId: string,
     currentTime: TimePoint,
     name?: string,
     style?: PolygonStyle
   ): Feature {
-    return this.createFeature('Polygon', shape, layerId, currentTime, name, style ? { style } : undefined);
+    return this.createFeature('Polygon', shape, currentTime, name, style ? { style } : undefined);
   }
 
   /** 頂点を生成して登録する */
@@ -204,7 +197,6 @@ export class AddFeatureUseCase {
   private createFeature(
     featureType: FeatureType,
     shape: FeatureShape,
-    layerId: string,
     currentTime: TimePoint,
     name?: string,
     propertyPatch?: Partial<AnchorProperty>
@@ -223,7 +215,7 @@ export class AddFeatureUseCase {
       ...propertyPatch,
     };
 
-    const placement: AnchorPlacement = createAnchorPlacement(layerId, null, []);
+    const placement: AnchorPlacement = createAnchorPlacement(null, []);
 
     const anchor = new FeatureAnchor(
       anchorId,

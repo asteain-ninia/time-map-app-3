@@ -239,7 +239,7 @@ describe('SaveLoadUseCase', () => {
 
   describe('assembleWorld', () => {
     it('地物追加後にWorldを組み立てられる（layersは空）', () => {
-      addFeature.addPoint(new Coordinate(5, 10), 'l1', new TimePoint(100));
+      addFeature.addPoint(new Coordinate(5, 10), new TimePoint(100));
 
       const world = useCase.assembleWorld();
 
@@ -280,7 +280,6 @@ describe('SaveLoadUseCase', () => {
       // 復元後に新しい地物を追加
       const newFeature = addFeature.addPoint(
         new Coordinate(50, 60),
-        'l1',
         new TimePoint(2000)
       );
 

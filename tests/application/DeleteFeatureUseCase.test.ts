@@ -17,7 +17,7 @@ describe('DeleteFeatureUseCase', () => {
 
   describe('基本削除', () => {
     it('ポイント地物を削除できる', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const result = deleteFeature.deleteFeature(feature.id);
 
       expect(result).not.toBeNull();
@@ -28,7 +28,7 @@ describe('DeleteFeatureUseCase', () => {
     it('ライン地物を削除できる', () => {
       const feature = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
-        'l1', time
+        time
       );
       const result = deleteFeature.deleteFeature(feature.id);
 
@@ -39,7 +39,7 @@ describe('DeleteFeatureUseCase', () => {
     it('ポリゴン地物を削除できる', () => {
       const feature = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1', time
+        time
       );
       const result = deleteFeature.deleteFeature(feature.id);
 
@@ -54,7 +54,7 @@ describe('DeleteFeatureUseCase', () => {
 
   describe('頂点クリーンアップ', () => {
     it('使用されなくなった頂点を削除する', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const anchor = feature.getActiveAnchor(time)!;
       const vertexId = (anchor.shape as { type: 'Point'; vertexId: string }).vertexId;
 
@@ -66,8 +66,8 @@ describe('DeleteFeatureUseCase', () => {
 
     it('他の地物で使用されている頂点は削除しない', () => {
       // 2つのポイントを同じ位置に追加（異なる頂点ID）
-      const f1 = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
-      addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const f1 = addFeature.addPoint(new Coordinate(10, 20), time);
+      addFeature.addPoint(new Coordinate(10, 20), time);
 
       const verticesBefore = addFeature.getVertices().size;
       deleteFeature.deleteFeature(f1.id);
@@ -79,7 +79,7 @@ describe('DeleteFeatureUseCase', () => {
 
   describe('削除結果', () => {
     it('削除されたfeatureIdを含む', () => {
-      const feature = addFeature.addPoint(new Coordinate(10, 20), 'l1', time);
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time);
       const result = deleteFeature.deleteFeature(feature.id);
       expect(result!.deletedFeatureIds).toEqual([feature.id]);
     });
@@ -87,7 +87,7 @@ describe('DeleteFeatureUseCase', () => {
     it('削除された頂点IDを含む', () => {
       const feature = addFeature.addLine(
         [new Coordinate(0, 0), new Coordinate(10, 0)],
-        'l1', time
+        time
       );
       const result = deleteFeature.deleteFeature(feature.id);
       expect(result!.deletedVertexIds.length).toBeGreaterThanOrEqual(2);
@@ -99,15 +99,15 @@ describe('DeleteFeatureUseCase', () => {
       // 手動で親子関係を構成
       const parent = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(20, 0), new Coordinate(20, 20)],
-        'l1', time
+        time
       );
       const child1 = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1', time
+        time
       );
       const child2 = addFeature.addPolygon(
         [new Coordinate(10, 0), new Coordinate(20, 0), new Coordinate(20, 10)],
-        'l1', time
+        time
       );
 
       // 親子関係設定
@@ -144,11 +144,11 @@ describe('DeleteFeatureUseCase', () => {
     it('最後の子を削除すると親も自動削除される', () => {
       const parent = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(20, 0), new Coordinate(20, 20)],
-        'l1', time
+        time
       );
       const child = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
-        'l1', time
+        time
       );
 
       // 親子関係設定

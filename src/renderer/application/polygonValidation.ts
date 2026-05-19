@@ -16,7 +16,6 @@ export class PolygonValidationError extends Error {
 
 export function createTransientPolygonFeature(
   coords: readonly Coordinate[],
-  layerId: string,
   time: TimePoint,
   featureId = 'temp-feature',
   ringId = 'temp-ring',
@@ -34,7 +33,7 @@ export function createTransientPolygonFeature(
     { start: time },
     { name: 'temp', description: '' },
     { type: 'Polygon', rings: [new Ring(ringId, vertexIds, 'territory', null)] },
-    createAnchorPlacement(layerId, null, [])
+    createAnchorPlacement(null, [])
   );
 
   return {
