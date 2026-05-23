@@ -223,7 +223,10 @@ describe('SaveLoadUseCase', () => {
       expect(vertices.get('v1')!.x).toBe(10);
     });
 
-    it('読み込んだレイヤーがロード後のassembleWorldにラウンドトリップする', async () => {
+    it('読み込んだ後の assembleWorld は layers を空配列で再構築する', async () => {
+      // Phase 2-D-7c-2a で `SaveLoadUseCase` の `getLayers/setLayers/layers` 暫定 API を
+      // 撤去した。`World.layers` 自体は Phase 2-D-7c-2b で削除予定。in-memory ドメイン経路
+      // からはレイヤー概念が消えており、`assembleWorld` は常に空配列を出力する。
       const world = createTestWorld();
       dialog.showOpenDialog.mockResolvedValue('/test/file.json');
       repo.load.mockResolvedValue(world);
@@ -231,9 +234,7 @@ describe('SaveLoadUseCase', () => {
       await useCase.open();
 
       const assembled = useCase.assembleWorld();
-      expect(assembled.layers).toHaveLength(2);
-      expect(assembled.layers[0].name).toBe('レイヤー1');
-      expect(assembled.layers[1].name).toBe('レイヤー2');
+      expect(assembled.layers).toHaveLength(0);
     });
   });
 

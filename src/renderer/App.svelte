@@ -26,7 +26,6 @@
   import { eventBus } from '@application/EventBus';
   import { Coordinate } from '@domain/value-objects/Coordinate';
   import type { Feature } from '@domain/entities/Feature';
-  import { Layer } from '@domain/entities/Layer';
   import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
   import type { ToolMode, AddToolType } from '@presentation/state/toolMachine';
   import { hitTest } from '@infrastructure/rendering/hitTestUtils';
@@ -201,8 +200,6 @@
 
   const toolStore = createToolStore((addToolType, coords) => {
     // 描画確定時のコールバック — UndoRedoManager経由で実行
-    const targetLayer = getAddTargetLayer();
-    if (!targetLayer) return;
     const time = timelineQueries.getCurrentTime();
     const polygonIndex = features.filter((feature) => {
       const anchor = feature.getActiveAnchor(time);
@@ -241,7 +238,6 @@
   let drawingCoords = $state<readonly Coordinate[]>([]);
   let features = $state<readonly Feature[]>([]);
   let vertices = $state<ReadonlyMap<string, Vertex>>(new Map());
-  let layers = $state<readonly Layer[]>([]);
   let currentTime = $state(timelineQueries.getCurrentTime());
   let selectedFeatureId = $state<string | null>(null);
   let isSidebarCollapsed = $state(false);
@@ -788,16 +784,6 @@
     );
   }
 
-  /** レイヤーデータを更新する */
-  function refreshLayerData(): void {
-    layers = [...saveLoad.getLayers()];
-  }
-
-  function getAddTargetLayer(): Layer | null {
-    const layerList = saveLoad.getLayers();
-    return layerList.find((layer) => layer.visible) ?? layerList[0] ?? null;
-  }
-
   function executeAddFeatureCommand(params: AddFeatureParams): void {
     undoRedo.execute(new AddFeatureCommand(addFeature, params, reassignParent));
     validationMessage = '';
@@ -853,12 +839,7 @@
     resetVertexDragContext();
   }
 
-  // --- 初期レイヤー（デフォルト1つ） ---
-  if (saveLoad.getLayers().length === 0) {
-    saveLoad.setLayers([new Layer('default', 'レイヤー1', 0)]);
-  }
   refreshFeatureData();
-  refreshLayerData();
 
   // --- イベントバス購読 ---
 
@@ -872,7 +853,6 @@
 
   const unsubWorldLoaded = eventBus.on('world:loaded', (event) => {
     refreshFeatureData();
-    refreshLayerData();
     resetInteractionState();
     clearSurveyMeasurements();
     undoRedo.clear();
@@ -1060,15 +1040,12 @@
       syncToolState();
       // 点ツール: 即座にポイント追加（Undo対応）
       if (addToolType === 'point') {
-        const targetLayer = getAddTargetLayer();
-        if (targetLayer) {
-          undoRedo.execute(new AddFeatureCommand(addFeature, {
-            type: 'point',
-            coord: alignedCoord,
-            time: timelineQueries.getCurrentTime(),
-          }, reassignParent));
-          refreshFeatureData();
-        }
+        undoRedo.execute(new AddFeatureCommand(addFeature, {
+          type: 'point',
+          coord: alignedCoord,
+          time: timelineQueries.getCurrentTime(),
+        }, reassignParent));
+        refreshFeatureData();
       }
     } else if (toolMode === 'view' || toolMode === 'edit') {
       if (clickedFeatureId) {
@@ -2042,7 +2019,6 @@
         // §2.3.1: 汎用Undo
         undoRedo.undo();
         refreshFeatureData();
-        refreshLayerData();
       }
     }
     if (e.ctrlKey && e.key === 'y') {
@@ -2050,7 +2026,6 @@
       // §2.3.1: 汎用Redo
       undoRedo.redo();
       refreshFeatureData();
-      refreshLayerData();
     }
     // §2.5: Ctrl+Shift+S で名前を付けて保存、Ctrl+S で保存、Ctrl+O で開く
     if (e.ctrlKey && e.shiftKey && e.key === 'S') {
@@ -2097,9 +2072,7 @@
     if (!confirmUnsavedChanges()) return;
     saveLoad.resetProjectState();
     addFeature.restore(new Map(), new Map(), []);
-    saveLoad.setLayers([new Layer('default', 'レイヤー1', 0)]);
     refreshFeatureData();
-    refreshLayerData();
     resetInteractionState();
     clearSurveyMeasurements();
     undoRedo.clear();
@@ -2152,8 +2125,8 @@
     onOpen={() => { void openProject(); }}
     onSave={() => { void saveProject(); }}
     onSaveAs={() => { void saveProjectAs(); }}
-    onUndo={() => { undoRedo.undo(); refreshFeatureData(); refreshLayerData(); }}
-    onRedo={() => { undoRedo.redo(); refreshFeatureData(); refreshLayerData(); }}
+    onUndo={() => { undoRedo.undo(); refreshFeatureData(); }}
+    onRedo={() => { undoRedo.redo(); refreshFeatureData(); }}
     onSelectAll={onSelectAllVertices}
     onSettings={openSettings}
     onAbout={() => { showAboutDialog = true; }}
