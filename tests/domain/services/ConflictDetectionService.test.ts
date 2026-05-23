@@ -21,18 +21,16 @@ function makeVertex(id: string, x: number, y: number): Vertex {
 
 function makePolygonFeature(
   featureId: string,
-  layerId: string,
   vertexIds: string[],
   time: TimePoint = time100
 ): Feature {
-  return makePolygonFeatureWithRings(featureId, layerId, [
+  return makePolygonFeatureWithRings(featureId, [
     { id: 'ring-1', vertexIds, ringType: 'territory', parentId: null },
   ], time);
 }
 
 function makePolygonFeatureWithRings(
   featureId: string,
-  layerId: string,
   rings: readonly {
     id: string;
     vertexIds: string[];
@@ -53,7 +51,6 @@ function makePolygonFeatureWithRings(
 
 function makeLineFeature(
   featureId: string,
-  layerId: string,
   vertexIds: string[],
   time: TimePoint = time100
 ): Feature {
@@ -123,8 +120,8 @@ const vertices = new Map<string, Vertex>([
 describe('ConflictDetectionService', () => {
   describe('detectSpatialConflicts', () => {
     it('重なる末端ポリゴンを競合として検出する', () => {
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const featureB = makePolygonFeature('f2', 'layer-1', ['vB1', 'vB2', 'vB3', 'vB4']);
+      const featureA = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const featureB = makePolygonFeature('f2', ['vB1', 'vB2', 'vB3', 'vB4']);
       const result = detectSpatialConflicts([featureA, featureB], vertices, time100);
 
       expect(result.hasConflicts).toBe(true);
@@ -133,9 +130,9 @@ describe('ConflictDetectionService', () => {
       expect(result.conflicts[0].featureIdB).toBe('f2');
     });
 
-    it('異なるレイヤーIDの末端ポリゴン同士でも重なれば競合として検出する（地図全体排他）', () => {
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const featureB = makePolygonFeature('f2', 'layer-2', ['vB1', 'vB2', 'vB3', 'vB4']);
+    it('別の末端ポリゴンと重なれば競合として検出する（地図全体排他）', () => {
+      const featureA = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const featureB = makePolygonFeature('f2', ['vB1', 'vB2', 'vB3', 'vB4']);
       const result = detectSpatialConflicts([featureA, featureB], vertices, time100);
 
       expect(result.hasConflicts).toBe(true);
@@ -144,9 +141,9 @@ describe('ConflictDetectionService', () => {
       expect(result.conflicts[0].featureIdB).toBe('f2');
     });
 
-    it('異なるレイヤーIDの末端ポリゴンが重ならなければ競合しない（重なりだけが判定基準）', () => {
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const featureC = makePolygonFeature('f3', 'layer-2', ['vC1', 'vC2', 'vC3', 'vC4']);
+    it('別の末端ポリゴンが重ならなければ競合しない（重なりだけが判定基準）', () => {
+      const featureA = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const featureC = makePolygonFeature('f3', ['vC1', 'vC2', 'vC3', 'vC4']);
       const result = detectSpatialConflicts([featureA, featureC], vertices, time100);
 
       expect(result.hasConflicts).toBe(false);
@@ -154,16 +151,16 @@ describe('ConflictDetectionService', () => {
     });
 
     it('重ならないポリゴンは競合しない', () => {
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const featureC = makePolygonFeature('f3', 'layer-1', ['vC1', 'vC2', 'vC3', 'vC4']);
+      const featureA = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const featureC = makePolygonFeature('f3', ['vC1', 'vC2', 'vC3', 'vC4']);
       const result = detectSpatialConflicts([featureA, featureC], vertices, time100);
 
       expect(result.hasConflicts).toBe(false);
     });
 
     it('ポリゴン以外の地物は無視される', () => {
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const lineFeature = makeLineFeature('f-line', 'layer-1', ['vB1', 'vB2']);
+      const featureA = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const lineFeature = makeLineFeature('f-line', ['vB1', 'vB2']);
       const result = detectSpatialConflicts([featureA, lineFeature], vertices, time100);
 
       expect(result.hasConflicts).toBe(false);
@@ -171,8 +168,8 @@ describe('ConflictDetectionService', () => {
 
     it('指定時刻でアクティブでない地物は無視される', () => {
       const time200 = new TimePoint(200);
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4'], time100);
-      const featureB = makePolygonFeature('f2', 'layer-1', ['vB1', 'vB2', 'vB3', 'vB4'], time200);
+      const featureA = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4'], time100);
+      const featureB = makePolygonFeature('f2', ['vB1', 'vB2', 'vB3', 'vB4'], time200);
       // time100ではfeatureBはまだアクティブ（start=200 > 100）
       const result = detectSpatialConflicts([featureA, featureB], vertices, time100);
 
@@ -180,9 +177,9 @@ describe('ConflictDetectionService', () => {
     });
 
     it('3つのポリゴンで複数の競合を検出する', () => {
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const featureB = makePolygonFeature('f2', 'layer-1', ['vB1', 'vB2', 'vB3', 'vB4']);
-      const featureC = makePolygonFeature('f3', 'layer-1', ['vC1', 'vC2', 'vC3', 'vC4']);
+      const featureA = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const featureB = makePolygonFeature('f2', ['vB1', 'vB2', 'vB3', 'vB4']);
+      const featureC = makePolygonFeature('f3', ['vC1', 'vC2', 'vC3', 'vC4']);
       const result = detectSpatialConflicts([featureA, featureB, featureC], vertices, time100);
 
       // f1-f2は重なる、f1-f3とf2-f3は重ならない
@@ -196,11 +193,11 @@ describe('ConflictDetectionService', () => {
     });
 
     it('穴の内部にある別地物は競合として検出しない', () => {
-      const featureWithHole = makePolygonFeatureWithRings('f-hole', 'layer-1', [
+      const featureWithHole = makePolygonFeatureWithRings('f-hole', [
         { id: 'outer', vertexIds: ['vD1', 'vD2', 'vD3', 'vD4'], ringType: 'territory', parentId: null },
         { id: 'hole', vertexIds: ['vH1', 'vH2', 'vH3', 'vH4'], ringType: 'hole', parentId: 'outer' },
       ]);
-      const featureInsideHole = makePolygonFeature('f-inside', 'layer-1', ['vP1', 'vP2', 'vP3', 'vP4']);
+      const featureInsideHole = makePolygonFeature('f-inside', ['vP1', 'vP2', 'vP3', 'vP4']);
 
       const result = detectSpatialConflicts([featureWithHole, featureInsideHole], vertices, time100);
 
@@ -209,12 +206,12 @@ describe('ConflictDetectionService', () => {
     });
 
     it('穴の中の飛び地と重なる別地物は競合として検出する', () => {
-      const featureWithNestedTerritory = makePolygonFeatureWithRings('f-hole', 'layer-1', [
+      const featureWithNestedTerritory = makePolygonFeatureWithRings('f-hole', [
         { id: 'outer', vertexIds: ['vD1', 'vD2', 'vD3', 'vD4'], ringType: 'territory', parentId: null },
         { id: 'hole', vertexIds: ['vH1', 'vH2', 'vH3', 'vH4'], ringType: 'hole', parentId: 'outer' },
         { id: 'island', vertexIds: ['vI1', 'vI2', 'vI3', 'vI4'], ringType: 'territory', parentId: 'hole' },
       ]);
-      const overlappingFeature = makePolygonFeature('f-overlap', 'layer-1', ['vQ1', 'vQ2', 'vQ3', 'vQ4']);
+      const overlappingFeature = makePolygonFeature('f-overlap', ['vQ1', 'vQ2', 'vQ3', 'vQ4']);
 
       const result = detectSpatialConflicts([featureWithNestedTerritory, overlappingFeature], vertices, time100);
 
@@ -225,12 +222,12 @@ describe('ConflictDetectionService', () => {
     });
 
     it('競合IDは一意である', () => {
-      // 同じレイヤーに3つの重なるポリゴンを配置 → 3つの競合ペア
+      // 3つの重なるポリゴンを配置 → 3つの競合ペア
       const features = [
-        makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']),
-        makePolygonFeature('f2', 'layer-1', ['vB1', 'vB2', 'vB3', 'vB4']),
+        makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']),
+        makePolygonFeature('f2', ['vB1', 'vB2', 'vB3', 'vB4']),
         // f3はf1とf2の中間に配置（両方と重なる）
-        makePolygonFeature('f3', 'layer-1', ['vA2', 'vB2', 'vB3', 'vA3']),
+        makePolygonFeature('f3', ['vA2', 'vB2', 'vB3', 'vA3']),
       ];
       const result = detectSpatialConflicts(features, vertices, time100);
       const ids = result.conflicts.map(c => c.id);
@@ -238,8 +235,8 @@ describe('ConflictDetectionService', () => {
     });
 
     it('180度超に延伸したポリゴンと通常範囲のポリゴンの重なりも検出する', () => {
-      const featureA = makePolygonFeature('f-wrap-a', 'layer-1', ['vW1', 'vW2', 'vW3', 'vW4']);
-      const featureB = makePolygonFeature('f-wrap-b', 'layer-1', ['vX1', 'vX2', 'vX3', 'vX4']);
+      const featureA = makePolygonFeature('f-wrap-a', ['vW1', 'vW2', 'vW3', 'vW4']);
+      const featureB = makePolygonFeature('f-wrap-b', ['vX1', 'vX2', 'vX3', 'vX4']);
 
       const result = detectSpatialConflicts([featureA, featureB], vertices, time100);
 
@@ -252,9 +249,9 @@ describe('ConflictDetectionService', () => {
 
   describe('detectConflictsForFeature', () => {
     it('特定の地物に関する競合のみ返す', () => {
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const featureB = makePolygonFeature('f2', 'layer-1', ['vB1', 'vB2', 'vB3', 'vB4']);
-      const featureC = makePolygonFeature('f3', 'layer-1', ['vC1', 'vC2', 'vC3', 'vC4']);
+      const featureA = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const featureB = makePolygonFeature('f2', ['vB1', 'vB2', 'vB3', 'vB4']);
+      const featureC = makePolygonFeature('f3', ['vC1', 'vC2', 'vC3', 'vC4']);
 
       const conflicts = detectConflictsForFeature(
         'f1', [featureA, featureB, featureC], vertices, time100
@@ -266,7 +263,7 @@ describe('ConflictDetectionService', () => {
     });
 
     it('対象がポリゴンでなければ空配列', () => {
-      const lineFeature = makeLineFeature('f-line', 'layer-1', ['vA1', 'vA2']);
+      const lineFeature = makeLineFeature('f-line', ['vA1', 'vA2']);
       const conflicts = detectConflictsForFeature(
         'f-line', [lineFeature], vertices, time100
       );
@@ -281,9 +278,9 @@ describe('ConflictDetectionService', () => {
       expect(conflicts).toEqual([]);
     });
 
-    it('異なるレイヤーIDの末端地物とも重なれば競合として検出する（地図全体排他）', () => {
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const featureB = makePolygonFeature('f2', 'layer-2', ['vB1', 'vB2', 'vB3', 'vB4']);
+    it('別の末端地物とも重なれば競合として検出する（地図全体排他）', () => {
+      const featureA = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const featureB = makePolygonFeature('f2', ['vB1', 'vB2', 'vB3', 'vB4']);
       const conflicts = detectConflictsForFeature(
         'f1', [featureA, featureB], vertices, time100
       );
@@ -293,9 +290,9 @@ describe('ConflictDetectionService', () => {
       expect(conflicts[0].featureIdB).toBe('f2');
     });
 
-    it('異なるレイヤーIDの末端地物でも重ならなければ競合しない（重なりだけが判定基準）', () => {
-      const featureA = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const featureC = makePolygonFeature('f3', 'layer-2', ['vC1', 'vC2', 'vC3', 'vC4']);
+    it('別の末端地物でも重ならなければ競合しない（重なりだけが判定基準）', () => {
+      const featureA = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const featureC = makePolygonFeature('f3', ['vC1', 'vC2', 'vC3', 'vC4']);
       const conflicts = detectConflictsForFeature(
         'f1', [featureA, featureC], vertices, time100
       );
@@ -304,8 +301,8 @@ describe('ConflictDetectionService', () => {
     });
 
     it('一覧に未登録の仮想ポリゴンでも競合を検出できる', () => {
-      const existing = makePolygonFeature('f1', 'layer-1', ['vA1', 'vA2', 'vA3', 'vA4']);
-      const transient = makePolygonFeature('f-temp', 'layer-1', ['vB1', 'vB2', 'vB3', 'vB4']);
+      const existing = makePolygonFeature('f1', ['vA1', 'vA2', 'vA3', 'vA4']);
+      const transient = makePolygonFeature('f-temp', ['vB1', 'vB2', 'vB3', 'vB4']);
 
       const conflicts = detectConflictsForFeature(
         transient,
@@ -320,11 +317,11 @@ describe('ConflictDetectionService', () => {
     });
 
     it('穴の内部にある別地物は対象地物の競合として返さない', () => {
-      const featureWithHole = makePolygonFeatureWithRings('f-hole', 'layer-1', [
+      const featureWithHole = makePolygonFeatureWithRings('f-hole', [
         { id: 'outer', vertexIds: ['vD1', 'vD2', 'vD3', 'vD4'], ringType: 'territory', parentId: null },
         { id: 'hole', vertexIds: ['vH1', 'vH2', 'vH3', 'vH4'], ringType: 'hole', parentId: 'outer' },
       ]);
-      const featureInsideHole = makePolygonFeature('f-inside', 'layer-1', ['vP1', 'vP2', 'vP3', 'vP4']);
+      const featureInsideHole = makePolygonFeature('f-inside', ['vP1', 'vP2', 'vP3', 'vP4']);
 
       const conflicts = detectConflictsForFeature(
         'f-inside',
@@ -337,8 +334,8 @@ describe('ConflictDetectionService', () => {
     });
 
     it('180度超に延伸したポリゴンとの競合も対象地物ベースで検出できる', () => {
-      const featureA = makePolygonFeature('f-wrap-a', 'layer-1', ['vW1', 'vW2', 'vW3', 'vW4']);
-      const featureB = makePolygonFeature('f-wrap-b', 'layer-1', ['vX1', 'vX2', 'vX3', 'vX4']);
+      const featureA = makePolygonFeature('f-wrap-a', ['vW1', 'vW2', 'vW3', 'vW4']);
+      const featureB = makePolygonFeature('f-wrap-b', ['vX1', 'vX2', 'vX3', 'vX4']);
 
       const conflicts = detectConflictsForFeature(
         'f-wrap-a',

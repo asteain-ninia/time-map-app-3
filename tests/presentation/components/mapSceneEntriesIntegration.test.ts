@@ -35,7 +35,7 @@ describe('sceneEntries 経路の対概念整合性', () => {
     return m;
   }
 
-  function pointFeature(id: string, vertexId: string, layerId: string): Feature {
+  function pointFeature(id: string, vertexId: string): Feature {
     return new Feature(id, 'Point', [
       new FeatureAnchor(
         `${id}-anchor`,
@@ -47,7 +47,7 @@ describe('sceneEntries 経路の対概念整合性', () => {
     ]);
   }
 
-  function polygonFeature(id: string, vertexIds: string[], layerId: string): Feature {
+  function polygonFeature(id: string, vertexIds: string[]): Feature {
     return new Feature(id, 'Polygon', [
       new FeatureAnchor(
         `${id}-anchor`,
@@ -66,8 +66,7 @@ describe('sceneEntries 経路の対概念整合性', () => {
   function polygonFeatureWithChildren(
     id: string,
     vertexIds: string[] | null, // null なら shape なし（コンテナ）
-    childIds: string[],
-    layerId: string
+    childIds: string[]
   ): Feature {
     const shape =
       vertexIds === null
@@ -97,9 +96,9 @@ describe('sceneEntries 経路の対概念整合性', () => {
       ['poly-v4', new Vertex('poly-v4', new Coordinate(900, 10))],
     ]);
     const features = [
-      pointFeature('p1', 'v1', 'layer-a'),
-      pointFeature('p2', 'v2', 'layer-b'),
-      polygonFeature('poly', ['poly-v1', 'poly-v2', 'poly-v3', 'poly-v4'], 'layer-a'),
+      pointFeature('p1', 'v1'),
+      pointFeature('p2', 'v2'),
+      polygonFeature('poly', ['poly-v1', 'poly-v2', 'poly-v3', 'poly-v4']),
     ];
     const sceneEntries = collectMapSceneEntries(features, time, toCoords(vertices));
     const sceneFeatureIds = new Set(sceneEntries.map((e) => e.feature.id));
@@ -137,7 +136,7 @@ describe('sceneEntries 経路の対概念整合性', () => {
       ['v-inactive', new Vertex('v-inactive', new Coordinate(900, 10))],
     ]);
     const features = [
-      pointFeature('active', 'v-active', 'layer-a'),
+      pointFeature('active', 'v-active'),
       new Feature('inactive', 'Point', [
         new FeatureAnchor(
           'inactive-anchor',
@@ -175,8 +174,8 @@ describe('sceneEntries 経路の対概念整合性', () => {
       ['leaf-v2', new Vertex('leaf-v2', new Coordinate(10, 0))],
       ['leaf-v3', new Vertex('leaf-v3', new Coordinate(10, 10))],
     ]);
-    const leaf = polygonFeature('leaf', ['leaf-v1', 'leaf-v2', 'leaf-v3'], 'l1');
-    const container = polygonFeatureWithChildren('container', null, ['leaf'], 'l1');
+    const leaf = polygonFeature('leaf', ['leaf-v1', 'leaf-v2', 'leaf-v3']);
+    const container = polygonFeatureWithChildren('container', null, ['leaf']);
     const sceneEntries = collectMapSceneEntries([leaf, container], time, toCoords(vertices));
 
     expect(sceneEntries.map((e) => e.feature.id)).toEqual(['leaf']);
@@ -224,8 +223,7 @@ describe('sceneEntries 経路の対概念整合性', () => {
       const transitional = polygonFeatureWithChildren(
         'transitional',
         ['p-v1', 'p-v2', 'p-v3', 'p-v4'],
-        ['missing-child'], // child が features に存在しない → 派生空
-        'l1'
+        ['missing-child'] // child が features に存在しない → 派生空
       );
       const sceneEntries = collectMapSceneEntries([transitional], time, toCoords(vertices));
 
@@ -287,12 +285,11 @@ describe('sceneEntries 経路の対概念整合性', () => {
         ['c-v3', new Vertex('c-v3', new Coordinate(10, 10))],
         ['c-v4', new Vertex('c-v4', new Coordinate(0, 10))],
       ]);
-      const child = polygonFeature('leaf-child', ['c-v1', 'c-v2', 'c-v3', 'c-v4'], 'l1');
+      const child = polygonFeature('leaf-child', ['c-v1', 'c-v2', 'c-v3', 'c-v4']);
       const transitional = polygonFeatureWithChildren(
         'transitional',
         ['p-big-1', 'p-big-2', 'p-big-3', 'p-big-4'],
-        ['leaf-child'],
-        'l1'
+        ['leaf-child']
       );
       // features 配列順は親→子（描画順）
       const sceneEntries = collectMapSceneEntries(

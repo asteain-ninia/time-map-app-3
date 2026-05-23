@@ -56,7 +56,6 @@ function createLineAnchor(): FeatureAnchor {
 function createPointFeature(
   featureId: string,
   vertexId: string,
-  layerId: string,
   time: TimePoint
 ): Feature {
   return new Feature(featureId, 'Point', [
@@ -135,7 +134,7 @@ describe('mapCanvasUtils', () => {
 
   it('720度超の地物でも可視コピーに必要なラップタイルを含める', () => {
     const time = new TimePoint(100);
-    const feature = createPointFeature('f-wrap', 'v-wrap', 'layer-1', time);
+    const feature = createPointFeature('f-wrap', 'v-wrap', time);
     const vertices = new Map([
       ['v-wrap', new Vertex('v-wrap', new Coordinate(900, 10))],
     ]);

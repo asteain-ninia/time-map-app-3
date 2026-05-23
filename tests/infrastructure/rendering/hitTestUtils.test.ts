@@ -34,8 +34,7 @@ function toCoordsMap(vertices: ReadonlyMap<string, Vertex>): ReadonlyMap<string,
 /** テスト用ポイント地物 */
 function makePointFeature(
   id: string,
-  vertexId: string,
-  layerId: string
+  vertexId: string
 ): Feature {
   const anchor = new FeatureAnchor(
     `a-${id}`,
@@ -50,8 +49,7 @@ function makePointFeature(
 /** テスト用ライン地物 */
 function makeLineFeature(
   id: string,
-  vertexIds: string[],
-  layerId: string
+  vertexIds: string[]
 ): Feature {
   const anchor = new FeatureAnchor(
     `a-${id}`,
@@ -66,8 +64,7 @@ function makeLineFeature(
 /** テスト用ポリゴン地物 */
 function makePolygonFeature(
   id: string,
-  vertexIds: string[],
-  layerId: string
+  vertexIds: string[]
 ): Feature {
   const ring = new Ring('r1', vertexIds, 'territory', null);
   const anchor = new FeatureAnchor(
@@ -146,7 +143,7 @@ describe('hitTest', () => {
     it('閾値内のクリックでヒットする', () => {
       const vertices = makeVertices(['v1', 10, 20]);
       const sceneEntries = collectMapSceneEntries(
-        [makePointFeature('p1', 'v1', 'l1')],
+        [makePointFeature('p1', 'v1')],
         time,
         toCoordsMap(vertices)
       );
@@ -158,7 +155,7 @@ describe('hitTest', () => {
     it('閾値外のクリックでヒットしない', () => {
       const vertices = makeVertices(['v1', 10, 20]);
       const sceneEntries = collectMapSceneEntries(
-        [makePointFeature('p1', 'v1', 'l1')],
+        [makePointFeature('p1', 'v1')],
         time,
         toCoordsMap(vertices)
       );
@@ -169,7 +166,7 @@ describe('hitTest', () => {
     it('隣接ラップ上の生値経度ポイントにもヒットする', () => {
       const vertices = makeVertices(['v1', 190, 20]);
       const sceneEntries = collectMapSceneEntries(
-        [makePointFeature('p-wrap', 'v1', 'l1')],
+        [makePointFeature('p-wrap', 'v1')],
         time,
         toCoordsMap(vertices)
       );
@@ -183,7 +180,7 @@ describe('hitTest', () => {
     it('線の近くのクリックでヒットする', () => {
       const vertices = makeVertices(['v1', 0, 0], ['v2', 10, 0]);
       const sceneEntries = collectMapSceneEntries(
-        [makeLineFeature('ln1', ['v1', 'v2'], 'l1')],
+        [makeLineFeature('ln1', ['v1', 'v2'])],
         time,
         toCoordsMap(vertices)
       );
@@ -195,7 +192,7 @@ describe('hitTest', () => {
     it('線から遠いクリックでヒットしない', () => {
       const vertices = makeVertices(['v1', 0, 0], ['v2', 10, 0]);
       const sceneEntries = collectMapSceneEntries(
-        [makeLineFeature('ln1', ['v1', 'v2'], 'l1')],
+        [makeLineFeature('ln1', ['v1', 'v2'])],
         time,
         toCoordsMap(vertices)
       );
@@ -206,7 +203,7 @@ describe('hitTest', () => {
     it('東西端をまたぐ線でも生値経度のまま seam 付近でヒットする', () => {
       const vertices = makeVertices(['v1', 170, 0], ['v2', 190, 0]);
       const sceneEntries = collectMapSceneEntries(
-        [makeLineFeature('ln-wrap', ['v1', 'v2'], 'l1')],
+        [makeLineFeature('ln-wrap', ['v1', 'v2'])],
         time,
         toCoordsMap(vertices)
       );
@@ -225,7 +222,7 @@ describe('hitTest', () => {
         ['v4', 0, 10]
       );
       const sceneEntries = collectMapSceneEntries(
-        [makePolygonFeature('pg1', ['v1', 'v2', 'v3', 'v4'], 'l1')],
+        [makePolygonFeature('pg1', ['v1', 'v2', 'v3', 'v4'])],
         time,
         toCoordsMap(vertices)
       );
@@ -242,7 +239,7 @@ describe('hitTest', () => {
         ['v4', 0, 10]
       );
       const sceneEntries = collectMapSceneEntries(
-        [makePolygonFeature('pg1', ['v1', 'v2', 'v3', 'v4'], 'l1')],
+        [makePolygonFeature('pg1', ['v1', 'v2', 'v3', 'v4'])],
         time,
         toCoordsMap(vertices)
       );
@@ -258,7 +255,7 @@ describe('hitTest', () => {
         ['v4', 170, 10]
       );
       const sceneEntries = collectMapSceneEntries(
-        [makePolygonFeature('pg-wrap', ['v1', 'v2', 'v3', 'v4'], 'l1')],
+        [makePolygonFeature('pg-wrap', ['v1', 'v2', 'v3', 'v4'])],
         time,
         toCoordsMap(vertices)
       );
@@ -342,7 +339,7 @@ describe('hitTest', () => {
         ['v4', 350, 10]
       );
       const sceneEntries = collectMapSceneEntries(
-        [makePolygonFeature('pg-f4', ['v1', 'v2', 'v3', 'v4'], 'l1')],
+        [makePolygonFeature('pg-f4', ['v1', 'v2', 'v3', 'v4'])],
         time,
         toCoordsMap(vertices)
       );

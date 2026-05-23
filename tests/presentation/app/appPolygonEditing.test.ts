@@ -32,7 +32,6 @@ function makeVertex(id: string, x: number, y: number): Vertex {
 
 function makePolygonFeature(
   featureId: string,
-  layerId: string,
   rings: readonly {
     id: string;
     vertexIds: string[];
@@ -54,7 +53,7 @@ function makePolygonFeature(
   ]);
 }
 
-function makePointFeature(featureId: string, layerId: string, vertexId: string): Feature {
+function makePointFeature(featureId: string, vertexId: string): Feature {
   return new Feature(featureId, 'Point', [
     new FeatureAnchor(
       `${featureId}-anchor`,
@@ -66,7 +65,7 @@ function makePointFeature(featureId: string, layerId: string, vertexId: string):
   ]);
 }
 
-function makeLineFeature(featureId: string, layerId: string, vertexIds: string[]): Feature {
+function makeLineFeature(featureId: string, vertexIds: string[]): Feature {
   return new Feature(featureId, 'Line', [
     new FeatureAnchor(
       `${featureId}-anchor`,
@@ -116,10 +115,10 @@ describe('appPolygonEditing', () => {
   });
 
   it('getRingDrawingTargetはポリゴン地物だけを返す', () => {
-    const polygon = makePolygonFeature('polygon-1', 'layer-1', [
+    const polygon = makePolygonFeature('polygon-1', [
       { id: 'outer', vertexIds: ['o1', 'o2', 'o3', 'o4'], ringType: 'territory', parentId: null },
     ]);
-    const point = makePointFeature('point-1', 'layer-1', 'p1');
+    const point = makePointFeature('point-1', 'p1');
 
     expect(
       getRingDrawingTarget(
@@ -148,14 +147,14 @@ describe('appPolygonEditing', () => {
     ]);
 
     expect(
-      getAnchorReferenceLongitude(makePointFeature('point-1', 'layer-1', 'p1').anchors[0], vertices)
+      getAnchorReferenceLongitude(makePointFeature('point-1', 'p1').anchors[0], vertices)
     ).toBe(10);
     expect(
-      getAnchorReferenceLongitude(makeLineFeature('line-1', 'layer-1', ['l1', 'l2']).anchors[0], vertices)
+      getAnchorReferenceLongitude(makeLineFeature('line-1', ['l1', 'l2']).anchors[0], vertices)
     ).toBe(20);
     expect(
       getAnchorReferenceLongitude(
-        makePolygonFeature('polygon-1', 'layer-1', [
+        makePolygonFeature('polygon-1', [
           { id: 'outer', vertexIds: ['o1', 'o2', 'o3'], ringType: 'territory', parentId: null },
         ]).anchors[0],
         vertices
@@ -170,10 +169,10 @@ describe('appPolygonEditing', () => {
       ['o3', makeVertex('o3', 60, 60)],
       ['p1', makeVertex('p1', 10, 10)],
     ]);
-    const polygon = makePolygonFeature('polygon-1', 'layer-1', [
+    const polygon = makePolygonFeature('polygon-1', [
       { id: 'outer', vertexIds: ['o1', 'o2', 'o3'], ringType: 'territory', parentId: null },
     ]);
-    const point = makePointFeature('point-1', 'layer-1', 'p1');
+    const point = makePointFeature('point-1', 'p1');
 
     expect(getSelectedPolygonReferenceLongitude([polygon, point], 'polygon-1', time100, vertices)).toBe(40);
     expect(getSelectedPolygonReferenceLongitude([polygon, point], 'point-1', time100, vertices)).toBeNull();
@@ -191,7 +190,7 @@ describe('appPolygonEditing', () => {
 
   it('穴/飛び地制約メッセージを配置モードごとに返す', () => {
     const vertices = createNestedVertices();
-    const polygon = makePolygonFeature('polygon-1', 'layer-1', [
+    const polygon = makePolygonFeature('polygon-1', [
       { id: 'outer', vertexIds: ['o1', 'o2', 'o3', 'o4'], ringType: 'territory', parentId: null },
       { id: 'hole', vertexIds: ['h1', 'h2', 'h3', 'h4'], ringType: 'hole', parentId: 'outer' },
     ]);
@@ -234,7 +233,7 @@ describe('appPolygonEditing', () => {
 
   it('validateRingDrawingVertexは制約外の頂点を拒否する', () => {
     const vertices = createNestedVertices();
-    const polygon = makePolygonFeature('polygon-1', 'layer-1', [
+    const polygon = makePolygonFeature('polygon-1', [
       { id: 'outer', vertexIds: ['o1', 'o2', 'o3', 'o4'], ringType: 'territory', parentId: null },
       { id: 'hole', vertexIds: ['h1', 'h2', 'h3', 'h4'], ringType: 'hole', parentId: 'outer' },
     ]);
@@ -254,7 +253,7 @@ describe('appPolygonEditing', () => {
       ['a3', makeVertex('a3', 10, 10)],
       ['a4', makeVertex('a4', 0, 10)],
     ]);
-    const existing = makePolygonFeature('polygon-1', 'layer-1', [
+    const existing = makePolygonFeature('polygon-1', [
       { id: 'outer', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
     ]);
 
@@ -296,13 +295,13 @@ describe('appPolygonEditing', () => {
       ['c3', makeVertex('c3', 50, 10)],
       ['c4', makeVertex('c4', 40, 10)],
     ]);
-    const source = makePolygonFeature('source', 'layer-1', [
+    const source = makePolygonFeature('source', [
       { id: 'source-ring', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
     ]);
-    const sameLayer = makePolygonFeature('same-layer', 'layer-1', [
+    const sameLayer = makePolygonFeature('same-layer', [
       { id: 'same-ring', vertexIds: ['b1', 'b2', 'b3', 'b4'], ringType: 'territory', parentId: null },
     ]);
-    const otherLayer = makePolygonFeature('other-layer', 'layer-2', [
+    const otherLayer = makePolygonFeature('other-layer', [
       { id: 'other-ring', vertexIds: ['c1', 'c2', 'c3', 'c4'], ringType: 'territory', parentId: null },
     ]);
 
@@ -334,13 +333,13 @@ describe('appPolygonEditing', () => {
       ['c3', makeVertex('c3', 50, 10)],
       ['c4', makeVertex('c4', 40, 10)],
     ]);
-    const source = makePolygonFeature('source', 'layer-1', [
+    const source = makePolygonFeature('source', [
       { id: 'source-ring', vertexIds: ['a1', 'a2', 'a3'], ringType: 'territory', parentId: null },
     ]);
-    const sameLayer = makePolygonFeature('same-layer', 'layer-1', [
+    const sameLayer = makePolygonFeature('same-layer', [
       { id: 'same-ring', vertexIds: ['b1', 'b2', 'b3', 'b4'], ringType: 'territory', parentId: null },
     ]);
-    const otherLayer = makePolygonFeature('other-layer', 'layer-2', [
+    const otherLayer = makePolygonFeature('other-layer', [
       { id: 'other-ring', vertexIds: ['c1', 'c2', 'c3', 'c4'], ringType: 'territory', parentId: null },
     ]);
 
@@ -371,7 +370,7 @@ describe('appPolygonEditing', () => {
       ['t3', makeVertex('t3', 30, 10)],
       ['t4', makeVertex('t4', 20, 10)],
     ]);
-    const source = makePolygonFeature('source', 'layer-1', [
+    const source = makePolygonFeature('source', [
       { id: 'source-ring', vertexIds: ['s1', 's2', 's3', 's4'], ringType: 'territory', parentId: null },
     ]);
     // 移行期間ノード: shape を持つが childIds 非空のため EdgeSlide 対象外
@@ -435,7 +434,7 @@ describe('appPolygonEditing', () => {
       ['a3', makeVertex('a3', 10, 10)],
       ['a4', makeVertex('a4', 0, 10)],
     ]);
-    const source = makePolygonFeature('source', 'layer-1', [
+    const source = makePolygonFeature('source', [
       { id: 'source-ring', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
     ]);
 

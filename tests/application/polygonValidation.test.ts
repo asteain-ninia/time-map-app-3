@@ -21,7 +21,6 @@ function makeVertex(id: string, x: number, y: number): Vertex {
 
 function makePolygonFeature(
   featureId: string,
-  layerId: string,
   rings: readonly {
     id: string;
     vertexIds: string[];
@@ -43,7 +42,7 @@ function makePolygonFeature(
   ]);
 }
 
-function makePointFeature(featureId: string, layerId: string, vertexId: string): Feature {
+function makePointFeature(featureId: string, vertexId: string): Feature {
   return new Feature(featureId, 'Point', [
     new FeatureAnchor(
       `${featureId}-anchor`,
@@ -55,7 +54,7 @@ function makePointFeature(featureId: string, layerId: string, vertexId: string):
   ]);
 }
 
-function makeLineFeature(featureId: string, layerId: string, vertexIds: string[]): Feature {
+function makeLineFeature(featureId: string, vertexIds: string[]): Feature {
   return new Feature(featureId, 'Line', [
     new FeatureAnchor(
       `${featureId}-anchor`,
@@ -101,13 +100,13 @@ describe('polygonValidation', () => {
 
   it('collectImpactedFeatureIdsByVertexIdsは該当頂点を持つ地物だけ返す', () => {
     const features = [
-      makePolygonFeature('polygon-1', 'layer-1', [
+      makePolygonFeature('polygon-1', [
         { id: 'ring-1', vertexIds: ['p1', 'p2', 'p3'], ringType: 'territory', parentId: null },
       ]),
-      makePolygonFeature('polygon-2', 'layer-1', [
+      makePolygonFeature('polygon-2', [
         { id: 'ring-2', vertexIds: ['q1', 'q2', 'q3'], ringType: 'territory', parentId: null },
       ]),
-      makeLineFeature('line-1', 'layer-1', ['l1', 'l2']),
+      makeLineFeature('line-1', ['l1', 'l2']),
     ];
 
     expect(collectImpactedFeatureIdsByVertexIds(features, ['p2', 'l2'], time100)).toEqual([
@@ -118,7 +117,7 @@ describe('polygonValidation', () => {
 
   it('collectImpactedFeatureIdsByVertexIdsは該当なしなら空配列を返す', () => {
     const features = [
-      makePolygonFeature('polygon-1', 'layer-1', [
+      makePolygonFeature('polygon-1', [
         { id: 'ring-1', vertexIds: ['p1', 'p2', 'p3'], ringType: 'territory', parentId: null },
       ]),
     ];
@@ -128,9 +127,9 @@ describe('polygonValidation', () => {
 
   it('collectImpactedFeatureIdsByVertexIdsはPointとLineStringとPolygonの全型を判定する', () => {
     const features = [
-      makePointFeature('point-1', 'layer-1', 'point-v1'),
-      makeLineFeature('line-1', 'layer-1', ['line-v1', 'line-v2']),
-      makePolygonFeature('polygon-1', 'layer-1', [
+      makePointFeature('point-1', 'point-v1'),
+      makeLineFeature('line-1', ['line-v1', 'line-v2']),
+      makePolygonFeature('polygon-1', [
         { id: 'ring-1', vertexIds: ['poly-v1', 'poly-v2', 'poly-v3'], ringType: 'territory', parentId: null },
       ]),
     ];
@@ -151,7 +150,7 @@ describe('polygonValidation', () => {
       ['a3', makeVertex('a3', 10, 10)],
       ['a4', makeVertex('a4', 0, 10)],
     ]);
-    const feature = makePolygonFeature('polygon-1', 'layer-1', [
+    const feature = makePolygonFeature('polygon-1', [
       { id: 'ring-1', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
     ]);
 
@@ -165,7 +164,7 @@ describe('polygonValidation', () => {
       ['a3', makeVertex('a3', 10, 0)],
       ['a4', makeVertex('a4', 0, 10)],
     ]);
-    const feature = makePolygonFeature('polygon-1', 'layer-1', [
+    const feature = makePolygonFeature('polygon-1', [
       { id: 'ring-1', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
     ]);
 
@@ -184,7 +183,7 @@ describe('polygonValidation', () => {
       ['h3', makeVertex('h3', 24, 16)],
       ['h4', makeVertex('h4', 4, 16)],
     ]);
-    const feature = makePolygonFeature('polygon-1', 'layer-1', [
+    const feature = makePolygonFeature('polygon-1', [
       { id: 'outer', vertexIds: ['o1', 'o2', 'o3', 'o4'], ringType: 'territory', parentId: null },
       { id: 'hole', vertexIds: ['h1', 'h2', 'h3', 'h4'], ringType: 'hole', parentId: 'outer' },
     ]);
@@ -205,10 +204,10 @@ describe('polygonValidation', () => {
       ['b3', makeVertex('b3', 15, 10)],
       ['b4', makeVertex('b4', 5, 10)],
     ]);
-    const target = makePolygonFeature('polygon-target', 'layer-1', [
+    const target = makePolygonFeature('polygon-target', [
       { id: 'ring-a', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
     ]);
-    const other = makePolygonFeature('polygon-other', 'layer-1', [
+    const other = makePolygonFeature('polygon-other', [
       { id: 'ring-b', vertexIds: ['b1', 'b2', 'b3', 'b4'], ringType: 'territory', parentId: null },
     ]);
 
@@ -221,7 +220,7 @@ describe('polygonValidation', () => {
       ['l1', makeVertex('l1', 0, 0)],
       ['l2', makeVertex('l2', 10, 10)],
     ]);
-    const line = makeLineFeature('line-1', 'layer-1', ['l1', 'l2']);
+    const line = makeLineFeature('line-1', ['l1', 'l2']);
 
     expect(() => validatePolygonFeatureIdsOrThrow([line.id], [line], vertices, time100)).not.toThrow();
   });

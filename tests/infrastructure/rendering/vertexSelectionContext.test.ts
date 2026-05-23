@@ -14,7 +14,6 @@ import { collectMapSceneEntries } from '@presentation/components/mapSceneEntries
 function createPointFeature(
   featureId: string,
   vertexId: string,
-  layerId: string,
   time: TimePoint = new TimePoint(1000)
 ): Feature {
   return new Feature(featureId, 'Point', [
@@ -31,7 +30,6 @@ function createPointFeature(
 function createPolygonFeature(
   featureId: string,
   vertexIds: string[],
-  layerId: string,
   time: TimePoint = new TimePoint(1000)
 ): Feature {
   return new Feature(featureId, 'Polygon', [
@@ -63,7 +61,7 @@ describe('vertexSelectionContext', () => {
       // 「描画される地物 = 頂点所有者として現れる地物」を sceneEntries で固定する
       // （開発ガイド §6.1.2 / §6.6.9 対概念整合性）
       const features = [
-        createPointFeature('f1', 'v1', 'visible'),
+        createPointFeature('f1', 'v1'),
         new Feature('f3', 'Point', [
           new FeatureAnchor(
             'f3-anchor',
@@ -84,8 +82,8 @@ describe('vertexSelectionContext', () => {
 
     it('共有頂点では所有地物を重複なく保持する', () => {
       const features = [
-        createPointFeature('f1', 'shared-v', 'visible'),
-        createPointFeature('f2', 'shared-v', 'visible'),
+        createPointFeature('f1', 'shared-v'),
+        createPointFeature('f2', 'shared-v'),
       ];
       const sceneEntries = collectMapSceneEntries(features, currentTime, makeCoords('shared-v'));
 
@@ -121,7 +119,7 @@ describe('vertexSelectionContext', () => {
 
     it('単一地物のみなら single を返す', () => {
       const features = [
-        createPolygonFeature('f1', ['v1', 'v2', 'v3'], 'visible'),
+        createPolygonFeature('f1', ['v1', 'v2', 'v3']),
       ];
       const ownerMap = buildSceneVertexOwnerMap(
         collectMapSceneEntries(features, currentTime, makeCoords('v1', 'v2', 'v3'))
@@ -134,8 +132,8 @@ describe('vertexSelectionContext', () => {
 
     it('複数地物にまたがると multiple を返す', () => {
       const features = [
-        createPointFeature('f1', 'v1', 'visible'),
-        createPointFeature('f2', 'v2', 'visible'),
+        createPointFeature('f1', 'v1'),
+        createPointFeature('f2', 'v2'),
       ];
       const ownerMap = buildSceneVertexOwnerMap(
         collectMapSceneEntries(features, currentTime, makeCoords('v1', 'v2'))

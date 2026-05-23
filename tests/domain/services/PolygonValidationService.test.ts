@@ -15,7 +15,6 @@ function makeVertex(id: string, x: number, y: number): Vertex {
 
 function makePolygonFeature(
   featureId: string,
-  layerId: string,
   rings: readonly {
     id: string;
     vertexIds: string[];
@@ -37,7 +36,7 @@ function makePolygonFeature(
   ]);
 }
 
-function makePointFeature(featureId: string, layerId: string, vertexId: string): Feature {
+function makePointFeature(featureId: string, vertexId: string): Feature {
   return new Feature(featureId, 'Point', [
     new FeatureAnchor(
       `${featureId}-anchor`,
@@ -57,7 +56,7 @@ describe('PolygonValidationService', () => {
       ['a3', makeVertex('a3', 10, 10)],
       ['a4', makeVertex('a4', 0, 10)],
     ]);
-    const feature = makePolygonFeature('polygon-1', 'layer-1', [
+    const feature = makePolygonFeature('polygon-1', [
       { id: 'ring-1', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
     ]);
 
@@ -73,7 +72,7 @@ describe('PolygonValidationService', () => {
     const vertices = new Map<string, Vertex>([
       ['p1', makeVertex('p1', 0, 0)],
     ]);
-    const feature = makePointFeature('point-1', 'layer-1', 'p1');
+    const feature = makePointFeature('point-1', 'p1');
 
     expect(validatePolygonFeature(feature, [feature], vertices, time100)).toEqual({
       selfIntersectingRingIds: [],
@@ -90,7 +89,7 @@ describe('PolygonValidationService', () => {
       ['a3', makeVertex('a3', 10, 0)],
       ['a4', makeVertex('a4', 0, 10)],
     ]);
-    const feature = makePolygonFeature('polygon-1', 'layer-1', [
+    const feature = makePolygonFeature('polygon-1', [
       { id: 'ring-bowtie', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
     ]);
 
@@ -111,7 +110,7 @@ describe('PolygonValidationService', () => {
       ['h3', makeVertex('h3', 24, 16)],
       ['h4', makeVertex('h4', 4, 16)],
     ]);
-    const feature = makePolygonFeature('polygon-1', 'layer-1', [
+    const feature = makePolygonFeature('polygon-1', [
       { id: 'outer', vertexIds: ['o1', 'o2', 'o3', 'o4'], ringType: 'territory', parentId: null },
       { id: 'hole', vertexIds: ['h1', 'h2', 'h3', 'h4'], ringType: 'hole', parentId: 'outer' },
     ]);
@@ -133,10 +132,10 @@ describe('PolygonValidationService', () => {
       ['b3', makeVertex('b3', 15, 10)],
       ['b4', makeVertex('b4', 5, 10)],
     ]);
-    const target = makePolygonFeature('polygon-target', 'layer-1', [
+    const target = makePolygonFeature('polygon-target', [
       { id: 'ring-a', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
     ]);
-    const other = makePolygonFeature('polygon-other', 'layer-1', [
+    const other = makePolygonFeature('polygon-other', [
       { id: 'ring-b', vertexIds: ['b1', 'b2', 'b3', 'b4'], ringType: 'territory', parentId: null },
     ]);
 
@@ -154,7 +153,7 @@ describe('PolygonValidationService', () => {
       ['a2', makeVertex('a2', 10, 0)],
       ['a3', makeVertex('a3', 10, 10)],
     ]);
-    const feature = makePolygonFeature('polygon-1', 'layer-1', [
+    const feature = makePolygonFeature('polygon-1', [
       { id: 'ring-1', vertexIds: ['a1', 'missing', 'a2', 'a3'], ringType: 'territory', parentId: null },
     ]);
 
