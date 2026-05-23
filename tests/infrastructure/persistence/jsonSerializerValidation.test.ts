@@ -303,3 +303,335 @@ describe('互換破棄の検証 (Phase 2-D-6-3c)', () => {
     expect(() => deserialize(resavedJsonString)).not.toThrow();
   });
 });
+
+/**
+ * Phase 2-D-7c-1 で `jsonSerializerMigration.ts` から旧形式変換ロジック（anchors 欠落の
+ * 単一地物変換、`shape.type: 'Line'` → `'LineString'` 変換、`ringType` 推測、`timeRange` /
+ * `property` 直下 fallback など）を撤去した。`resolveVersion` で旧バージョン（0.x / version 欠落）は
+ * 先に拒否されるため migration 経路には到達しないが、`version: '1.0.0'` のまま旧構造を含む
+ * 入力（手編集 JSON / 外部生成 JSON）は migration 内部で `SerializationError` 即拒否となる。
+ *
+ * 開発ガイド §6.4.15「永続化 shim は read / write / validate / round-trip test を
+ * 同じ変更単位で同期する」に従い、削除した分岐の拒否挙動を直接固定する。
+ */
+describe('v1.0.0 旧構造の拒否 (Phase 2-D-7c-1)', () => {
+  function baseV1Payload(): Record<string, unknown> {
+    return {
+      version: '1.0.0',
+      layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
+      vertices: [
+        { id: 'v1', x: 0, y: 0 },
+        { id: 'v2', x: 10, y: 0 },
+        { id: 'v3', x: 0, y: 10 },
+      ],
+      sharedVertexGroups: [],
+      timelineMarkers: [],
+      metadata: DEFAULT_METADATA,
+    };
+  }
+
+  it('features[].anchors 欠落（旧形式の単一地物構造）は SerializationError で拒否される', async () => {
+    const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+    const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+    const payload = JSON.stringify({
+      ...baseV1Payload(),
+      features: [{
+        id: 'f1',
+        featureType: 'Point',
+        // anchors フィールド自体を欠落させる（旧 normalizeLegacyFeatureAnchor の入力経路）
+        timeRange: { start: { year: 100 } },
+        property: { name: 'test', description: '' },
+        shape: { type: 'Point', vertexId: 'v1' },
+        placement: { parentId: null, childIds: [], isTopLevel: true },
+      }],
+    });
+
+    expect(() => deserialize(payload)).toThrow(SerializationError);
+    expect(() => deserialize(payload)).toThrow('features[0].anchors must be an array');
+  });
+
+  it('shape.type: "Line"（旧形式の shape タイプ表記）は SerializationError で拒否される', async () => {
+    const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+    const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+    const payload = JSON.stringify({
+      ...baseV1Payload(),
+      features: [{
+        id: 'f1',
+        featureType: 'Line',
+        anchors: [{
+          id: 'a1',
+          timeRange: { start: { year: 100 } },
+          property: { name: 'test', description: '' },
+          // 旧形式の shape.type: 'Line'。新形式は 'LineString'
+          shape: { type: 'Line', vertexIds: ['v1', 'v2'] },
+          placement: { parentId: null, childIds: [], isTopLevel: true },
+        }],
+      }],
+    });
+
+    expect(() => deserialize(payload)).toThrow(SerializationError);
+    // 新コードの normalizeShape は shape.type === 'Line' をそのまま { type: 'Line' } として返し、
+    // 後段の validateShapePresence で featureType: 'Line' に対応する 'LineString' との不整合として拒否される
+    // （migration sweep 後に shape.type 検証が validation 側で動いていることを明示）
+    expect(() => deserialize(payload)).toThrow('shape.type "Line" does not match featureType "Line"');
+  });
+
+  it('Polygon リングの ringType 欠落（旧形式の位置依存推測）は SerializationError で拒否される', async () => {
+    const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+    const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+    const payload = JSON.stringify({
+      ...baseV1Payload(),
+      features: [{
+        id: 'f1',
+        featureType: 'Polygon',
+        anchors: [{
+          id: 'a1',
+          timeRange: { start: { year: 100 } },
+          property: { name: 'test', description: '' },
+          shape: {
+            type: 'Polygon',
+            rings: [{
+              id: 'r1',
+              vertexIds: ['v1', 'v2', 'v3'],
+              // ringType フィールド欠落
+              parentId: null,
+            }],
+          },
+          placement: { parentId: null, childIds: [], isTopLevel: true },
+        }],
+      }],
+    });
+
+    expect(() => deserialize(payload)).toThrow(SerializationError);
+    expect(() => deserialize(payload)).toThrow('ringType');
+  });
+
+  // 旧 normalizeTimeRange は anchor.timeRange が無いとき、地物・錨直下の `time` /
+  // `startYear` / `endYear` フィールドへフォールバックしていた。これらは Phase 2-D-7c-1 で
+  // 全削除済み。各バリアント（timeRange 欠落のみ / 旧 time フィールド存在 / 旧 startYear 存在）
+  // を直接押さえる。
+  describe('anchor の timeRange / 旧 time / 旧 startYear（旧形式の時間 fallback）', () => {
+    function payloadWithTimeOverride(timeFields: Record<string, unknown>): string {
+      return JSON.stringify({
+        ...baseV1Payload(),
+        features: [{
+          id: 'f1',
+          featureType: 'Point',
+          anchors: [{
+            id: 'a1',
+            ...timeFields,
+            property: { name: 'test', description: '' },
+            shape: { type: 'Point', vertexId: 'v1' },
+            placement: { parentId: null, childIds: [], isTopLevel: true },
+          }],
+        }],
+      });
+    }
+
+    it('timeRange フィールド欠落のみは SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithTimeOverride({});
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('timeRange');
+    });
+
+    it('旧形式 time フィールド（timeRange なし + time: { year } 直書き）は SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithTimeOverride({ time: { year: 100 } });
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('timeRange');
+    });
+
+    it('旧形式 startYear / endYear フィールド（timeRange なし + startYear/endYear 直書き）は SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithTimeOverride({ startYear: 1200, endYear: 1500 });
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('timeRange');
+    });
+  });
+
+  // 旧 normalizeAnchorProperty は anchor.property が無いとき、地物直下の `properties[0]`
+  // 配列の先頭要素へフォールバックしていた。Phase 2-D-7c-1 で削除済み。
+  describe('anchor の property / 旧 properties[0] 配列（旧形式の property fallback）', () => {
+    function payloadWithPropertyOverride(extra: Record<string, unknown>): string {
+      return JSON.stringify({
+        ...baseV1Payload(),
+        features: [{
+          id: 'f1',
+          featureType: 'Point',
+          anchors: [{
+            id: 'a1',
+            timeRange: { start: { year: 100 } },
+            ...extra,
+            shape: { type: 'Point', vertexId: 'v1' },
+            placement: { parentId: null, childIds: [], isTopLevel: true },
+          }],
+        }],
+      });
+    }
+
+    it('property フィールド欠落のみは SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithPropertyOverride({});
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('property');
+    });
+
+    it('旧形式 properties[0] 配列（property なし + properties: [{ name }] 直書き）は SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithPropertyOverride({
+        properties: [{ name: 'legacy-name', description: 'legacy-desc' }],
+      });
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('property');
+    });
+  });
+
+  // 旧 normalizeFeatureType は `'LineString'` / `'point'` / `'line'` / `'polygon'` を
+  // 新形式の PascalCase へ補正していた。Phase 2-D-7c-1 で削除済み。
+  describe('featureType の旧形式表記（LineString / 小文字）', () => {
+    function payloadWithFeatureType(featureType: string, shape: Record<string, unknown>): string {
+      return JSON.stringify({
+        ...baseV1Payload(),
+        features: [{
+          id: 'f1',
+          featureType,
+          anchors: [{
+            id: 'a1',
+            timeRange: { start: { year: 100 } },
+            property: { name: 'test', description: '' },
+            shape,
+            placement: { parentId: null, childIds: [], isTopLevel: true },
+          }],
+        }],
+      });
+    }
+
+    it('featureType: "LineString" は SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithFeatureType('LineString', { type: 'LineString', vertexIds: ['v1', 'v2'] });
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('Unknown feature type: LineString');
+    });
+
+    it('featureType: "point" （小文字）は SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithFeatureType('point', { type: 'Point', vertexId: 'v1' });
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('Unknown feature type: point');
+    });
+
+    it('featureType: "line" （小文字）は SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithFeatureType('line', { type: 'LineString', vertexIds: ['v1', 'v2'] });
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('Unknown feature type: line');
+    });
+
+    it('featureType: "polygon" （小文字）は SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithFeatureType('polygon', {
+        type: 'Polygon',
+        rings: [{ id: 'r1', vertexIds: ['v1', 'v2', 'v3'], ringType: 'territory', parentId: null }],
+      });
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('Unknown feature type: polygon');
+    });
+  });
+
+  // 旧 hasShapeSource は anchor.shape が無くても、anchor 直下の `vertexIds` / `rings` /
+  // `vertexId` を「shape 直書き」として認識し、`normalizeShape(shape=undefined, fallbackSource=record)`
+  // で fallbackSource からリングや頂点を読みに行く経路を持っていた。Phase 2-D-7c-1 で削除済み。
+  describe('anchor 直下の旧形式 shape 表現（shape 欠落 + 直下 vertexIds / rings / vertexId）', () => {
+    function payloadWithAnchorShapeFields(featureType: string, anchorShapeFields: Record<string, unknown>): string {
+      return JSON.stringify({
+        ...baseV1Payload(),
+        features: [{
+          id: 'f1',
+          featureType,
+          anchors: [{
+            id: 'a1',
+            timeRange: { start: { year: 100 } },
+            property: { name: 'test', description: '' },
+            // shape フィールド自体は欠落させ、旧形式の anchor 直下フィールドで形状を表現
+            ...anchorShapeFields,
+            placement: { parentId: null, childIds: [], isTopLevel: true },
+          }],
+        }],
+      });
+    }
+
+    it('Polygon + anchor 直下 vertexIds 直書きは SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithAnchorShapeFields('Polygon', { vertexIds: ['v1', 'v2', 'v3'] });
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      // shape 欠落 + childIds 空 → 「is not a container」エラー
+      expect(() => deserialize(payload)).toThrow('has no shape but is not a container');
+    });
+
+    it('Polygon + anchor 直下 rings 直書きは SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithAnchorShapeFields('Polygon', {
+        rings: [{ id: 'r1', vertexIds: ['v1', 'v2', 'v3'], ringType: 'territory', parentId: null }],
+      });
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('has no shape but is not a container');
+    });
+
+    it('Point + anchor 直下 vertexId 直書きは SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = payloadWithAnchorShapeFields('Point', { vertexId: 'v1' });
+
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      // shape 欠落 + Point → 「requires a shape」エラー
+      expect(() => deserialize(payload)).toThrow('requires a shape');
+    });
+  });
+
+  it('Polygon の vertexIds 直下指定（旧形式の領土リング直書き、shape 内）は SerializationError で拒否される', async () => {
+    const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+    const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+    const payload = JSON.stringify({
+      ...baseV1Payload(),
+      features: [{
+        id: 'f1',
+        featureType: 'Polygon',
+        anchors: [{
+          id: 'a1',
+          timeRange: { start: { year: 100 } },
+          property: { name: 'test', description: '' },
+          // 旧形式: shape.rings ではなく shape.vertexIds で領土リングを直書き
+          // 新コードでは shape.rings 配列が無いため normalizeShape は空 Polygon（{ type: 'Polygon' }、
+          // rings undefined）を返し、後段の validation で領土リング欠落として拒否される
+          shape: { type: 'Polygon', vertexIds: ['v1', 'v2', 'v3'] },
+          placement: { parentId: null, childIds: [], isTopLevel: true },
+        }],
+      }],
+    });
+
+    expect(() => deserialize(payload)).toThrow(SerializationError);
+  });
+});

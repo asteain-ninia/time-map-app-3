@@ -51,7 +51,7 @@ function migrateJsonWorld(raw: unknown): JsonMigrationResult {
   }
 
   const ctx = createContext();
-  resolveVersion(raw, ctx);
+  resolveVersion(raw);
 
   const vertices = requireArray(raw, 'vertices').map((item, index) =>
     normalizeVertex(item, index)
@@ -92,7 +92,7 @@ function migrateJsonWorld(raw: unknown): JsonMigrationResult {
   };
 }
 
-function resolveVersion(raw: JsonRecord, _ctx: MigrationContext): void {
+function resolveVersion(raw: JsonRecord): void {
   const version = raw.version;
 
   // 要件定義書 §2.5.2「旧モデル（レイヤー概念を含む形式バージョン）のファイルは
@@ -199,14 +199,14 @@ function normalizeFeature(
   const record = expectRecord(value, `features[${index}]`);
   const id = requiredString(record, 'id', `features[${index}]`);
   const featureType = normalizeFeatureType(
-    requiredString(record, 'featureType', `features[${index}]`),
-    ctx
+    requiredString(record, 'featureType', `features[${index}]`)
   );
-  const anchors = Array.isArray(record.anchors)
-    ? record.anchors.map((anchor, anchorIndex) =>
-        normalizeAnchor(anchor, id, anchorIndex, featureType, featureIds, ctx)
-      )
-    : [normalizeLegacyFeatureAnchor(record, id, featureType, featureIds, ctx)];
+  if (!Array.isArray(record.anchors)) {
+    throw new SerializationError(`features[${index}].anchors must be an array`);
+  }
+  const anchors = record.anchors.map((anchor, anchorIndex) =>
+    normalizeAnchor(anchor, id, anchorIndex, featureType, featureIds, ctx)
+  );
 
   return {
     id,
@@ -231,30 +231,11 @@ function collectFeatureIds(featureSources: readonly unknown[]): ReadonlySet<stri
   return ids;
 }
 
-function normalizeFeatureType(value: string, ctx: MigrationContext): string {
+function normalizeFeatureType(value: string): string {
   if (value === 'Point' || value === 'Line' || value === 'Polygon') {
     return value;
   }
-  if (value === 'LineString') {
-    ctx.warn('旧形式の featureType "LineString" を "Line" に変換しました。');
-    return 'Line';
-  }
-
-  const lower = value.toLowerCase();
-  if (lower === 'point') {
-    ctx.warn('小文字の featureType "point" を "Point" に変換しました。');
-    return 'Point';
-  }
-  if (lower === 'line') {
-    ctx.warn('小文字の featureType "line" を "Line" に変換しました。');
-    return 'Line';
-  }
-  if (lower === 'polygon') {
-    ctx.warn('小文字の featureType "polygon" を "Polygon" に変換しました。');
-    return 'Polygon';
-  }
-
-  return value;
+  throw new SerializationError(`Unknown feature type: ${value}`);
 }
 
 function normalizeAnchor(
@@ -274,28 +255,9 @@ function normalizeAnchor(
   const placement = normalizePlacement(record.placement, record, ctx);
   return {
     id,
-    timeRange: normalizeTimeRange(record.timeRange, record, id, ctx),
-    property: normalizeAnchorProperty(record.property, record, ctx),
+    timeRange: normalizeTimeRange(record.timeRange, id),
+    property: normalizeAnchorProperty(record.property),
     shape: resolveShape(record, id, featureType, placement, featureIds, ctx),
-    placement,
-  };
-}
-
-function normalizeLegacyFeatureAnchor(
-  record: JsonRecord,
-  featureId: string,
-  featureType: string,
-  featureIds: ReadonlySet<string>,
-  ctx: MigrationContext
-): JsonFeatureAnchor {
-  ctx.warn('anchors がない旧形式の地物を、単一の歴史の錨へ変換しました。');
-  const anchorId = `${featureId}-anchor-1`;
-  const placement = normalizePlacement(record.placement, record, ctx);
-  return {
-    id: anchorId,
-    timeRange: normalizeTimeRange(record.timeRange, record, anchorId, ctx),
-    property: normalizeAnchorProperty(record.property, record, ctx),
-    shape: resolveShape(record, anchorId, featureType, placement, featureIds, ctx),
     placement,
   };
 }
@@ -315,8 +277,8 @@ function resolveShape(
   featureIds: ReadonlySet<string>,
   ctx: MigrationContext
 ): JsonFeatureShape | undefined {
-  if (hasShapeSource(record)) {
-    return normalizeShape(record.shape, record, anchorId, featureType, ctx);
+  if (isRecord(record.shape)) {
+    return normalizeShape(record.shape, anchorId, featureType);
   }
 
   if (featureType === 'Polygon' && placement.childIds.length > 0) {
@@ -340,44 +302,14 @@ function resolveShape(
   );
 }
 
-function hasShapeSource(record: JsonRecord): boolean {
-  if (isRecord(record.shape)) return true;
-  if (record.vertexIds !== undefined) return true;
-  if (Array.isArray(record.rings)) return true;
-  if (record.vertexId !== undefined) return true;
-  return false;
-}
-
-function normalizeTimeRange(
-  value: unknown,
-  fallbackSource: JsonRecord,
-  anchorId: string,
-  ctx: MigrationContext
-): JsonTimeRange {
-  if (isRecord(value)) {
-    return {
-      start: normalizeTimePoint(value.start, `anchor ${anchorId}.timeRange.start`),
-      end: value.end === undefined
-        ? undefined
-        : normalizeTimePoint(value.end, `anchor ${anchorId}.timeRange.end`),
-    };
-  }
-
-  if (fallbackSource.time !== undefined) {
-    ctx.warn('旧形式の time を timeRange.start に変換しました。');
-    return { start: normalizeTimePoint(fallbackSource.time, `anchor ${anchorId}.time`) };
-  }
-  if (typeof fallbackSource.startYear === 'number') {
-    ctx.warn('旧形式の startYear を timeRange.start.year に変換しました。');
-    const range: JsonTimeRange = { start: { year: fallbackSource.startYear } };
-    if (typeof fallbackSource.endYear === 'number') {
-      range.end = { year: fallbackSource.endYear };
-    }
-    return range;
-  }
-
-  ctx.warn('timeRange がない旧形式の錨を、年0開始として補完しました。');
-  return { start: { year: DEFAULT_METADATA.sliderMin } };
+function normalizeTimeRange(value: unknown, anchorId: string): JsonTimeRange {
+  const record = expectRecord(value, `anchor ${anchorId}.timeRange`);
+  return {
+    start: normalizeTimePoint(record.start, `anchor ${anchorId}.timeRange.start`),
+    end: record.end === undefined
+      ? undefined
+      : normalizeTimePoint(record.end, `anchor ${anchorId}.timeRange.end`),
+  };
 }
 
 function normalizeTimePoint(value: unknown, path: string): JsonTimePoint {
@@ -392,16 +324,8 @@ function normalizeTimePoint(value: unknown, path: string): JsonTimePoint {
   };
 }
 
-function normalizeAnchorProperty(
-  value: unknown,
-  fallbackSource: JsonRecord,
-  ctx: MigrationContext
-): JsonAnchorProperty {
-  const projection = firstRecord(fallbackSource.properties);
-  const source = isRecord(value) ? value : projection ?? fallbackSource;
-  if (!isRecord(value) && projection) {
-    ctx.warn('旧形式の properties[0] を歴史の錨の property に変換しました。');
-  }
+function normalizeAnchorProperty(value: unknown): JsonAnchorProperty {
+  const source = expectRecord(value, 'anchor.property');
 
   const kind = optionalString(source, 'kind');
   return {
@@ -430,18 +354,11 @@ function normalizePolygonStyle(source: JsonRecord): JsonAnchorProperty['style'] 
 
 function normalizeShape(
   value: unknown,
-  fallbackSource: JsonRecord,
   anchorId: string,
-  featureType: string,
-  ctx: MigrationContext
+  featureType: string
 ): JsonFeatureShape {
-  const source = isRecord(value) ? value : fallbackSource;
-  if (!isRecord(value)) {
-    ctx.warn('旧形式の地物直下の形状情報を、歴史の錨の shape に移しました。');
-  }
-
-  const rawType = optionalString(source, 'type') ?? shapeTypeFromFeatureType(featureType);
-  const shapeType = normalizeShapeType(rawType, featureType, ctx);
+  const source = expectRecord(value, `anchor ${anchorId}.shape`);
+  const shapeType = optionalString(source, 'type') ?? defaultShapeType(featureType);
 
   if (shapeType === 'Point') {
     const vertexId = optionalString(source, 'vertexId');
@@ -460,80 +377,28 @@ function normalizeShape(
   if (Array.isArray(source.rings)) {
     return {
       type: 'Polygon',
-      rings: source.rings.map((ring, index) => normalizeRing(ring, anchorId, index, ctx)),
+      rings: source.rings.map((ring, index) => normalizeRing(ring, anchorId, index)),
     };
   }
 
-  if (isRecord(value) && source.vertexIds === undefined) {
-    return { type: 'Polygon' };
-  }
-
-  return {
-    type: 'Polygon',
-    rings: [normalizeLegacyPolygonRing(source, anchorId, ctx)],
-  };
+  return { type: 'Polygon' };
 }
 
-function shapeTypeFromFeatureType(featureType: string): string {
+function defaultShapeType(featureType: string): string {
   return featureType === 'Line' ? 'LineString' : featureType;
 }
 
-function normalizeShapeType(value: string, featureType: string, ctx: MigrationContext): string {
-  if (value === 'Point' || value === 'LineString' || value === 'Polygon') {
-    return value;
-  }
-  if (value === 'Line' && featureType === 'Line') {
-    ctx.warn('旧形式の shape.type "Line" を "LineString" に変換しました。');
-    return 'LineString';
-  }
-  return value;
-}
-
-function normalizeRing(
-  value: unknown,
-  anchorId: string,
-  index: number,
-  ctx: MigrationContext
-): JsonRing {
+function normalizeRing(value: unknown, anchorId: string, index: number): JsonRing {
   const record = expectRecord(value, `anchor ${anchorId}.shape.rings[${index}]`);
   const id = optionalString(record, 'id') ?? `${anchorId}-ring-${index + 1}`;
-  const ringType = optionalString(record, 'ringType') ?? (index === 0 ? 'territory' : 'hole');
-  if (!optionalString(record, 'ringType')) {
-    ctx.warn('ringType がない旧形式のリングを検出したため、位置に基づいて補完しました。');
-  }
+  const ringType = requiredString(record, 'ringType', `anchor ${anchorId}.shape.rings[${index}]`);
 
   return {
     id,
     vertexIds: requiredStringArray(record, 'vertexIds', `anchor ${anchorId}.shape.rings[${index}]`),
     ringType,
-    parentId: normalizeParentId(record.parentId, ringType, anchorId, index),
+    parentId: typeof record.parentId === 'string' ? record.parentId : null,
   };
-}
-
-function normalizeLegacyPolygonRing(
-  source: JsonRecord,
-  anchorId: string,
-  ctx: MigrationContext
-): JsonRing {
-  ctx.warn('旧形式の Polygon.vertexIds を territory リングに変換しました。');
-  return {
-    id: `${anchorId}-ring-1`,
-    vertexIds: requiredStringArray(source, 'vertexIds', `anchor ${anchorId}.shape`),
-    ringType: 'territory',
-    parentId: null,
-  };
-}
-
-function normalizeParentId(
-  value: unknown,
-  ringType: string,
-  anchorId: string,
-  index: number
-): string | null {
-  if (typeof value === 'string') return value;
-  if (value === null) return null;
-  if (ringType === 'hole' && index > 0) return `${anchorId}-ring-1`;
-  return null;
 }
 
 function normalizePlacement(
@@ -712,12 +577,6 @@ function optionalStringArray(record: JsonRecord, key: string): string[] | undefi
     return [...value];
   }
   return undefined;
-}
-
-function firstRecord(value: unknown): JsonRecord | null {
-  if (!Array.isArray(value)) return null;
-  const first = value[0];
-  return isRecord(first) ? first : null;
 }
 
 function expectRecord(value: unknown, path: string): JsonRecord {
