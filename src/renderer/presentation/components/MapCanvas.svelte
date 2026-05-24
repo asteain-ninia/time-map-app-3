@@ -3,7 +3,6 @@
   import { ViewportManager } from '@infrastructure/ViewportManager';
   import { eventBus } from '@application/EventBus';
   import { Coordinate } from '@domain/value-objects/Coordinate';
-  import type { Feature } from '@domain/entities/Feature';
   import type { Vertex } from '@domain/entities/Vertex';
   import type { WorldSettings } from '@domain/entities/World';
   import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
@@ -33,7 +32,6 @@
 
   let {
     sceneEntries = [] as readonly MapSceneEntry[],
-    features = [] as readonly Feature[],
     vertices = new Map<string, Vertex>() as ReadonlyMap<string, Vertex>,
     settings = undefined as WorldSettings | undefined,
     gridInterval = 10,
@@ -104,7 +102,6 @@
     validationMessage = '',
   }: {
     sceneEntries?: readonly MapSceneEntry[];
-    features?: readonly Feature[];
     vertices?: ReadonlyMap<string, Vertex>;
     settings?: WorldSettings;
     gridInterval?: number;
@@ -204,12 +201,32 @@
         : drawingCoords.length >= 2)
   );
 
-  /** 選択コンテキスト地物のアンカー */
+  /**
+   * 選択コンテキスト地物のアンカー。
+   *
+   * sceneEntries（描画・hitTest・頂点選択コンテキスト・wrapOffsets が共通参照する
+   * 中間表現）から解決する。`features` 配列を直接走査する旧経路に比べて以下が成立する:
+   *
+   * - 選択中地物が現在時刻でアクティブでない場合: 旧経路は `getActiveAnchor(currentTime)`
+   *   が undefined を返し戻り値も undefined。新経路は sceneEntries に含まれないため
+   *   `?? null` で null に正規化。消費側はいずれも falsy 判定で扱うため挙動同一
+   *   （§6.1.1 状態間の依存関係: 時刻外選択時の自動クリアは別経路で扱う）。
+   * - コンテナ（shape を持たない錨）の場合: sceneEntries に含まれないため null。
+   *   `vertexHandleEntries` の頂点ハンドル生成と MapCanvasHud の EditToolbar 表示条件
+   *   （selectionAnchor.shape ガード）は anchor null でも shape なしでも同じく非表示で
+   *   挙動同一。**現状はコンテナを作成する UI 経路（add tool）が存在しない（Phase 4 未着手）
+   *   ため発生し得ず dead path**。Phase 4 でコンテナ作成が可能になった瞬間、Sidebar 地物一覧
+   *   （`buildFeatureSearchItems` は anchor.shape でフィルタしていないため active コンテナも
+   *   出現する）経由でコンテナ選択 → selectionAnchor null → ハンドル/Toolbar 非表示、という
+   *   新挙動が成立する。妥当な振る舞いだが、Sidebar 側で shape フィルタを追加するか
+   *   PropertyPanel 側でコンテナ専用 UI を持つかは Phase 4 着手時に再検討する。
+   *
+   * これにより MapCanvas は `features` props を受け取らず、`sceneEntries` を単一の入力
+   * として参照する（§6.1.2 / §6.6.9 「同じ shape 解決経路を共有する」）。
+   */
   let selectionAnchor = $derived(() => {
-    if (!selectionFeatureId || !currentTime) return null;
-    const feature = features.find((f) => f.id === selectionFeatureId);
-    if (!feature) return null;
-    return feature.getActiveAnchor(currentTime);
+    if (!selectionFeatureId) return null;
+    return sceneEntries.find((e) => e.feature.id === selectionFeatureId)?.anchor ?? null;
   });
 
   /** 頂点ハンドル描画対象 */

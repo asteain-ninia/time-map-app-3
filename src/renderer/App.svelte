@@ -2145,7 +2145,6 @@
       <div class="map-area">
         <MapCanvas
           {sceneEntries}
-          {features}
           {vertices}
           settings={projectSettings}
           gridInterval={projectSettings.gridInterval}
