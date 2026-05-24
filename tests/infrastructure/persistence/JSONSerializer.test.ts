@@ -8,7 +8,6 @@ import {
 import { World, DEFAULT_METADATA, DEFAULT_SETTINGS } from '@domain/entities/World';
 import { Feature } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
-import { Layer } from '@domain/entities/Layer';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
@@ -36,9 +35,7 @@ function createWorldWithPoint(): World {
   const features = new Map<string, Feature>();
   features.set('f1', feature);
 
-  const layers = [new Layer('l1', 'レイヤー1', 0)];
-
-  return new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+  return new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 }
 
 /** テスト用のライン地物を含むWorldを作成 */
@@ -59,9 +56,7 @@ function createWorldWithLine(): World {
   const features = new Map<string, Feature>();
   features.set('f1', feature);
 
-  const layers = [new Layer('l1', '道路', 0)];
-
-  return new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+  return new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 }
 
 /** テスト用のポリゴン地物を含むWorldを作成 */
@@ -93,9 +88,7 @@ function createWorldWithPolygon(): World {
   const features = new Map<string, Feature>();
   features.set('f1', feature);
 
-  const layers = [new Layer('l1', '国家', 0, true, 0.8, '国家レイヤー')];
-
-  return new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+  return new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 }
 
 /** 全データを含むWorldを作成 */
@@ -114,8 +107,6 @@ function createFullWorld(): World {
   );
   features.set('f1', new Feature('f1', 'Point', [anchor]));
 
-  const layers = [new Layer('l1', 'テスト', 0)];
-
   const sharedVertexGroups = new Map<string, SharedVertexGroup>();
   sharedVertexGroups.set(
     'svg1',
@@ -132,13 +123,12 @@ function createFullWorld(): World {
     worldDescription: '説明文',
   };
 
-  return new World('1.0.0', vertices, features, layers, sharedVertexGroups, timelineMarkers, metadata);
+  return new World('1.0.0', vertices, features, sharedVertexGroups, timelineMarkers, metadata);
 }
 
 function createValidJsonWorld(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     version: '1.0.0',
-    layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
     vertices: [{ id: 'v1', x: 0, y: 0 }],
     features: [{
       id: 'f1',
@@ -166,7 +156,6 @@ describe('JSONSerializer', () => {
       const parsed = JSON.parse(json);
 
       expect(parsed.version).toBe('1.0.0');
-      expect(parsed.layers).toEqual([]);
       expect(parsed.vertices).toEqual([]);
       expect(parsed.features).toEqual([]);
       expect(parsed.sharedVertexGroups).toEqual([]);
@@ -243,15 +232,6 @@ describe('JSONSerializer', () => {
       expect(style.palette).toBe('クラシック');
     });
 
-    it('レイヤーのdescriptionとopacityをシリアライズできる', () => {
-      const world = createWorldWithPolygon();
-      const json = serialize(world);
-      const parsed = JSON.parse(json);
-
-      expect(parsed.layers[0].opacity).toBe(0.8);
-      expect(parsed.layers[0].description).toBe('国家レイヤー');
-    });
-
     it('共有頂点グループをシリアライズできる', () => {
       const world = createFullWorld();
       const json = serialize(world);
@@ -297,7 +277,7 @@ describe('JSONSerializer', () => {
           },
         },
       };
-      const world = new World('1.0.0', new Map(), new Map(), [], new Map(), [], metadata);
+      const world = new World('1.0.0', new Map(), new Map(), new Map(), [], metadata);
       const parsed = JSON.parse(serialize(world));
 
       expect(parsed.metadata.settings.baseMap).toEqual(metadata.settings.baseMap);
@@ -321,7 +301,6 @@ describe('JSONSerializer', () => {
       expect(restored.version).toBe('1.0.0');
       expect(restored.vertices.size).toBe(0);
       expect(restored.features.size).toBe(0);
-      expect(restored.layers).toHaveLength(0);
     });
 
     it('ポイント地物をラウンドトリップできる', () => {
@@ -373,7 +352,6 @@ describe('JSONSerializer', () => {
 
       expect(restored.vertices.size).toBe(2);
       expect(restored.features.size).toBe(1);
-      expect(restored.layers).toHaveLength(1);
       expect(restored.sharedVertexGroups.size).toBe(1);
       expect(restored.timelineMarkers).toHaveLength(1);
       expect(restored.metadata.worldName).toBe('テスト世界');
@@ -413,16 +391,6 @@ describe('JSONSerializer', () => {
       expect(anchor).toBeInstanceOf(FeatureAnchor);
     });
 
-    it('レイヤーがドメインオブジェクトに復元される', () => {
-      const original = createWorldWithPolygon();
-      const restored = deserialize(serialize(original));
-
-      const layer = restored.layers[0];
-      expect(layer).toBeInstanceOf(Layer);
-      expect(layer.opacity).toBe(0.8);
-      expect(layer.description).toBe('国家レイヤー');
-    });
-
     it('設定のデフォルト値が正しく復元される', () => {
       const original = createMinimalWorld();
       const restored = deserialize(serialize(original));
@@ -445,7 +413,7 @@ describe('JSONSerializer', () => {
           },
         },
       };
-      const world = new World('1.0.0', new Map(), new Map(), [], new Map(), [], metadata);
+      const world = new World('1.0.0', new Map(), new Map(), new Map(), [], metadata);
       const restored = deserialize(serialize(world));
 
       expect(restored.metadata.settings.baseMap).toEqual(metadata.settings.baseMap);
@@ -454,8 +422,8 @@ describe('JSONSerializer', () => {
 
   describe('バージョン検証', () => {
     it('バージョンフィールドがなくプロジェクト構造も不完全な場合エラー', () => {
-      expect(() => deserialize('{"layers":[]}')).toThrow(SerializationError);
-      expect(() => deserialize('{"layers":[]}')).toThrow('Missing version field');
+      expect(() => deserialize('{}')).toThrow(SerializationError);
+      expect(() => deserialize('{}')).toThrow('Missing version field');
     });
 
     it('バージョンフィールドがない旧形式プロジェクトは読み込みエラーで拒否される', () => {
@@ -478,7 +446,7 @@ describe('JSONSerializer', () => {
     });
 
     it('サポートされないバージョンの場合エラー', () => {
-      const json = JSON.stringify({ version: '2.0.0', layers: [], vertices: [], features: [], sharedVertexGroups: [], timelineMarkers: [], metadata: DEFAULT_METADATA });
+      const json = JSON.stringify({ version: '2.0.0', vertices: [], features: [], sharedVertexGroups: [], timelineMarkers: [], metadata: DEFAULT_METADATA });
       expect(() => deserialize(json)).toThrow(SerializationError);
       expect(() => deserialize(json)).toThrow('Unsupported version');
     });
@@ -493,7 +461,6 @@ describe('JSONSerializer', () => {
     it('存在しない頂点への参照でエラー', () => {
       const json = JSON.stringify({
         version: '1.0.0',
-        layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
         vertices: [],
         features: [{
           id: 'f1',
@@ -516,7 +483,6 @@ describe('JSONSerializer', () => {
     it('終了時間が開始時間より前の場合エラー', () => {
       const json = JSON.stringify({
         version: '1.0.0',
-        layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
         vertices: [{ id: 'v1', x: 0, y: 0 }],
         features: [{
           id: 'f1',
@@ -539,7 +505,6 @@ describe('JSONSerializer', () => {
     it('不正な地物タイプでエラー', () => {
       const json = JSON.stringify({
         version: '1.0.0',
-        layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
         vertices: [{ id: 'v1', x: 0, y: 0 }],
         features: [{
           id: 'f1',
@@ -562,7 +527,6 @@ describe('JSONSerializer', () => {
     it('不正な形状タイプでエラー', () => {
       const json = JSON.stringify({
         version: '1.0.0',
-        layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
         vertices: [{ id: 'v1', x: 0, y: 0 }],
         features: [{
           id: 'f1',
@@ -587,7 +551,6 @@ describe('JSONSerializer', () => {
     it('LineStringのvertexIds欠損でエラー', () => {
       const json = JSON.stringify({
         version: '1.0.0',
-        layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
         vertices: [],
         features: [{
           id: 'f1',
@@ -831,8 +794,7 @@ describe('JSONSerializer', () => {
       const features = new Map<string, Feature>();
       features.set('f1', feature);
 
-      const layers = [new Layer('l1', '国家', 0)];
-      const world = new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+      const world = new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 
       const restored = deserialize(serialize(world));
       const f = restored.features.get('f1')!;
@@ -859,8 +821,7 @@ describe('JSONSerializer', () => {
       const features = new Map<string, Feature>();
       features.set('f1', feature);
 
-      const layers = [new Layer('l1', 'L1', 0)];
-      const world = new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+      const world = new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 
       const json = serialize(world);
       expect(JSON.parse(json).features[0].anchors[0].property.kind).toBe('都');
@@ -906,10 +867,9 @@ describe('JSONSerializer', () => {
       );
       const features = new Map<string, Feature>();
       features.set('f-child', new Feature('f-child', 'Point', [child]));
-      const layers = [new Layer('l1', 'L1', 0)];
       const vertices = new Map<string, Vertex>();
       vertices.set('v1', new Vertex('v1', new Coordinate(0, 0)));
-      const world = new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+      const world = new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 
       const json = serialize(world);
       expect(JSON.parse(json).features[0].anchors[0].placement.isTopLevel).toBe(false);
@@ -961,12 +921,11 @@ describe('JSONSerializer', () => {
       const features = new Map<string, Feature>();
       features.set('f-c', new Feature('f-c', 'Polygon', [containerAnchor]));
       features.set('f-child', new Feature('f-child', 'Polygon', [childAnchor]));
-      const layers = [new Layer('l1', 'L1', 0)];
       const vertices = new Map<string, Vertex>();
       vertices.set('v1', new Vertex('v1', new Coordinate(0, 0)));
       vertices.set('v2', new Vertex('v2', new Coordinate(10, 0)));
       vertices.set('v3', new Vertex('v3', new Coordinate(0, 10)));
-      const world = new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+      const world = new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 
       const json = serialize(world);
       const parsed = JSON.parse(json);
@@ -979,7 +938,6 @@ describe('JSONSerializer', () => {
 
     it('旧形式（shape フィールドなし + Polygon + childIds 非空）はコンテナとして警告付きで読み込む', () => {
       const json = createValidJsonWorld({
-        layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
         vertices: [
           { id: 'v1', x: 0, y: 0 },
           { id: 'v2', x: 10, y: 0 },
@@ -1135,8 +1093,7 @@ describe('JSONSerializer', () => {
       const features = new Map<string, Feature>();
       features.set('f1', feature);
 
-      const layers = [new Layer('l1', 'テスト', 0)];
-      const world = new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+      const world = new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 
       const restored = deserialize(serialize(world));
       const shape = restored.features.get('f1')!.anchors[0].shape;

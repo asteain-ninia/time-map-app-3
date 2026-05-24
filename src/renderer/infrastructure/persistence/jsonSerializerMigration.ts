@@ -8,7 +8,6 @@ import {
   type JsonFeature,
   type JsonFeatureAnchor,
   type JsonFeatureShape,
-  type JsonLayer,
   type JsonRing,
   type JsonSharedVertexGroup,
   type JsonTimelineMarker,
@@ -57,14 +56,6 @@ function migrateJsonWorld(raw: unknown): JsonMigrationResult {
     normalizeVertex(item, index)
   );
   const featureSources = requireArray(raw, 'features');
-  let layers = requireArray(raw, 'layers').map((item, index) =>
-    normalizeLayer(item, index, ctx)
-  );
-
-  if (layers.length === 0 && featureSources.length > 0) {
-    layers = [createDefaultLayer()];
-    ctx.warn('レイヤー情報が空の旧形式を読み込んだため、既定レイヤーを追加しました。');
-  }
 
   const featureIds = collectFeatureIds(featureSources);
   const features = featureSources.map((item, index) =>
@@ -81,7 +72,6 @@ function migrateJsonWorld(raw: unknown): JsonMigrationResult {
   return {
     json: {
       version: SUPPORTED_VERSION,
-      layers,
       vertices,
       sharedVertexGroups,
       timelineMarkers,
@@ -134,33 +124,6 @@ function normalizeVertex(value: unknown, index: number): JsonVertex {
     id: requiredString(record, 'id', `vertices[${index}]`),
     x: requiredNumber(record, 'x', `vertices[${index}]`),
     y: requiredNumber(record, 'y', `vertices[${index}]`),
-  };
-}
-
-function normalizeLayer(value: unknown, index: number, ctx: MigrationContext): JsonLayer {
-  const record = expectRecord(value, `layers[${index}]`);
-  const id = optionalString(record, 'id') ?? `layer-${index + 1}`;
-  if (!optionalString(record, 'id')) {
-    ctx.warn('IDがないレイヤーを検出したため、既定IDを補完しました。');
-  }
-
-  return {
-    id,
-    name: optionalString(record, 'name') ?? id,
-    order: optionalNumber(record, 'order') ?? index,
-    visible: optionalBoolean(record, 'visible') ?? true,
-    opacity: optionalNumber(record, 'opacity') ?? 1,
-    description: optionalString(record, 'description'),
-  };
-}
-
-function createDefaultLayer(): JsonLayer {
-  return {
-    id: 'default',
-    name: 'レイヤー1',
-    order: 0,
-    visible: true,
-    opacity: 1,
   };
 }
 

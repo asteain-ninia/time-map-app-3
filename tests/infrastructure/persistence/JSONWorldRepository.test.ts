@@ -13,7 +13,6 @@ import {
 import { World, DEFAULT_METADATA } from '@domain/entities/World';
 import { Feature } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
-import { Layer } from '@domain/entities/Layer';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
@@ -48,9 +47,7 @@ function createTestWorld(): World {
   const features = new Map<string, Feature>();
   features.set('f1', new Feature('f1', 'Point', [anchor]));
 
-  const layers = [new Layer('l1', 'レイヤー1', 0)];
-
-  return new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+  return new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 }
 
 function createTestWorldWithBaseMap(svgText: string): World {
@@ -59,7 +56,6 @@ function createTestWorldWithBaseMap(svgText: string): World {
     world.version,
     world.vertices,
     world.features,
-    world.layers,
     world.sharedVertexGroups,
     world.timelineMarkers,
     {
@@ -203,7 +199,6 @@ describe('JSONWorldRepository', () => {
 
       expect(loaded.features.size).toBe(original.features.size);
       expect(loaded.vertices.size).toBe(original.vertices.size);
-      expect(loaded.layers).toHaveLength(original.layers.length);
 
       const originalFeature = original.features.get('f1')!;
       const loadedFeature = loaded.features.get('f1')!;

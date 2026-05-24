@@ -62,8 +62,8 @@ describe('collectMapSceneEntries', () => {
   });
 
   it('複数地物が混在しても地図全体で連番割当される', () => {
-    // Phase 2-D-6-1+2: Layer.visible フィルタを撤去したため、全アクティブ地物が
-    // 同一の連番で並ぶ。Point / LineString の自動色割当に直接影響する。
+    // 旧モデルのレイヤー可視性フィルタを持たないため、全アクティブ地物が同一の連番で
+    // 並ぶ。Point / LineString の自動色割当に直接影響する。
     const features = [
       new Feature('f1', 'Point', [makeAnchor('a1', 1000, 2000, pointShape('v1'))]),
       new Feature('f2', 'Point', [makeAnchor('a2', 1000, 2000, pointShape('v2'))]),

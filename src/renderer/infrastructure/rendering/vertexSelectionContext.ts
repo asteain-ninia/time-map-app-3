@@ -13,8 +13,8 @@ export interface VertexSelectionContext {
  * `sceneEntries` を参照するように統一した（開発ガイド §6.1.2 / §6.6.9 / §6.0.1 検出観点2）。
  * これにより「画面に描画されないが頂点所有者として現れる」状態が発生しない。
  *
- * 旧 `buildVisibleVertexOwnerMap` は Layer.visible で features を絞っていたが、
- * sceneEntries 化で同じ責務になったため `buildSceneVertexOwnerMap` へ改名した。
+ * 旧モデルではレイヤー可視性で features を絞っていたが、sceneEntries 化により
+ * 描画と同じ集合を共有する責務になったため `buildSceneVertexOwnerMap` へ改名した。
  */
 export function buildSceneVertexOwnerMap(
   sceneEntries: readonly MapSceneEntry[]

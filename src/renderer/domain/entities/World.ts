@@ -1,6 +1,5 @@
 import type { Vertex } from './Vertex';
 import type { Feature } from './Feature';
-import type { Layer } from './Layer';
 import type { SharedVertexGroup } from './SharedVertexGroup';
 import { TimelineMarker } from './TimelineMarker';
 export { TimelineMarker } from './TimelineMarker';
@@ -76,7 +75,6 @@ export class World {
   readonly version: string;
   readonly vertices: ReadonlyMap<string, Vertex>;
   readonly features: ReadonlyMap<string, Feature>;
-  readonly layers: readonly Layer[];
   readonly sharedVertexGroups: ReadonlyMap<string, SharedVertexGroup>;
   readonly timelineMarkers: readonly TimelineMarker[];
   readonly metadata: WorldMetadata;
@@ -85,7 +83,6 @@ export class World {
     version: string,
     vertices: ReadonlyMap<string, Vertex>,
     features: ReadonlyMap<string, Feature>,
-    layers: readonly Layer[],
     sharedVertexGroups: ReadonlyMap<string, SharedVertexGroup>,
     timelineMarkers: readonly TimelineMarker[],
     metadata: WorldMetadata
@@ -93,7 +90,6 @@ export class World {
     this.version = version;
     this.vertices = vertices;
     this.features = features;
-    this.layers = layers;
     this.sharedVertexGroups = sharedVertexGroups;
     this.timelineMarkers = timelineMarkers;
     this.metadata = metadata;
@@ -105,15 +101,9 @@ export class World {
       '1.0.0',
       new Map(),
       new Map(),
-      [],
       new Map(),
       [],
       DEFAULT_METADATA
     );
-  }
-
-  /** レイヤーを序列順にソートして取得 */
-  getSortedLayers(): readonly Layer[] {
-    return [...this.layers].sort((a, b) => a.order - b.order);
   }
 }

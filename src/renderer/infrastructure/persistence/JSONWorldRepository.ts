@@ -146,7 +146,6 @@ function withBaseMapSvgText(world: World, svgText: string | null): World {
     world.version,
     world.vertices,
     world.features,
-    world.layers,
     world.sharedVertexGroups,
     world.timelineMarkers,
     metadata

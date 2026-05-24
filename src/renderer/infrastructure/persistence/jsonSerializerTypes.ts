@@ -15,15 +15,6 @@ interface JsonVertex {
   y: number;
 }
 
-interface JsonLayer {
-  id: string;
-  name: string;
-  order: number;
-  visible: boolean;
-  opacity: number;
-  description?: string;
-}
-
 interface JsonSharedVertexGroup {
   id: string;
   vertexIds: string[];
@@ -133,7 +124,6 @@ interface JsonWorldMetadata {
 
 interface JsonWorld {
   version: string;
-  layers: JsonLayer[];
   vertices: JsonVertex[];
   sharedVertexGroups: JsonSharedVertexGroup[];
   timelineMarkers: JsonTimelineMarker[];
@@ -152,7 +142,6 @@ export type {
   JsonFeatureAnchor,
   JsonFeatureShape,
   JsonLabelVisibility,
-  JsonLayer,
   JsonPolygonStyle,
   JsonRing,
   JsonSharedVertexGroup,

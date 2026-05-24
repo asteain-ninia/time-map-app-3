@@ -10,7 +10,6 @@ import type {
   JsonWorld,
 } from '@infrastructure/persistence/jsonSerializerTypes';
 
-const LAYER_ID = 'l1';
 const TIME_RANGE = { start: { year: 100 } };
 const PROPERTY: JsonAnchorProperty = { name: 'test', description: '' };
 
@@ -47,7 +46,6 @@ function createFeature(
 function createWorld(features: JsonFeature[]): JsonWorld {
   return {
     version: '1.0.0',
-    layers: [{ id: LAYER_ID, name: 'L1', order: 0, visible: true, opacity: 1.0 }],
     vertices: [
       { id: 'v1', x: 0, y: 0 },
       { id: 'v2', x: 10, y: 0 },
@@ -189,31 +187,28 @@ describe('validateJsonWorld - shape 保持規則 (Phase 2-C-4)', () => {
 });
 
 /**
- * Phase 2-D-6-3c で `JsonAnchorPlacement.layerId` を JSON 型から完全撤去した。
+ * Phase 2-D-6-3c で `JsonAnchorPlacement.layerId` を、Phase 2-D-7c-2b で
+ * `JsonWorld.layers` フィールドを JSON 型から完全撤去した。
  * 要件定義書 §2.5.2「旧モデル（レイヤー概念を含む形式バージョン）のファイルは
  * 互換性なしとして読み込みエラーで拒否する。マイグレーションは提供しない。」
  * 現状.md §6.2「既存 .gimoza 互換性は破棄する（移行マイグレーションは実装しない）」。
  *
- * 旧 .gimoza（anchor.placement.layerId フィールドを含む形式）は本サブフェーズで
- * 互換破棄が完成する地点となり、読み込み時に `SerializationError` で拒否される。
+ * 旧 .gimoza（anchor.placement.layerId フィールドを含む形式）は読み込み時に
+ * `SerializationError` で拒否される。
  *
  * 開発ガイド §6.4.15「永続化 shim は read / write / validate / round-trip test を
  * 同じ変更単位で同期する」に従い、本テストでは
  *   - 旧形式（layerId 含む）→ 読み込み拒否
  *   - 新形式（layerId なし）→ 読込 → 再保存 → 再読み込みが通る
- *   - 新形式の再保存ファイルに `placement.layerId` フィールドが残っていない
+ *   - 新形式の再保存ファイルに `placement.layerId` / `world.layers` が残っていない
  * を固定する。
  */
-describe('互換破棄の検証 (Phase 2-D-6-3c)', () => {
+describe('互換破棄の検証 (Phase 2-D-6-3c / 2-D-7c-2b)', () => {
   it('旧形式（placement.layerId を含む）は読み込みエラーで拒否される', async () => {
     const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
     const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
     const oldJsonString = JSON.stringify({
       version: '1.0.0',
-      layers: [
-        { id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 },
-        { id: 'l2', name: 'L2', order: 1, visible: true, opacity: 1.0 },
-      ],
       vertices: [{ id: 'v1', x: 0, y: 0 }],
       features: [{
         id: 'f1',
@@ -241,7 +236,6 @@ describe('互換破棄の検証 (Phase 2-D-6-3c)', () => {
     const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
     const oldJsonString = JSON.stringify({
       version: '1.0.0',
-      layers: [{ id: 'custom-layer', name: 'Custom', order: 0, visible: true, opacity: 1.0 }],
       vertices: [{ id: 'v1', x: 0, y: 0 }],
       features: [{
         id: 'f1',
@@ -267,7 +261,6 @@ describe('互換破棄の検証 (Phase 2-D-6-3c)', () => {
     const { serialize, deserialize } = await import('@infrastructure/persistence/JSONSerializer');
     const newJsonString = JSON.stringify({
       version: '1.0.0',
-      layers: [{ id: 'default', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
       vertices: [{ id: 'v1', x: 0, y: 0 }],
       features: [{
         id: 'f1',
@@ -295,11 +288,64 @@ describe('互換破棄の検証 (Phase 2-D-6-3c)', () => {
     const resavedPlacement = resaved.features[0].anchors[0].placement;
     expect('layerId' in resavedPlacement).toBe(false);
 
+    // 再保存ファイルに world.layers フィールドも残らない（Phase 2-D-7c-2b で完全撤去）
+    expect('layers' in resaved).toBe(false);
+
     // 再保存ファイルが validateJsonWorld を通る
     const errors = validateJsonWorld(resaved);
     expect(errors).toEqual([]);
 
     // さらにこのファイルを再ロードできる（例外を投げない）
+    expect(() => deserialize(resavedJsonString)).not.toThrow();
+  });
+
+  it('中間形式（D-7c-2a 形式: layers: [...] を含むが placement.layerId なし）→ 再保存で layers キーが消える', async () => {
+    // Phase 2-D-7c-2a で SaveLoadUseCase.assembleWorld が `layers: []` 固定値で出力していた
+    // 期間に保存された .gimoza は v1.0.0 形式かつ `layers` フィールドを含むが
+    // `placement.layerId` を含まない（中間形式）。本サブフェーズ後のコードでこれを開いて
+    // 再保存できる（layers 中身は read 時に無視され、再保存ファイルから layers キーが消える）
+    // ことを §6.4.15 round-trip テストとして固定する。
+    const { serialize, deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+    const intermediateJsonString = JSON.stringify({
+      version: '1.0.0',
+      // 中間形式: layers フィールド自体は出力されていたが、中身は default 1 件のみ
+      layers: [{ id: 'default', name: 'レイヤー1', order: 0, visible: true, opacity: 1.0 }],
+      vertices: [{ id: 'v1', x: 0, y: 0 }],
+      features: [{
+        id: 'f1',
+        featureType: 'Point',
+        anchors: [{
+          id: 'a1',
+          timeRange: { start: { year: 100 } },
+          property: { name: 'test', description: '' },
+          shape: { type: 'Point', vertexId: 'v1' },
+          // placement.layerId は含まない（D-6-3c 以降の形式）
+          placement: { parentId: null, childIds: [], isTopLevel: true },
+        }],
+      }],
+      sharedVertexGroups: [],
+      timelineMarkers: [],
+      metadata: DEFAULT_METADATA,
+    });
+
+    // 中間形式 → in-memory World（layers は読み捨てられる）
+    const world = deserialize(intermediateJsonString);
+    // in-memory → 再保存
+    const resavedJsonString = serialize(world);
+    const resaved = JSON.parse(resavedJsonString);
+
+    // 再保存ファイルに layers キーが含まれない
+    expect('layers' in resaved).toBe(false);
+
+    // 地物本体は維持される
+    expect(resaved.features).toHaveLength(1);
+    expect(resaved.features[0].id).toBe('f1');
+
+    // 再保存ファイルが validateJsonWorld を通る
+    const errors = validateJsonWorld(resaved);
+    expect(errors).toEqual([]);
+
+    // さらに再ロードできる
     expect(() => deserialize(resavedJsonString)).not.toThrow();
   });
 });
@@ -318,7 +364,6 @@ describe('v1.0.0 旧構造の拒否 (Phase 2-D-7c-1)', () => {
   function baseV1Payload(): Record<string, unknown> {
     return {
       version: '1.0.0',
-      layers: [{ id: 'l1', name: 'L1', order: 0, visible: true, opacity: 1.0 }],
       vertices: [
         { id: 'v1', x: 0, y: 0 },
         { id: 'v2', x: 10, y: 0 },

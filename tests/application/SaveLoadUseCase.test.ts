@@ -4,7 +4,6 @@ import type { WorldRepository } from '@domain/repositories/WorldRepository';
 import { World, DEFAULT_METADATA } from '@domain/entities/World';
 import { Feature } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
-import { Layer } from '@domain/entities/Layer';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
@@ -49,12 +48,7 @@ function createTestWorld(): World {
   const features = new Map<string, Feature>();
   features.set('f1', new Feature('f1', 'Point', [anchor]));
 
-  const layers = [
-    new Layer('l1', 'レイヤー1', 0),
-    new Layer('l2', 'レイヤー2', 1),
-  ];
-
-  return new World('1.0.0', vertices, features, layers, new Map(), [], DEFAULT_METADATA);
+  return new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 }
 
 function createTestWorldWithSharedVertices(): World {
@@ -81,12 +75,10 @@ function createTestWorldWithSharedVertices(): World {
   features.set('f1', new Feature('f1', 'Point', [anchor1]));
   features.set('f2', new Feature('f2', 'Point', [anchor2]));
 
-  const layers = [new Layer('l1', 'レイヤー1', 0)];
-
   const sharedGroups = new Map<string, SharedVertexGroup>();
   sharedGroups.set('sg-1', new SharedVertexGroup('sg-1', ['v1', 'v2'], new Coordinate(10, 20)));
 
-  return new World('1.0.0', vertices, features, layers, sharedGroups, [], DEFAULT_METADATA);
+  return new World('1.0.0', vertices, features, sharedGroups, [], DEFAULT_METADATA);
 }
 
 describe('SaveLoadUseCase', () => {
@@ -223,29 +215,15 @@ describe('SaveLoadUseCase', () => {
       expect(vertices.get('v1')!.x).toBe(10);
     });
 
-    it('読み込んだ後の assembleWorld は layers を空配列で再構築する', async () => {
-      // Phase 2-D-7c-2a で `SaveLoadUseCase` の `getLayers/setLayers/layers` 暫定 API を
-      // 撤去した。`World.layers` 自体は Phase 2-D-7c-2b で削除予定。in-memory ドメイン経路
-      // からはレイヤー概念が消えており、`assembleWorld` は常に空配列を出力する。
-      const world = createTestWorld();
-      dialog.showOpenDialog.mockResolvedValue('/test/file.json');
-      repo.load.mockResolvedValue(world);
-
-      await useCase.open();
-
-      const assembled = useCase.assembleWorld();
-      expect(assembled.layers).toHaveLength(0);
-    });
   });
 
   describe('assembleWorld', () => {
-    it('地物追加後にWorldを組み立てられる（layersは空）', () => {
+    it('地物追加後にWorldを組み立てられる', () => {
       addFeature.addPoint(new Coordinate(5, 10), new TimePoint(100));
 
       const world = useCase.assembleWorld();
 
       expect(world.version).toBe('1.0.0');
-      expect(world.layers).toHaveLength(0);
       expect(world.features.size).toBe(1);
       expect(world.vertices.size).toBe(1);
     });
@@ -254,7 +232,6 @@ describe('SaveLoadUseCase', () => {
       const world = useCase.assembleWorld();
 
       expect(world.version).toBe('1.0.0');
-      expect(world.layers).toHaveLength(0);
       expect(world.features.size).toBe(0);
       expect(world.vertices.size).toBe(0);
     });
@@ -351,7 +328,7 @@ describe('SaveLoadUseCase', () => {
         sliderMax: 8000,
       };
       const world = new World(
-        '1.0.0', new Map(), new Map(), [], new Map(), [], customMeta
+        '1.0.0', new Map(), new Map(), new Map(), [], customMeta
       );
       dialog.showOpenDialog.mockResolvedValue('/test/file.json');
       repo.load.mockResolvedValue(world);

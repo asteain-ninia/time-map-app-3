@@ -105,7 +105,6 @@ describe('Query services', () => {
         '1.0.0',
         new Map(),
         new Map(),
-        [],
         new Map(),
         [],
         projectMetadata

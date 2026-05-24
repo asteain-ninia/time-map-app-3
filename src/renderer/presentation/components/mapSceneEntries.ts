@@ -50,9 +50,8 @@ export interface MapSceneEntry {
  * - 現在時刻でアクティブな錨が無い地物
  * - 錨が shape プロパティを持たない地物（コンテナ）— Phase 2-C-3 で確立した除外規則
  *
- * Phase 2-D-6-1+2 で Layer.visible フィルタを撤去した。新モデルでは可視性は深度フォーカス
- * （Phase 5）または個別 style（Phase 6）で表現する想定で、グローバル `Layer.visible`
- * 概念は撤去対象。
+ * 旧モデルのレイヤー可視性によるフィルタは持たない。新モデルでは可視性は深度フォーカス
+ * （Phase 5）または個別 style（Phase 6）で表現する想定。
  *
  * Polygon entry の `polygonRings` は描画・hitTest・wrapOffsets で共通利用するため、
  * 本関数内で `vertexCoordinates` と `deriveParentShape` を用いて解決済みで持たせる。

@@ -116,7 +116,6 @@ export class SaveLoadUseCase {
       '1.0.0',
       this.addFeature.getVertices(),
       this.addFeature.getFeaturesMap(),
-      [],
       this.addFeature.getSharedVertexGroups(),
       [],
       this.metadata

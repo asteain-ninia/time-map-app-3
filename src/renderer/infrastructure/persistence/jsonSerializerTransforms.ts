@@ -8,7 +8,6 @@ import {
 } from '@domain/entities/World';
 import { Feature, type FeatureType } from '@domain/entities/Feature';
 import { Vertex } from '@domain/entities/Vertex';
-import { Layer } from '@domain/entities/Layer';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
@@ -31,7 +30,6 @@ import type {
   JsonFeatureAnchor,
   JsonFeatureShape,
   JsonLabelVisibility,
-  JsonLayer,
   JsonPolygonStyle,
   JsonRing,
   JsonSharedVertexGroup,
@@ -53,18 +51,6 @@ function serializeTimePoint(tp: TimePoint): JsonTimePoint {
 
 function serializeVertex(v: Vertex): JsonVertex {
   return { id: v.id, x: v.x, y: v.y };
-}
-
-function serializeLayer(l: Layer): JsonLayer {
-  const json: JsonLayer = {
-    id: l.id,
-    name: l.name,
-    order: l.order,
-    visible: l.visible,
-    opacity: l.opacity,
-  };
-  if (l.description) json.description = l.description;
-  return json;
 }
 
 function serializeSharedVertexGroup(g: SharedVertexGroup): JsonSharedVertexGroup {
@@ -191,17 +177,6 @@ function deserializeTimePoint(json: JsonTimePoint): TimePoint {
 
 function deserializeVertex(json: JsonVertex): Vertex {
   return new Vertex(json.id, new Coordinate(json.x, json.y));
-}
-
-function deserializeLayer(json: JsonLayer): Layer {
-  return new Layer(
-    json.id,
-    json.name,
-    json.order,
-    json.visible,
-    json.opacity,
-    json.description ?? ''
-  );
 }
 
 function deserializeSharedVertexGroup(json: JsonSharedVertexGroup): SharedVertexGroup {
@@ -388,7 +363,6 @@ function deserializeTimelineMarkers(
 function serializeWorldToJson(world: World): JsonWorld {
   return {
     version: world.version,
-    layers: world.layers.map(serializeLayer),
     vertices: [...world.vertices.values()].map(serializeVertex),
     sharedVertexGroups: [...world.sharedVertexGroups.values()].map(serializeSharedVertexGroup),
     timelineMarkers: world.timelineMarkers.map(serializeTimelineMarker),
@@ -402,7 +376,6 @@ function deserializeJsonWorld(json: JsonWorld): World {
     json.version,
     deserializeVertices(json.vertices),
     deserializeFeatures(json.features),
-    (json.layers ?? []).map(deserializeLayer),
     deserializeSharedGroups(json.sharedVertexGroups),
     deserializeTimelineMarkers(json.timelineMarkers),
     json.metadata ? deserializeMetadata(json.metadata) : DEFAULT_METADATA
