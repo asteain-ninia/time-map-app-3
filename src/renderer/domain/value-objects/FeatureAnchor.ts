@@ -124,7 +124,7 @@ export class FeatureAnchor {
 /**
  * リーフ前提の関数で `FeatureAnchor.shape` を取り出すヘルパー。
  * `shape === undefined`（集約地物）のときは Error を投げる。
- * Phase 2-C で導入したリーフ専用パスでの誤呼び出しを runtime で検知するための防御。
+ * リーフ専用パスでの誤呼び出しを runtime で検知するための防御。
  */
 export function requireLeafShape(anchor: FeatureAnchor): FeatureShape {
   if (anchor.shape === undefined) {

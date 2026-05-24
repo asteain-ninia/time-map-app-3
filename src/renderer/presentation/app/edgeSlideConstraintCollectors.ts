@@ -18,11 +18,10 @@ export type { MovingEdgeConstraint, ObstaclePoint };
 /**
  * エッジ滑り（EdgeSlide）の障害物として、ソース地物を除く全ての末端ポリゴン地物の領土リング座標を集める。
  *
- * Phase 2-D-1 で末端地物排他が地図全体へ移行した（要件定義書 §2.1 line 145-153 /
- * 開発ガイド §6.6.8）のと整合させて、Phase 2-D-6-3a で旧モデルの「同一レイヤー内のみ
- * 障害物として扱う」絞り込みを撤去した。リーフ判定（`isLeafPolygonAnchor`: shape を
- * 保持し `childIds.length === 0`）に揃えることで、コンテナおよび移行期間ノード
- * （shape あり + childIds 非空）を障害物から除外する（§6.6.8 のリーフ判定運用）。
+ * 末端地物排他が地図全体に適用される（要件定義書 §2.1 line 145-153 / 開発ガイド §6.6.8）方針に
+ * 整合させ、リーフ判定（`isLeafPolygonAnchor`: shape を保持し `childIds.length === 0`）を必要十分
+ * 条件とする。コンテナおよび移行期間ノード（shape あり + childIds 非空）は障害物から除外する
+ * （§6.6.8 のリーフ判定運用）。
  */
 export function collectPolygonObstacleRings(
   features: readonly Feature[],
@@ -66,8 +65,7 @@ export function collectPolygonObstacleRings(
 /**
  * エッジ滑りの障害物点として、ソース地物を除く全ての末端ポリゴン地物のリング頂点座標を集める。
  *
- * Phase 2-D-6-3a で同一レイヤー絞り込みを撤去し、`isLeafPolygonAnchor` で
- * 移行期間ノード・コンテナを除外する（`collectPolygonObstacleRings` と同方針）。
+ * `isLeafPolygonAnchor` で移行期間ノード・コンテナを除外する（`collectPolygonObstacleRings` と同方針）。
  */
 export function collectPolygonObstacleVertices(
   features: readonly Feature[],
@@ -102,8 +100,8 @@ export function collectPolygonObstacleVertices(
 /**
  * 移動中の頂点が属する末端ポリゴン地物の辺を、衝突応答用の制約として集める。
  *
- * Phase 2-D-6-3a 追補: ソース側も `isLeafPolygonAnchor` で揃え、移行期間ノード・
- * コンテナをソースから除外する（障害物側と判定経路を統一）。
+ * ソース側も `isLeafPolygonAnchor` で判定し、移行期間ノード・コンテナをソースから除外する
+ * （障害物側と判定経路を統一）。
  */
 export function collectMovingPolygonEdgeConstraints(
   features: readonly Feature[],

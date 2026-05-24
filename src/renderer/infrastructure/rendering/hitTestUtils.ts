@@ -172,11 +172,10 @@ function hitTestPolygon(
  * @param thresholdDeg 点/線のヒット閾値（度単位）
  * @returns ヒットした地物、なければ null
  *
- * Phase 2-D-6-1+2: 描画・ヒットテスト・頂点選択コンテキスト・wrapOffsets が同じ
- * `sceneEntries` を参照するように統一した（開発ガイド §6.1.2 / §6.6.9 / §6.0.1 検出観点2）。
- * これにより「画面に描画されないがクリック選択できる」状態が発生しない。
- * tie-break ポリシーは Phase 2.5-C で depth + DOM target 一致の 3 キー
- * （開発ガイド §6.2.25 採用ポリシー）として再設計する。
+ * 描画・ヒットテスト・頂点選択コンテキスト・wrapOffsets は同じ `sceneEntries` を参照する
+ * （開発ガイド §6.1.2 / §6.6.9 / §6.0.1 検出観点2）。これにより「画面に描画されないが
+ * クリック選択できる」状態が発生しない。tie-break ポリシーは Phase 2.5-C で depth + DOM
+ * target 一致の 3 キー（開発ガイド §6.2.25 採用ポリシー）として再設計する計画。
  */
 export function hitTest(
   clickCoord: Coordinate,

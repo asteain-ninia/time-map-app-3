@@ -234,7 +234,7 @@ function validatePolygonRings(
 
 /**
  * 単一錨内で `shape` の有無と `featureType` ↔ `shape.type` の整合を検証する。
- * 要件定義書 §4.1 と現状.md §6.10 Phase 2-C-4 のスコープ:
+ * 要件定義書 §4.1 のスコープ:
  *   - `shape === undefined` ⟹ `featureType === 'Polygon'` かつ `placement.childIds.length > 0`（コンテナ）
  *   - `shape !== undefined` ⟹ `featureType` と `shape.type` が整合（Point↔Point / Line↔LineString / Polygon↔Polygon）
  * 子参照健全性・親子相互整合・循環検出・リーフ排他・親≡子の和は Phase 3 のスコープ。

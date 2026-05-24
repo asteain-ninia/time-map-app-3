@@ -374,8 +374,8 @@ function normalizePlacement(
   // 要件定義書 §2.5.2「旧モデル（レイヤー概念を含む形式バージョン）のファイルは
   // 互換性なしとして読み込みエラーで拒否する。マイグレーションは提供しない。」
   // 現状.md §6.2「既存 .gimoza 互換性は破棄する（移行マイグレーションは実装しない）」。
-  // Phase 2-D-6-3c で `placement.layerId` を完全撤去したため、本フィールドを含むファイルは
-  // 旧モデルのマーカーとして拒否する。fallback 用 warning より先に判定する。
+  // `placement.layerId` フィールドを含むファイルは旧モデルのマーカーとして拒否する
+  // （fallback 用 warning より先に判定する）。
   if ('layerId' in source) {
     throw new SerializationError(
       '旧モデル（placement.layerId を含む形式）のファイルは互換性なしとして拒否されました。新規プロジェクトを開始してください。'

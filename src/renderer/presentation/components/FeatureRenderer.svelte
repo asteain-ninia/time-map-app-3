@@ -39,9 +39,9 @@
   const SELECTION_FILL = 'rgba(0, 204, 255, 0.2)';
 
   /**
-   * 自動配色は地図全体（sceneEntries 全体）で 1 回算出する。
-   * Phase 2-D-6-1+2: 描画・ヒットテスト・頂点選択コンテキスト・wrapOffsets を sceneEntries
-   * へ統一したため、レイヤー単位のグルーピングは存在しない。
+   * 自動配色は地図全体（sceneEntries 全体）で 1 回算出する。描画・ヒットテスト・頂点選択
+   * コンテキスト・wrapOffsets はいずれも sceneEntries を経由するため、レイヤー単位の
+   * グルーピングは存在しない。
    */
   let polygonAutoColors = $derived(
     resolvePolygonAutoColors(

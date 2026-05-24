@@ -8,9 +8,8 @@
  * 面情報の親子関係（上位領域・下位領域）に関するドメインロジックを提供する。
  * ステートレスなユーティリティ関数群。
  *
- * ※ レイヤー（旧モデル）の表示制御 UseCase は Phase 2-D-3 で撤去済み。新階層モデル
- *    （現状.md §6）では「グローバル `Layer` 概念」は廃止され、ツリー位置から派生する
- *    depth で階層を表現する方針へ転換済み。
+ * ※ 旧モデルの「グローバル `Layer` 概念」は廃止されており、階層はツリー位置から派生する
+ *    depth で表現する（詳細は現状.md §6）。
  */
 
 import type { Feature } from '@domain/entities/Feature';
@@ -140,16 +139,16 @@ export function getAncestors(
  * 子地物がポリゴンでない場合はスキップする。
  * 子が0個またはポリゴンが0個の場合は空結果を返す。
  *
- * **Phase 2-C 時点の暫定実装 — Phase 2.5-A で本格再実装**:
+ * **現状は暫定実装**:
  * - 子コンテナ（`shape === undefined` の集約地物）を skip しているが、
  *   §6.6.9 の規則「子地物が集約地物であれば孫の和を再帰呼び出しで取り込む（多段階層）」を
  *   満たしていない。多段階層の孫リーフ形状が親に反映されない既知制約。
  * - `polygonUnion + polygons[0]` で多 polygon の片落としが起きる（§6.6.5 違反）。
  * - 循環親子参照に対する visited セット cycle guard が無い（§6.4.14 違反）。
  *
- * Phase 2-C 時点では containers が実データに存在しないため runtime 影響は無い。
- * Phase 2.5-A で `polygonUnionAll` ＋ 再帰下降 ＋ visited cycle guard を備えた
- * 正式実装へ差し替える計画。詳細は現状.md §6.10「Phase 2.5-A」を参照。
+ * containers が実データに存在しない期間は runtime 影響なし。`polygonUnionAll` ＋
+ * 再帰下降 ＋ visited cycle guard を備えた正式実装への差し替え計画は現状.md §6.10
+ * 「Phase 2.5-A」を参照。
  *
  * @param vertices 頂点IDから座標を解決するマップ
  */
@@ -168,7 +167,7 @@ export function deriveParentShape(
 
   for (const child of children) {
     const childAnchor = child.getActiveAnchor(time);
-    // Phase 2.5-A defer: shape を持たない子コンテナは現状 skip。本来は孫リーフを再帰下降して取り込む（§6.6.9）。
+    // 現状は shape を持たない子コンテナを skip。本来は孫リーフを再帰下降して取り込む（§6.6.9 / Phase 2.5-A 予定）。
     if (!childAnchor || !childAnchor.shape || childAnchor.shape.type !== 'Polygon') continue;
 
     const childRings = resolvePolygonRings(childAnchor, vertices);
