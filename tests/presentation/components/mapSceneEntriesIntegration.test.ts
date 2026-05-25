@@ -205,9 +205,9 @@ describe('sceneEntries 経路の対概念整合性', () => {
    * 回帰テスト対象としているため、3 経路（描画用 polygonRings / hitTest /
    * wrapOffsets）が同じ解決済み座標を共有することを固定する。
    *
-   * 現状の `deriveParentShape` は Phase 2-C 時点の暫定実装で、子の和を計算
-   * できないケース（例: ここでの子リーフが含まれない、または派生失敗）では
-   * 空を返す → 親自身の shape を fallback として使う、という挙動。
+   * `deriveParentShape` は子の和を返す純粋関数であり、子が解決できない（features 配列に
+   * 含まれない / 派生失敗）ケースでは空を返す。移行期間ノードの「派生空 → 親自身の shape
+   * fallback」は呼び出し側 `mapSceneEntries.resolvePolygonRings` の責務であることを固定する。
    */
   describe('shape あり + childIds 非空 の移行期間ノード（§6.6.9 射程）', () => {
     it('派生が空のとき、3 経路が親自身の shape rings に揃う', () => {

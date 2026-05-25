@@ -17,7 +17,7 @@ import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { RingCoords } from './GeometryService';
-import { polygonUnion } from './BooleanOperationService';
+import { polygonUnionAll } from './BooleanOperationService';
 import type { Coordinate } from '@domain/value-objects/Coordinate';
 
 // ──────────────────────────────────────────
@@ -135,20 +135,22 @@ export function getAncestors(
  * 子地物の形状和（ユニオン）を計算する
  *
  * §2.1: 下位領域を持つ面情報の形状は下位領域の和として計算される
+ * §6.6.9: 描画・ヒットテスト・派生サービスは同じ shape 解決経路を共有する
  *
- * 子地物がポリゴンでない場合はスキップする。
- * 子が0個またはポリゴンが0個の場合は空結果を返す。
+ * 解決規則:
+ * - 子地物が Polygon でない（Point / Line）ならスキップ
+ * - 子が末端地物（`childIds` 空 + `shape` あり）: 自身の `shape.rings` を採用
+ * - 子が `childIds` 非空（集約地物 / 移行期間ノード）: 再帰下降で孫の和を取得し、
+ *   派生が空かつ自身の `shape` ありの移行期間ノードは fallback として `shape.rings` を採用
+ * - 複数子の和は `polygonUnionAll` で算出し、離れた領土（MultiPolygon）を保持する（§6.6.5）
+ * - 循環親子参照は visited セットで早期 return し無限再帰を防ぐ（§6.4.14）
  *
- * **現状は暫定実装**:
- * - 子コンテナ（`shape === undefined` の集約地物）を skip しているが、
- *   §6.6.9 の規則「子地物が集約地物であれば孫の和を再帰呼び出しで取り込む（多段階層）」を
- *   満たしていない。多段階層の孫リーフ形状が親に反映されない既知制約。
- * - `polygonUnion + polygons[0]` で多 polygon の片落としが起きる（§6.6.5 違反）。
- * - 循環親子参照に対する visited セット cycle guard が無い（§6.4.14 違反）。
+ * 戻り値の `rings` は polygon-clipping の MultiPolygon 結果を territory/hole の順で
+ * フラット化したリング列。呼び出し側は evenodd 判定で複数領土を描画・hitTest できる。
  *
- * containers が実データに存在しない期間は runtime 影響なし。`polygonUnionAll` ＋
- * 再帰下降 ＋ visited cycle guard を備えた正式実装への差し替え計画は現状.md §6.10
- * 「Phase 2.5-A」を参照。
+ * トップレベル呼び出しで派生が空（解決可能な子が無い）の場合、呼び出し側が
+ * 「親自身の shape を fallback として使う（移行期間ノードの保険）」かどうかを判断する。
+ * 本関数自身は子由来の純粋な和のみを返す（§6.6.9 の原則 = 親 ≡ 子の和）。
  *
  * @param vertices 頂点IDから座標を解決するマップ
  */
@@ -158,36 +160,110 @@ export function deriveParentShape(
   vertices: ReadonlyMap<string, Coordinate>,
   time: TimePoint
 ): DerivedShapeResult {
-  const children = getChildFeatures(feature, allFeatures, time);
-  if (children.length === 0) {
+  const polygons = deriveParentPolygonsInternal(feature, allFeatures, vertices, time, new Set());
+  if (polygons.length === 0) {
     return { rings: [], isEmpty: true };
   }
 
-  let accumulated: RingCoords[] = [];
-
-  for (const child of children) {
-    const childAnchor = child.getActiveAnchor(time);
-    // 現状は shape を持たない子コンテナを skip。本来は孫リーフを再帰下降して取り込む（§6.6.9 / Phase 2.5-A 予定）。
-    if (!childAnchor || !childAnchor.shape || childAnchor.shape.type !== 'Polygon') continue;
-
-    const childRings = resolvePolygonRings(childAnchor, vertices);
-    if (childRings.length === 0) continue;
-
-    if (accumulated.length === 0) {
-      accumulated = childRings;
-    } else {
-      const union = polygonUnion(accumulated, childRings);
-      if (!union.isEmpty && union.polygons.length > 0) {
-        // 和の結果が複数ポリゴンになる場合は最初のものを使用（Phase 2.5-A で polygonUnionAll に移行予定）
-        accumulated = [...union.polygons[0]];
-      }
+  // MultiPolygon を territory/hole の順でフラット化（呼び出し側の evenodd 判定で扱う）
+  const flatRings: RingCoords[] = [];
+  for (const polygon of polygons) {
+    for (const ring of polygon) {
+      flatRings.push(ring);
     }
   }
 
   return {
-    rings: accumulated,
-    isEmpty: accumulated.length === 0,
+    rings: flatRings,
+    isEmpty: flatRings.length === 0,
   };
+}
+
+/**
+ * `deriveParentShape` の内部実装。MultiPolygon 構造（`RingCoords[][]`）を保持したまま再帰し、
+ * 子の polygon 集合を集約地物に持ち上げる。visited セットで循環親子参照に対する cycle guard を
+ * 行い、既訪問の地物を辿ろうとした場合は空配列で早期 return し無限再帰を防ぐ（§6.4.14）。
+ *
+ * 再帰中に rings をフラット化すると孫の MultiPolygon を再度親 polygon の hole として
+ * 誤解釈してしまうため、トップレベルの公開 API でのみフラット化する。
+ */
+function deriveParentPolygonsInternal(
+  feature: Feature,
+  allFeatures: readonly Feature[],
+  vertices: ReadonlyMap<string, Coordinate>,
+  time: TimePoint,
+  visited: ReadonlySet<string>
+): readonly RingCoords[][] {
+  if (visited.has(feature.id)) {
+    return [];
+  }
+  const nextVisited = new Set(visited);
+  nextVisited.add(feature.id);
+
+  const children = getChildFeatures(feature, allFeatures, time);
+  if (children.length === 0) {
+    return [];
+  }
+
+  // 各子について解決済み polygon 群を収集。MultiPolygon を持つ子は polygon 単位で広げる。
+  const childPolygons: RingCoords[][] = [];
+  for (const child of children) {
+    if (child.featureType !== 'Polygon') continue;
+    const childAnchor = child.getActiveAnchor(time);
+    if (!childAnchor) continue;
+
+    const polygons = resolveChildPolygonsForUnion(
+      child,
+      childAnchor,
+      allFeatures,
+      vertices,
+      time,
+      nextVisited
+    );
+    for (const polygon of polygons) {
+      if (polygon.length > 0) childPolygons.push(polygon);
+    }
+  }
+
+  if (childPolygons.length === 0) {
+    return [];
+  }
+
+  const union = polygonUnionAll(childPolygons);
+  if (union.isEmpty) {
+    return [];
+  }
+  return union.polygons.map((polygon) => polygon.map((ring) => [...ring]));
+}
+
+/**
+ * 子地物 1 個分の polygon 群を解決する。MultiPolygon 構造（`RingCoords[][]`）を保持する。
+ * `childIds` 非空（集約地物 / 移行期間ノード）は再帰下降を優先し、派生空かつ
+ * 自身に `shape` を持つ移行期間ノードは `shape.rings` を fallback として返す（§6.6.9）。
+ */
+function resolveChildPolygonsForUnion(
+  child: Feature,
+  childAnchor: FeatureAnchor,
+  allFeatures: readonly Feature[],
+  vertices: ReadonlyMap<string, Coordinate>,
+  time: TimePoint,
+  visited: ReadonlySet<string>
+): readonly RingCoords[][] {
+  if (childAnchor.placement.childIds.length > 0) {
+    const derived = deriveParentPolygonsInternal(child, allFeatures, vertices, time, visited);
+    if (derived.length > 0) {
+      return derived;
+    }
+    if (childAnchor.shape && childAnchor.shape.type === 'Polygon') {
+      return resolvePolygonAnchorPolygons(childAnchor, vertices);
+    }
+    return [];
+  }
+
+  if (!childAnchor.shape || childAnchor.shape.type !== 'Polygon') {
+    return [];
+  }
+  return resolvePolygonAnchorPolygons(childAnchor, vertices);
 }
 
 /** 形状導出結果 */
@@ -197,21 +273,45 @@ export interface DerivedShapeResult {
 }
 
 /**
- * ポリゴン錨のリングを RingCoords に解決する
+ * ポリゴン錨の rings を polygon-clipping 互換の「1 territory + 直下の holes」単位へ
+ * 解決する（§6.6.2: 複数領土リングを平坦化しない）。
+ *
+ * 飛び地など territory が複数ある錨を `polygonUnionAll` へ渡す際、フラットな
+ * `RingCoords[]` として渡すと polygon-clipping が 2 本目以降の territory を hole として
+ * 誤解釈する。各 territory ごとに `[territory, ...holes]` の polygon を作って分離する。
+ * holes は `parentId` で territory に紐付け、所属が無い hole（不正データ）は捨てる。
  */
-function resolvePolygonRings(
+function resolvePolygonAnchorPolygons(
   anchor: FeatureAnchor,
   vertices: ReadonlyMap<string, Coordinate>
-): RingCoords[] {
+): RingCoords[][] {
   if (!anchor.shape || anchor.shape.type !== 'Polygon') return [];
-  return anchor.shape.rings.map(ring =>
-    ring.vertexIds
-      .map(vid => {
+
+  const resolved = anchor.shape.rings.map((ring) => ({
+    id: ring.id,
+    ringType: ring.ringType,
+    parentId: ring.parentId,
+    coords: ring.vertexIds
+      .map((vid) => {
         const coord = vertices.get(vid);
         return coord ? { x: coord.x, y: coord.y } : null;
       })
-      .filter((p): p is { x: number; y: number } => p !== null)
-  ).filter(r => r.length >= 3);
+      .filter((p): p is { x: number; y: number } => p !== null),
+  }));
+
+  const holesByParentId = new Map<string, RingCoords[]>();
+  for (const ring of resolved) {
+    if (ring.ringType !== 'hole' || ring.parentId === null) continue;
+    if (ring.coords.length < 3) continue;
+    if (!holesByParentId.has(ring.parentId)) {
+      holesByParentId.set(ring.parentId, []);
+    }
+    holesByParentId.get(ring.parentId)!.push(ring.coords);
+  }
+
+  return resolved
+    .filter((ring) => ring.ringType === 'territory' && ring.coords.length >= 3)
+    .map((ring) => [ring.coords, ...(holesByParentId.get(ring.id) ?? [])]);
 }
 
 // ──────────────────────────────────────────

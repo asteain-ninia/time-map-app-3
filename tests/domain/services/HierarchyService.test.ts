@@ -213,6 +213,147 @@ describe('HierarchyService', () => {
       const result = deriveParentShape(country, allFeatures, emptyVertices, time);
       expect(result.isEmpty).toBe(true);
     });
+
+    it('子1件が離れた territory を2本持つ場合に飛び地が片落ちしない（§6.6.2 / §6.6.5）', () => {
+      // 飛び地ケース: 1 つの子リーフが territory リングを 2 本持つ（離れた領土）。
+      // 旧実装は shape.rings を平坦化して 1 polygon 扱いし、2 本目の territory を hole として
+      // 誤解釈していた。territory ごとに polygon を分離して polygonUnionAll に渡すことで、
+      // 飛び地の 2 本目の territory が hole に化けず親の派生形状に正しく取り込まれる。
+      const islandLeaf = new Feature('island', 'Polygon', [
+        new FeatureAnchor(
+          'island-a1',
+          { start: new TimePoint(1900) },
+          { name: 'island', description: '' },
+          {
+            type: 'Polygon',
+            rings: [
+              new Ring('island-t1', ['iv1', 'iv2', 'iv3', 'iv4'], 'territory', null),
+              new Ring('island-t2', ['iv5', 'iv6', 'iv7', 'iv8'], 'territory', null),
+            ],
+          },
+          createAnchorPlacement('exclave-parent', [])
+        ),
+      ]);
+      const parent = makePolygonFeature('exclave-parent', null, ['island']);
+      const verts = makeVertices([
+        ['iv1', 0, 0], ['iv2', 10, 0], ['iv3', 10, 10], ['iv4', 0, 10],
+        ['iv5', 100, 0], ['iv6', 110, 0], ['iv7', 110, 10], ['iv8', 100, 10],
+      ]);
+
+      const result = deriveParentShape(parent, [parent, islandLeaf], verts, time);
+      expect(result.isEmpty).toBe(false);
+      // 飛び地の 2 territory が両方残ること（フラット化後）
+      expect(result.rings.length).toBe(2);
+      // 2 つの territory の経度範囲が分離している（左端 x が異なる）
+      const xExtents = result.rings.map((r) => Math.min(...r.map((p) => p.x)));
+      expect(new Set(xExtents).size).toBe(2);
+    });
+
+    it('離れた子の和は MultiPolygon を保持する（§6.6.5 / §6.6.9）', () => {
+      // 2 個の離れた正方形を子に持つコンテナを与え、和が単一ポリゴンに潰されないこと。
+      const square1Vertices: [string, number, number][] = [
+        ['s1-v1', 0, 0],
+        ['s1-v2', 10, 0],
+        ['s1-v3', 10, 10],
+        ['s1-v4', 0, 10],
+      ];
+      const square2Vertices: [string, number, number][] = [
+        ['s2-v1', 100, 0],
+        ['s2-v2', 110, 0],
+        ['s2-v3', 110, 10],
+        ['s2-v4', 100, 10],
+      ];
+      const square1 = makePolygonFeature('s1', 'multi', [], ['s1-v1', 's1-v2', 's1-v3', 's1-v4']);
+      const square2 = makePolygonFeature('s2', 'multi', [], ['s2-v1', 's2-v2', 's2-v3', 's2-v4']);
+      const multi = makePolygonFeature('multi', null, ['s1', 's2']);
+      const verts = makeVertices([...square1Vertices, ...square2Vertices]);
+
+      const result = deriveParentShape(multi, [multi, square1, square2], verts, time);
+      expect(result.isEmpty).toBe(false);
+      // territory リングが 2 本残ること（フラット化後）
+      expect(result.rings.length).toBe(2);
+      const xExtents = result.rings.map((r) => Math.min(...r.map((p) => p.x)));
+      // ふたつの離れた territory の左端 x が異なる
+      expect(new Set(xExtents).size).toBe(2);
+    });
+
+    it('集約地物（子コンテナ）の孫リーフ形状を再帰下降で取り込む（§6.6.9 多段階層）', () => {
+      // 階層: root → midContainer (shape なし) → leaf1 + leaf2
+      const leaf1Verts: [string, number, number][] = [
+        ['l1-v1', 0, 0],
+        ['l1-v2', 10, 0],
+        ['l1-v3', 10, 10],
+      ];
+      const leaf2Verts: [string, number, number][] = [
+        ['l2-v1', 100, 0],
+        ['l2-v2', 110, 0],
+        ['l2-v3', 110, 10],
+      ];
+      const leaf1 = makePolygonFeature('leaf1', 'mid', [], ['l1-v1', 'l1-v2', 'l1-v3']);
+      const leaf2 = makePolygonFeature('leaf2', 'mid', [], ['l2-v1', 'l2-v2', 'l2-v3']);
+      // mid は集約地物: shape なし + childIds = [leaf1, leaf2]
+      const mid = new Feature('mid', 'Polygon', [
+        new FeatureAnchor(
+          'mid-a1',
+          { start: new TimePoint(1900) },
+          { name: 'mid', description: '' },
+          undefined,
+          createAnchorPlacement('root', ['leaf1', 'leaf2'])
+        ),
+      ]);
+      const root = makePolygonFeature('root', null, ['mid']);
+      const verts = makeVertices([...leaf1Verts, ...leaf2Verts]);
+
+      const result = deriveParentShape(root, [root, mid, leaf1, leaf2], verts, time);
+      expect(result.isEmpty).toBe(false);
+      // 孫リーフ 2 個の和 = MultiPolygon territory 2 本
+      expect(result.rings.length).toBe(2);
+    });
+
+    it('循環親子参照でも無限ループせず有限結果を返す（§6.4.14）', () => {
+      // a → b → a の循環。validateHierarchy で検出されるべき不正データだが、
+      // シリアライズを通らない直接構築経路でも runtime 安全性を保つ。
+      const a = makePolygonFeature('a', 'b', ['b'], ['v1', 'v2', 'v3']);
+      const b = makePolygonFeature('b', 'a', ['a'], ['v4', 'v5', 'v6']);
+      const verts = makeVertices([
+        ['v1', 0, 0], ['v2', 10, 0], ['v3', 10, 10],
+        ['v4', 20, 0], ['v5', 30, 0], ['v6', 30, 10],
+      ]);
+
+      const result = deriveParentShape(a, [a, b], verts, time);
+      // visited セットで a→b→a の戻り辺が遮断され、b の resolveChildPolygonsForUnion 内で
+      // deriveParentPolygonsInternal(a, visited={a, b}) が早期 return → a の shape rings が
+      // 移行期間ノード fallback として持ち上がり、b の polygonUnionAll 結果 → root の結果も
+      // a の shape rings になる（b の shape ではない）。重要なのは無限再帰せず有限結果が返ること。
+      expect(result.isEmpty).toBe(false);
+      expect(result.rings.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('移行期間ノードの子: 派生空なら自身の shape rings を fallback として採用（§6.6.9）', () => {
+      // 子 transitional は shape あり + childIds 非空。しかし transitional の子は
+      // features 配列に含まれない → 派生空 → transitional 自身の shape を採用。
+      const transitionalVerts: [string, number, number][] = [
+        ['t-v1', 0, 0],
+        ['t-v2', 10, 0],
+        ['t-v3', 10, 10],
+      ];
+      const transitional = makePolygonFeature(
+        'trans',
+        'parent',
+        ['missing-grandchild'],
+        ['t-v1', 't-v2', 't-v3']
+      );
+      const parent = makePolygonFeature('parent', null, ['trans']);
+      const verts = makeVertices(transitionalVerts);
+
+      const result = deriveParentShape(parent, [parent, transitional], verts, time);
+      expect(result.isEmpty).toBe(false);
+      expect(result.rings.length).toBeGreaterThanOrEqual(1);
+      // transitional の shape rings の経度範囲（0..10）が反映される
+      const xs = result.rings.flatMap((r) => r.map((p) => p.x));
+      expect(Math.min(...xs)).toBeGreaterThanOrEqual(0);
+      expect(Math.max(...xs)).toBeLessThanOrEqual(10);
+    });
   });
 
   describe('validateHierarchy', () => {
