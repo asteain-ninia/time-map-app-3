@@ -10,6 +10,7 @@ export {
   getDescendants,
   getAncestors,
   deriveParentShape,
+  deriveDepth,
   validateHierarchy,
   isShapeEditable,
   isSplittable,

@@ -8,6 +8,7 @@ import {
   getDescendants,
   getAncestors,
   deriveParentShape,
+  deriveDepth,
   validateHierarchy,
   isShapeEditable,
   isSplittable,
@@ -353,6 +354,81 @@ describe('HierarchyService', () => {
       const xs = result.rings.flatMap((r) => r.map((p) => p.x));
       expect(Math.min(...xs)).toBeGreaterThanOrEqual(0);
       expect(Math.max(...xs)).toBeLessThanOrEqual(10);
+    });
+  });
+
+  describe('deriveDepth', () => {
+    // 基本階層: country (root) → [province1, province2]
+    it('ルート地物（parentId === null）の depth は 0', () => {
+      expect(deriveDepth(country, allFeatures, time)).toBe(0);
+    });
+
+    it('直接の子の depth は 1', () => {
+      expect(deriveDepth(province1, allFeatures, time)).toBe(1);
+      expect(deriveDepth(province2, allFeatures, time)).toBe(1);
+    });
+
+    it('独立した最上位地物の depth も 0', () => {
+      expect(deriveDepth(independent, allFeatures, time)).toBe(0);
+    });
+
+    it('多段階層では親の depth + 1 を返す（§2.1 / 現状.md §6.3）', () => {
+      // country (0) → province1 (1) → city (2) → district (3)
+      const district = makePolygonFeature('district', 'city', []);
+      const city = makePolygonFeature('city', 'province1', ['district']);
+      const province1WithChild = makePolygonFeature('province1', 'country', ['city']);
+      const features = [country, province1WithChild, province2, city, district];
+
+      expect(deriveDepth(country, features, time)).toBe(0);
+      expect(deriveDepth(province1WithChild, features, time)).toBe(1);
+      expect(deriveDepth(city, features, time)).toBe(2);
+      expect(deriveDepth(district, features, time)).toBe(3);
+    });
+
+    it('対象時刻に有効錨がない地物は undefined', () => {
+      // 錨の開始(1900)より前
+      const pastTime = new TimePoint(1800);
+      expect(deriveDepth(country, allFeatures, pastTime)).toBeUndefined();
+      expect(deriveDepth(province1, allFeatures, pastTime)).toBeUndefined();
+    });
+
+    it('parentId が指す親が allFeatures に存在しない場合は undefined（壊れたデータ）', () => {
+      const orphan = makePolygonFeature('orphan', 'nonexistent', []);
+      expect(deriveDepth(orphan, [orphan], time)).toBeUndefined();
+    });
+
+    it('parentId が指す親の有効錨が時刻外で取得できない場合は undefined', () => {
+      // 子は時刻 2000 でアクティブ（start=1900）だが、親は start=2200 のみアクティブ。
+      // この fixture でなければ「子自身の anchor 不在」分岐に倒れて
+      // 親方向の有効錨欠落分岐を踏まない（pastTime=1800 では子も親も非アクティブ）。
+      const futureParent = new Feature('future-parent', 'Polygon', [
+        new FeatureAnchor(
+          'future-parent-a1',
+          { start: new TimePoint(2200) },
+          { name: 'future-parent', description: '' },
+          {
+            type: 'Polygon',
+            rings: [new Ring('fp-r1', ['v1', 'v2', 'v3'], 'territory', null)],
+          },
+          createAnchorPlacement(null, ['child-of-future'])
+        ),
+      ]);
+      const childOfFuture = makePolygonFeature('child-of-future', 'future-parent', []);
+      expect(deriveDepth(childOfFuture, [futureParent, childOfFuture], time)).toBeUndefined();
+    });
+
+    it('循環親子参照でも無限ループせず undefined を返す（§6.4.14）', () => {
+      // a → b → a の循環
+      const a = makePolygonFeature('a', 'b', ['b']);
+      const b = makePolygonFeature('b', 'a', ['a']);
+      // 無限再帰せず有限時間内に undefined を返すこと
+      expect(deriveDepth(a, [a, b], time)).toBeUndefined();
+      expect(deriveDepth(b, [a, b], time)).toBeUndefined();
+    });
+
+    it('自己参照（parentId === 自身のid）も undefined を返す（§6.4.14）', () => {
+      const selfRef = makePolygonFeature('selfref', 'selfref', []);
+      expect(deriveDepth(selfRef, [selfRef], time)).toBeUndefined();
     });
   });
 

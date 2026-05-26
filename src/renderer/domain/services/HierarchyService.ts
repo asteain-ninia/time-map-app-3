@@ -127,6 +127,69 @@ export function getAncestors(
   return result;
 }
 
+/**
+ * 指定時間点での階層深度（depth）を派生算出する
+ *
+ * §2.1 / 現状.md §6.3: depth は対象時刻における当該地物の有効錨のツリー位置から派生する派生値。
+ * 地物自身に保持しない。
+ *   - ルート（有効錨の `placement.parentId === null`）は depth = 0
+ *   - 子は親地物の同時刻有効錨から導出した depth + 1
+ *   - 用語: depth = 0 が最上位（国側、上）、depth 大が下位（基礎自治体側、下）
+ *
+ * §6.4.14: 親子グラフを辿る再帰サービスは visited セットで cycle guard を入れる。
+ * 循環親子参照でも無限ループせず undefined を返す。
+ *
+ * 走査方向は子 → 親（`placement.parentId` を辿る片方向）。親側 `childIds` への
+ * 双方向整合（親の `childIds` が当該地物を含むか）は `validateHierarchy` の責務であり、
+ * 本関数はそれを前提とせず、`parentId` 連鎖のみで depth を算出する。
+ *
+ * @returns 派生 depth（0 以上の整数）。次のいずれかなら undefined:
+ *   - 当該地物に対象時刻の有効錨がない（時間軸上で存在しない）
+ *   - parentId が指す親地物が allFeatures に存在しない、または親の有効錨がない
+ *   - 親方向の連鎖中に循環親子参照を検出（visited で再入遮断）
+ */
+export function deriveDepth(
+  feature: Feature,
+  allFeatures: readonly Feature[],
+  time: TimePoint
+): number | undefined {
+  return deriveDepthInternal(feature, allFeatures, time, new Set());
+}
+
+/**
+ * `deriveDepth` の内部実装。visited セットで親方向連鎖の循環を遮断する（§6.4.14）。
+ */
+function deriveDepthInternal(
+  feature: Feature,
+  allFeatures: readonly Feature[],
+  time: TimePoint,
+  visited: ReadonlySet<string>
+): number | undefined {
+  if (visited.has(feature.id)) {
+    return undefined;
+  }
+  const anchor = feature.getActiveAnchor(time);
+  if (!anchor) {
+    return undefined;
+  }
+  if (anchor.placement.parentId === null) {
+    return 0;
+  }
+  const parent = allFeatures.find((f) => f.id === anchor.placement.parentId);
+  if (!parent) {
+    return undefined;
+  }
+
+  const nextVisited = new Set(visited);
+  nextVisited.add(feature.id);
+
+  const parentDepth = deriveDepthInternal(parent, allFeatures, time, nextVisited);
+  if (parentDepth === undefined) {
+    return undefined;
+  }
+  return parentDepth + 1;
+}
+
 // ──────────────────────────────────────────
 // 形状導出
 // ──────────────────────────────────────────
