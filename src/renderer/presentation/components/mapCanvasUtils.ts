@@ -211,44 +211,40 @@ function addGeometryWrapOffsets(
 /**
  * sceneEntry の経度範囲を算出する。
  *
- * Polygon は `entry.polygonRings`（描画/hitTest が共通利用する解決済み座標）を直接使う。
- * これにより、shape あり + childIds 非空 の移行期間ノードで描画と wrapOffsets の対象がずれない
- * （開発ガイド §6.6.9）。Point / LineString は vertex マップから座標を解決する。
+ * 振り分けは `entry.polygonRings !== null` を Polygon パスの第一条件として判定する
+ * （MapSceneEntry 規約: Polygon entry は必ず non-null、Point/LineString は必ず null。
+ * 開発ガイド §6.6.9 適用パターン: 判定をデータ側に寄せる）。これにより集約地物
+ * （`anchor.shape === undefined` + childIds 非空）も `entry.polygonRings` の派生形状から
+ * 経度範囲を算出でき、描画・hitTest・wrapOffsets の 3 経路が同じ座標を共有する。
+ * Point / LineString は vertex マップから座標を解決する。
  */
 function getSceneEntryLongitudeBounds(
   entry: MapSceneEntry,
   vertices: ReadonlyMap<string, Vertex>
 ): LongitudeBounds | null {
   const { anchor } = entry;
-  if (!anchor.shape) return null;
   const longitudes: number[] = [];
 
-  switch (anchor.shape.type) {
-    case 'Point': {
-      const vertex = vertices.get(anchor.shape.vertexId);
+  if (entry.polygonRings !== null) {
+    for (const ring of entry.polygonRings) {
+      for (const coord of ring) {
+        longitudes.push(coord.x);
+      }
+    }
+  } else if (anchor.shape?.type === 'Point') {
+    const vertex = vertices.get(anchor.shape.vertexId);
+    if (vertex) {
+      longitudes.push(vertex.x);
+    }
+  } else if (anchor.shape?.type === 'LineString') {
+    for (const vertexId of anchor.shape.vertexIds) {
+      const vertex = vertices.get(vertexId);
       if (vertex) {
         longitudes.push(vertex.x);
       }
-      break;
     }
-    case 'LineString': {
-      for (const vertexId of anchor.shape.vertexIds) {
-        const vertex = vertices.get(vertexId);
-        if (vertex) {
-          longitudes.push(vertex.x);
-        }
-      }
-      break;
-    }
-    case 'Polygon': {
-      if (!entry.polygonRings) break;
-      for (const ring of entry.polygonRings) {
-        for (const coord of ring) {
-          longitudes.push(coord.x);
-        }
-      }
-      break;
-    }
+  } else {
+    return null;
   }
 
   return getLongitudeBounds(longitudes);

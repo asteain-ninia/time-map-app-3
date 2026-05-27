@@ -174,8 +174,11 @@ function hitTestPolygon(
  *
  * 描画・ヒットテスト・頂点選択コンテキスト・wrapOffsets は同じ `sceneEntries` を参照する
  * （開発ガイド §6.1.2 / §6.6.9 / §6.0.1 検出観点2）。これにより「画面に描画されないが
- * クリック選択できる」状態が発生しない。tie-break ポリシーは Phase 2.5-C で depth + DOM
- * target 一致の 3 キー（開発ガイド §6.2.25 採用ポリシー）として再設計する計画。
+ * クリック選択できる」状態が発生しない。Polygon-like の判定は `entry.polygonRings !== null`
+ * で行い（MapSceneEntry 規約: Polygon entry は必ず non-null、Point/LineString は必ず null）、
+ * `feature.featureType` をハードコードしない（§6.6.9 適用パターン: 判定をデータ側に寄せる）。
+ * tie-break ポリシーは Phase 2.5-C で depth + DOM target 一致の 3 キー（開発ガイド §6.2.25
+ * 採用ポリシー）として再設計する計画。
  */
 export function hitTest(
   clickCoord: Coordinate,
@@ -188,15 +191,14 @@ export function hitTest(
 
   for (const entry of sceneEntries) {
     const { feature, anchor } = entry;
-    if (!anchor.shape) continue;
 
     let hit = false;
-    if (anchor.shape.type === 'Point') {
+    if (anchor.shape?.type === 'Point') {
       hit = hitTestPoint(lon, lat, anchor.shape, vertices, thresholdDeg);
-    } else if (anchor.shape.type === 'LineString') {
+    } else if (anchor.shape?.type === 'LineString') {
       hit = hitTestLine(lon, lat, anchor.shape, vertices, thresholdDeg);
-    } else if (anchor.shape.type === 'Polygon') {
-      hit = entry.polygonRings ? hitTestPolygon(lon, lat, entry.polygonRings) : false;
+    } else if (entry.polygonRings !== null) {
+      hit = hitTestPolygon(lon, lat, entry.polygonRings);
     }
 
     if (hit) {

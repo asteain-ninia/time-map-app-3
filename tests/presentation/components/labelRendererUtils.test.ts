@@ -67,6 +67,23 @@ function createPolygonAnchor(overrides?: {
   );
 }
 
+/**
+ * 集約地物（shape なし + childIds 非空）の錨。Phase 2.5-B 以降、ラベル位置・面積判定は
+ * `polygonRings`（派生形状）経由で算出される。
+ */
+function createContainerAnchor(overrides?: { name?: string }): FeatureAnchor {
+  return new FeatureAnchor(
+    'a-container',
+    { start: new TimePoint(1000) },
+    {
+      name: overrides?.name ?? '連邦',
+      description: '',
+    },
+    undefined,
+    { parentId: null, childIds: ['child-1'], isTopLevel: true }
+  );
+}
+
 describe('labelRendererUtils', () => {
   describe('getFeatureLabelPosition', () => {
     it('点地物の座標をそのままラベル位置に使う', () => {
@@ -252,6 +269,81 @@ describe('labelRendererUtils', () => {
           v4: { lon: 0, lat: 2 },
         }),
         3,
+        0
+      );
+
+      expect(visible).toBe(false);
+    });
+  });
+
+  /**
+   * Phase 2.5-B: 集約地物（shape なし + childIds 非空）は派生形状を polygonRings で受け取り、
+   * リーフと同じ経路でラベル位置・面積・表示可否を算出する（開発ガイド §6.6.9）。
+   */
+  describe('集約地物（shape なし + polygonRings あり）のラベル', () => {
+    it('shape なしでも polygonRings から重心ラベル位置を返す', () => {
+      const position = getFeatureLabelPosition(
+        createContainerAnchor(),
+        createVertices({}),
+        [
+          [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+            { x: 0, y: 10 },
+          ],
+        ]
+      );
+
+      expect(position?.x).toBe(geoToWrappedSvgX(5));
+      expect(position?.y).toBe(geoToSvgY(5));
+    });
+
+    it('shape なし + polygonRings なし は null を返す', () => {
+      const position = getFeatureLabelPosition(createContainerAnchor(), createVertices({}));
+      expect(position).toBeNull();
+    });
+
+    it('shape なしでも polygonRings から面積を返す', () => {
+      const area = measureFeatureLabelArea(
+        createContainerAnchor(),
+        createVertices({}),
+        [
+          [
+            { x: 0, y: 0 },
+            { x: 4, y: 0 },
+            { x: 4, y: 4 },
+            { x: 0, y: 4 },
+          ],
+        ]
+      );
+      expect(area).toBe(16);
+    });
+
+    it('shape なし + polygonRings あり + name あり + 十分なズーム なら表示する', () => {
+      const visible = shouldRenderFeatureLabel(
+        createContainerAnchor(),
+        createVertices({}),
+        DEFAULT_LABEL_MIN_ZOOM,
+        0,
+        [
+          [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+            { x: 0, y: 10 },
+          ],
+        ]
+      );
+
+      expect(visible).toBe(true);
+    });
+
+    it('shape なし + polygonRings なし なら表示しない', () => {
+      const visible = shouldRenderFeatureLabel(
+        createContainerAnchor(),
+        createVertices({}),
+        DEFAULT_LABEL_MIN_ZOOM,
         0
       );
 

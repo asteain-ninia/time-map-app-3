@@ -42,11 +42,15 @@
    * 自動配色は地図全体（sceneEntries 全体）で 1 回算出する。描画・ヒットテスト・頂点選択
    * コンテキスト・wrapOffsets はいずれも sceneEntries を経由するため、レイヤー単位の
    * グルーピングは存在しない。
+   *
+   * 集約地物（`anchor.shape === undefined`）は `AutoColorFeatureEntry.shape` を必須とする
+   * 現行 API の制約により自動配色グラフから除外する。Phase 6 で「同 depth 兄弟」基準の
+   * 自動配色へ再設計するまでは、集約地物はパレット index ベースの fallback 色で描画する。
    */
   let polygonAutoColors = $derived(
     resolvePolygonAutoColors(
       sceneEntries
-        .filter(({ anchor }) => anchor.shape!.type === 'Polygon')
+        .filter(({ anchor }) => anchor.shape?.type === 'Polygon')
         .map(({ feature, anchor }) => ({
           featureId: feature.id,
           shape: anchor.shape!,
@@ -71,9 +75,9 @@
 {#each sceneEntries as { feature, anchor, featureIndex, polygonRings } (feature.id)}
   {@const isSelected = feature.id === selectedFeatureId}
   {@const isContext = feature.id === contextFeatureId && !isSelected}
-  {#if anchor.shape!.type === 'Point'}
+  {#if anchor.shape?.type === 'Point'}
     {@const pointStyle = resolvePointStyle(featureIndex, settings)}
-    {@const vertex = vertices.get(anchor.shape!.vertexId)}
+    {@const vertex = vertices.get(anchor.shape.vertexId)}
     {#if vertex}
       <!-- 選択ハイライト -->
       {#if isSelected}
@@ -110,9 +114,9 @@
         stroke-width={1 / zoom}
       />
     {/if}
-  {:else if anchor.shape!.type === 'LineString'}
+  {:else if anchor.shape?.type === 'LineString'}
     {@const lineStyle = resolveLineStyle(featureIndex, settings)}
-    {@const points = buildLinePoints(anchor.shape!.vertexIds, vertices)}
+    {@const points = buildLinePoints(anchor.shape.vertexIds, vertices)}
     {#if points.includes(',')}
       <!-- 選択ハイライト -->
       {#if isSelected}
@@ -150,7 +154,13 @@
         stroke-linejoin="round"
       />
     {/if}
-  {:else if anchor.shape!.type === 'Polygon'}
+  {:else if polygonRings !== null}
+    <!--
+      Polygon-like 判定は `polygonRings !== null` で行う（MapSceneEntry 規約: Polygon entry は
+      必ず non-null）。リーフ（`anchor.shape.type === 'Polygon'`）と集約地物 / 移行期間ノード
+      （`anchor.shape === undefined` または派生形状を使うケース）を `polygonRings` 経由で
+      統一して描画する（開発ガイド §6.6.9 適用パターン: 判定をデータ側に寄せる）。
+    -->
     {@const polygonStyle = resolveStyle(
       anchor.property.style,
       featureIndex,

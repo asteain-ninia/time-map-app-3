@@ -30,12 +30,31 @@ function getVertexCoordinates(
 }
 
 /**
+ * 当該錨が「Polygon として扱う対象」（リーフ・集約地物・移行期間ノード）かを判定する。
+ *
+ * 開発ガイド §6.6.9 適用パターン: 判定をデータ側に寄せる。`polygonRings` が呼び出し側から
+ * 渡されているならそれ自体が「sceneEntries 経由 = Polygon entry」のシグナル
+ * （MapSceneEntry 規約: Polygon entry は必ず `polygonRings !== null`、Point/LineString は
+ * 必ず `null`）。描画 (`FeatureRenderer`) / hitTest (`hitTestUtils`) と同じ判定で動かす
+ * ことで、判定基準のドリフトを構造的に排除する。
+ *
+ * `polygonRings === undefined`（既存の単独呼び出し fallback）の場合のみ anchor.shape ベースの
+ * 旧判定にフォールバックする。
+ */
+function isPolygonLikeAnchor(anchor: FeatureAnchor, polygonRings?: PolygonRings | null): boolean {
+  if (polygonRings !== undefined) return polygonRings !== null;
+  return anchor.shape?.type === 'Polygon';
+}
+
+/**
  * Polygon ラベル算出に使う外周リング座標を、`polygonRings`（解決済み）優先で取得する。
  *
  * 開発ガイド §6.6.9: 「LabelRenderer のラベル位置・面積判定も `containerPolygons` 引数で
  * 同じ派生形状を受け取り、描画と一致させる」。shape あり + childIds 非空 の移行期間ノードで
  * `polygonRings` には派生形状（または shape fallback）が解決済みで渡されるため、ラベル位置と
- * 描画領域がずれない。`polygonRings` が無い経路（既存の単独呼び出し）は anchor.shape を fallback。
+ * 描画領域がずれない。集約地物（shape なし）も `polygonRings` が派生形状を保持するため
+ * 同じ経路で重心・面積を算出できる。`polygonRings` が無い経路（既存の単独呼び出し）は
+ * anchor.shape を fallback。
  */
 function getPolygonOuterCoords(
   anchor: FeatureAnchor,
@@ -56,16 +75,14 @@ export function getFeatureLabelPosition(
   vertices: ReadonlyMap<string, Vertex>,
   polygonRings?: PolygonRings | null
 ): LabelPosition | null {
-  if (!anchor.shape) return null;
-
-  if (anchor.shape.type === 'Point') {
+  if (anchor.shape?.type === 'Point') {
     const vertex = vertices.get(anchor.shape.vertexId);
     return vertex
       ? { x: geoToWrappedSvgX(vertex.x), y: geoToSvgY(vertex.y) }
       : null;
   }
 
-  if (anchor.shape.type === 'LineString') {
+  if (anchor.shape?.type === 'LineString') {
     const midpointVertexId = anchor.shape.vertexIds[Math.floor(anchor.shape.vertexIds.length / 2)];
     if (!midpointVertexId) return null;
 
@@ -74,6 +91,8 @@ export function getFeatureLabelPosition(
       ? { x: geoToWrappedSvgX(vertex.x), y: geoToSvgY(vertex.y) }
       : null;
   }
+
+  if (!isPolygonLikeAnchor(anchor, polygonRings)) return null;
 
   const coordinates = getPolygonOuterCoords(anchor, vertices, polygonRings);
   if (coordinates.length === 0) return null;
@@ -92,7 +111,7 @@ export function measureFeatureLabelArea(
   vertices: ReadonlyMap<string, Vertex>,
   polygonRings?: PolygonRings | null
 ): number {
-  if (!anchor.shape || anchor.shape.type !== 'Polygon') return 0;
+  if (!isPolygonLikeAnchor(anchor, polygonRings)) return 0;
 
   const coordinates = getPolygonOuterCoords(anchor, vertices, polygonRings);
   if (coordinates.length < 3) return 0;
@@ -135,14 +154,17 @@ export function shouldRenderFeatureLabel(
   polygonRings?: PolygonRings | null
 ): boolean {
   if (!anchor.property.name) return false;
-  if (!anchor.shape) return false;
+
+  // 集約地物（shape なし）も派生形状を polygonRings で受け取れば Polygon として扱う。
+  // それ以外で shape が無いケースは仕様上ありえない壊れたデータの保険。
+  if (!anchor.shape && !(polygonRings && polygonRings.length > 0)) return false;
 
   const minZoom = anchor.property.labelVisibility?.minZoom ?? DEFAULT_LABEL_MIN_ZOOM;
   if (zoom < minZoom) return false;
 
   const minDisplayLength = anchor.property.labelVisibility?.minDisplayLength;
   if (
-    anchor.shape.type === 'LineString' &&
+    anchor.shape?.type === 'LineString' &&
     minDisplayLength !== undefined &&
     measureFeatureLabelLength(anchor, vertices) < minDisplayLength
   ) {
@@ -150,7 +172,7 @@ export function shouldRenderFeatureLabel(
   }
 
   if (
-    anchor.shape.type === 'Polygon' &&
+    isPolygonLikeAnchor(anchor, polygonRings) &&
     labelAreaThreshold > 0 &&
     measureFeatureLabelArea(anchor, vertices, polygonRings) < labelAreaThreshold
   ) {

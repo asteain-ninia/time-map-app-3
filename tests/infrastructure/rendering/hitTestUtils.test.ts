@@ -367,4 +367,88 @@ describe('hitTest', () => {
       expect(result).toBeNull();
     });
   });
+
+  /**
+   * Phase 2.5-B: 集約地物（shape なし + childIds 非空）も `polygonRings` 経由で
+   * hitTest 対象になる（開発ガイド §6.6.9 / 現状.md §6.10）。
+   */
+  describe('集約地物のヒットテスト', () => {
+    it('shape なし + childIds 非空 のコンテナは派生形状内のクリックでヒットする', () => {
+      const vertices = makeVertices(
+        ['c-v1', 0, 0],
+        ['c-v2', 10, 0],
+        ['c-v3', 10, 10],
+        ['c-v4', 0, 10]
+      );
+      // リーフは親を指す
+      const leafAnchor = new FeatureAnchor(
+        'a-leaf',
+        { start: new TimePoint(0) },
+        { name: 'leaf', description: '' },
+        {
+          type: 'Polygon',
+          rings: [new Ring('r-leaf', ['c-v1', 'c-v2', 'c-v3', 'c-v4'], 'territory', null)],
+        },
+        { parentId: 'container', childIds: [], isTopLevel: false }
+      );
+      const leaf = new Feature('leaf', 'Polygon', [leafAnchor]);
+
+      const containerAnchor = new FeatureAnchor(
+        'a-container',
+        { start: new TimePoint(0) },
+        { name: 'container', description: '' },
+        undefined,
+        { parentId: null, childIds: ['leaf'], isTopLevel: true }
+      );
+      const container = new Feature('container', 'Polygon', [containerAnchor]);
+
+      const sceneEntries = collectMapSceneEntries(
+        [container, leaf],
+        time,
+        toCoordsMap(vertices)
+      );
+
+      // コンテナは depth 順で先頭 → 派生形状内のクリックで先にヒット
+      const result = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
+      expect(result).not.toBeNull();
+      expect(result!.featureId).toBe('container');
+    });
+
+    it('派生形状外のクリックはヒットしない', () => {
+      const vertices = makeVertices(
+        ['c-v1', 0, 0],
+        ['c-v2', 10, 0],
+        ['c-v3', 10, 10],
+        ['c-v4', 0, 10]
+      );
+      const leafAnchor = new FeatureAnchor(
+        'a-leaf',
+        { start: new TimePoint(0) },
+        { name: 'leaf', description: '' },
+        {
+          type: 'Polygon',
+          rings: [new Ring('r-leaf', ['c-v1', 'c-v2', 'c-v3', 'c-v4'], 'territory', null)],
+        },
+        { parentId: 'container', childIds: [], isTopLevel: false }
+      );
+      const leaf = new Feature('leaf', 'Polygon', [leafAnchor]);
+      const containerAnchor = new FeatureAnchor(
+        'a-container',
+        { start: new TimePoint(0) },
+        { name: 'container', description: '' },
+        undefined,
+        { parentId: null, childIds: ['leaf'], isTopLevel: true }
+      );
+      const container = new Feature('container', 'Polygon', [containerAnchor]);
+
+      const sceneEntries = collectMapSceneEntries(
+        [container, leaf],
+        time,
+        toCoordsMap(vertices)
+      );
+
+      const result = hitTest(new Coordinate(50, 50), sceneEntries, vertices, 1.0);
+      expect(result).toBeNull();
+    });
+  });
 });

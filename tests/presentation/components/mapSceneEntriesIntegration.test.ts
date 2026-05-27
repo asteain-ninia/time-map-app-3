@@ -168,27 +168,141 @@ describe('sceneEntries 経路の対概念整合性', () => {
     expect(offsets).not.toContain(-1080);
   });
 
-  it('shape を持たないコンテナ錨は 4 経路すべてから除外される', () => {
+  /**
+   * Phase 2.5-B: 集約地物（shape なし + childIds 非空）は派生形状を介して描画・hitTest・
+   * wrapOffsets の対象になる（開発ガイド §6.6.9）。頂点 owner map にはコンテナ自身は現れない
+   * （コンテナは shape プロパティを持たず頂点を所有しない）。`parentId` の双方向接続が無いと
+   * ルートの選定が変わるため、子側の `parentId` を必ず親へ向ける。
+   */
+  function polygonFeatureWithParent(id: string, vertexIds: string[], parentId: string): Feature {
+    return new Feature(id, 'Polygon', [
+      new FeatureAnchor(
+        `${id}-anchor`,
+        { start: new TimePoint(0) },
+        { name: id, description: '' },
+        {
+          type: 'Polygon',
+          rings: [new Ring(`${id}-ring`, vertexIds, 'territory', null)],
+        },
+        { parentId, childIds: [], isTopLevel: false }
+      ),
+    ]);
+  }
+
+  it('集約地物（shape なし + childIds 非空）は描画・hitTest・wrapOffsets に含まれ、頂点 owner map にのみ現れない', () => {
     const vertices = new Map([
       ['leaf-v1', new Vertex('leaf-v1', new Coordinate(0, 0))],
       ['leaf-v2', new Vertex('leaf-v2', new Coordinate(10, 0))],
       ['leaf-v3', new Vertex('leaf-v3', new Coordinate(10, 10))],
+      ['leaf-v4', new Vertex('leaf-v4', new Coordinate(0, 10))],
     ]);
-    const leaf = polygonFeature('leaf', ['leaf-v1', 'leaf-v2', 'leaf-v3']);
+    const leaf = polygonFeatureWithParent(
+      'leaf',
+      ['leaf-v1', 'leaf-v2', 'leaf-v3', 'leaf-v4'],
+      'container'
+    );
     const container = polygonFeatureWithChildren('container', null, ['leaf']);
     const sceneEntries = collectMapSceneEntries([leaf, container], time, toCoords(vertices));
 
-    expect(sceneEntries.map((e) => e.feature.id)).toEqual(['leaf']);
+    // depth 順で container（depth=0）→ leaf（depth=1）の順に並ぶ
+    expect(sceneEntries.map((e) => e.feature.id)).toEqual(['container', 'leaf']);
 
-    const hitContainer = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
-    expect(hitContainer?.featureId).toBe('leaf');
+    // hitTest: 派生形状内ならコンテナ・リーフどちらもヒット候補。最初にヒットする entry
+    // （container が depth 順で先）が返る。これは Phase 2.5-C で DOM target / depth tie-break で再設計予定
+    const hitInside = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
+    expect(hitInside).not.toBeNull();
+    expect(hitInside?.featureId).toBe('container');
 
+    // 派生形状外はヒットしない
+    const hitOutside = hitTest(new Coordinate(50, 50), sceneEntries, vertices, 1.0);
+    expect(hitOutside).toBeNull();
+
+    // 頂点 owner map: コンテナは shape を持たないため頂点を所有しない。leaf のみ
     const ownerMap = buildSceneVertexOwnerMap(sceneEntries);
     const allOwners = new Set<string>();
     for (const owners of ownerMap.values()) {
       for (const id of owners) allOwners.add(id);
     }
     expect(allOwners).toEqual(new Set(['leaf']));
+
+    // wrapOffsets: leaf 由来の経度範囲（0..10）が反映される。基本タイルのみで十分
+    const offsets = computeRenderWrapOffsets(
+      { x: 0, y: 0, width: 360, height: 180 },
+      sceneEntries,
+      vertices
+    );
+    expect(offsets).toEqual([-360, 0, 360]);
+  });
+
+  /**
+   * 集約地物の派生形状が遠方経度（基本タイル外）にあるとき、wrapOffsets はその範囲を
+   * 反映する必要がある（開発ガイド §6.6.9: 「描画される領域 = wrapOffsets 算出対象」）。
+   * 旧 `mapCanvasUtils.getSceneEntryLongitudeBounds` は `if (!anchor.shape) return null;` で
+   * 集約地物を即除外しており、コンテナ由来の遠方経度が wrapOffsets に寄与せず偶然 leaf の
+   * 経度範囲だけが反映されていた。本テストはコンテナだけが遠方経度を持つ構成で、
+   * 派生形状経由で wrapOffsets が拡張されることを固定する。
+   */
+  it('集約地物の派生形状が遠方経度にあるとき、wrapOffsets がそれを反映する', () => {
+    // leaf を遠方（経度 900..910）に配置。コンテナの派生形状は leaf の和 → 遠方経度を含む。
+    const vertices = new Map([
+      ['far-v1', new Vertex('far-v1', new Coordinate(900, -10))],
+      ['far-v2', new Vertex('far-v2', new Coordinate(910, -10))],
+      ['far-v3', new Vertex('far-v3', new Coordinate(910, 10))],
+      ['far-v4', new Vertex('far-v4', new Coordinate(900, 10))],
+    ]);
+    const leaf = polygonFeatureWithParent(
+      'far-leaf',
+      ['far-v1', 'far-v2', 'far-v3', 'far-v4'],
+      'far-container'
+    );
+    const container = polygonFeatureWithChildren('far-container', null, ['far-leaf']);
+
+    const sceneEntries = collectMapSceneEntries([container, leaf], time, toCoords(vertices));
+
+    expect(sceneEntries.map((e) => e.feature.id)).toEqual(['far-container', 'far-leaf']);
+
+    // コンテナ entry を取り出して、polygonRings が遠方経度を保持していることを確認
+    const containerEntry = sceneEntries.find((e) => e.feature.id === 'far-container');
+    expect(containerEntry).toBeDefined();
+    expect(containerEntry!.polygonRings).not.toBeNull();
+    const containerXs = containerEntry!.polygonRings![0].map((c) => c.x);
+    expect(Math.min(...containerXs)).toBeGreaterThanOrEqual(900);
+
+    // wrapOffsets: コンテナ + leaf 両方が経度 900..910 の範囲を寄与し、隣接ラップタイルが必要
+    const offsets = computeRenderWrapOffsets(
+      { x: 0, y: 0, width: 360, height: 180 },
+      sceneEntries,
+      vertices
+    );
+    // 遠方経度（900..910）は基本タイル（[-360,0,360]）に加えて -720 / -1080 のラップが必要
+    expect(offsets).toContain(-720);
+    expect(offsets).toContain(-1080);
+
+    // 検証: コンテナだけでも wrapOffsets が同じ遠方範囲をカバーすることを単独で確認
+    // （leaf 由来の経度に偶然依存していないこと = §6.6.9 / §6.1.2 遵守の証跡）
+    const containerOnlySceneEntries = sceneEntries.filter((e) => e.feature.id === 'far-container');
+    const containerOnlyOffsets = computeRenderWrapOffsets(
+      { x: 0, y: 0, width: 360, height: 180 },
+      containerOnlySceneEntries,
+      vertices
+    );
+    expect(containerOnlyOffsets).toContain(-720);
+    expect(containerOnlyOffsets).toContain(-1080);
+  });
+
+  it('派生形状を解決できない集約地物は 4 経路すべてから除外される', () => {
+    // child が features 配列に含まれない（または vertexCoordinates 空）→ 派生空 → 描画不能
+    const vertices = new Map<string, Vertex>();
+    const container = polygonFeatureWithChildren('container', null, ['missing-child']);
+    const sceneEntries = collectMapSceneEntries([container], time, toCoords(vertices));
+
+    expect(sceneEntries).toEqual([]);
+
+    const hitContainer = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
+    expect(hitContainer).toBeNull();
+
+    const ownerMap = buildSceneVertexOwnerMap(sceneEntries);
+    expect(ownerMap.size).toBe(0);
 
     const offsets = computeRenderWrapOffsets(
       { x: 0, y: 0, width: 360, height: 180 },
