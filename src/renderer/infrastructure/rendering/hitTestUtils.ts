@@ -170,6 +170,7 @@ function hitTestPolygon(
  * @param sceneEntries 描画/入力で同時に扱う地物エントリ列（描画対象と一致）
  * @param vertices 全頂点
  * @param thresholdDeg 点/線のヒット閾値（度単位）
+ * @param preferredFeatureId DOM `data-feature-id` 由来の優先 ID（同点候補の tie-break キー）
  * @returns ヒットした地物、なければ null
  *
  * 描画・ヒットテスト・頂点選択コンテキスト・wrapOffsets は同じ `sceneEntries` を参照する
@@ -177,20 +178,31 @@ function hitTestPolygon(
  * クリック選択できる」状態が発生しない。Polygon-like の判定は `entry.polygonRings !== null`
  * で行い（MapSceneEntry 規約: Polygon entry は必ず non-null、Point/LineString は必ず null）、
  * `feature.featureType` をハードコードしない（§6.6.9 適用パターン: 判定をデータ側に寄せる）。
- * tie-break ポリシーは Phase 2.5-C で depth + DOM target 一致の 3 キー（開発ガイド §6.2.25
- * 採用ポリシー）として再設計する計画。
+ *
+ * tie-break ポリシー（開発ガイド §6.2.25 採用ポリシー / Phase 2.5-C）:
+ *   全ヒットを収集し、(1) `depth` 降順（深い子側を優先）、(2) `preferredFeatureId` 一致を
+ *   優先、の順でソートして 1 件目を返す。`depth` は `MapSceneEntry.depth` を参照（経路間で
+ *   shape 解決と同じく派生値を共有。§6.6.9）。これにより親集約地物のパスが子末端の上に
+ *   描画されたとき子をクリック選択できなくなる回帰を構造的に排除する。
+ *
+ * `preferredFeatureId` は呼び出し側でクリックの DOM target から得た ID を渡す。hitTest が
+ * 1 件もヒットしないとき（点/線で閾値由来の取りこぼし等）の DOM target フォールバックは
+ * 呼び出し側（`App.svelte`）の責務とする — hitTest 自体は sceneEntries に含まれない地物を
+ * 返してはならない（§6.1.2 非表示要素の選択禁止）。
  */
 export function hitTest(
   clickCoord: Coordinate,
   sceneEntries: readonly MapSceneEntry[],
   vertices: ReadonlyMap<string, Vertex>,
-  thresholdDeg: number
+  thresholdDeg: number,
+  preferredFeatureId: string | null = null
 ): HitTestResult | null {
   const lon = clickCoord.x;
   const lat = clickCoord.y;
 
+  const hits: MapSceneEntry[] = [];
   for (const entry of sceneEntries) {
-    const { feature, anchor } = entry;
+    const { anchor } = entry;
 
     let hit = false;
     if (anchor.shape?.type === 'Point') {
@@ -201,10 +213,22 @@ export function hitTest(
       hit = hitTestPolygon(lon, lat, entry.polygonRings);
     }
 
-    if (hit) {
-      return { featureId: feature.id, anchor };
-    }
+    if (hit) hits.push(entry);
   }
 
-  return null;
+  if (hits.length === 0) return null;
+
+  hits.sort((a, b) => {
+    // depth 降順（深い子側を優先）。undefined 相当（POSITIVE_INFINITY）は中立扱いに揃える。
+    const da = Number.isFinite(a.depth) ? a.depth : Number.NEGATIVE_INFINITY;
+    const db = Number.isFinite(b.depth) ? b.depth : Number.NEGATIVE_INFINITY;
+    if (db !== da) return db - da;
+    // preferredFeatureId 一致を優先
+    const aPref = a.feature.id === preferredFeatureId ? 1 : 0;
+    const bPref = b.feature.id === preferredFeatureId ? 1 : 0;
+    return bPref - aPref;
+  });
+
+  const winner = hits[0];
+  return { featureId: winner.feature.id, anchor: winner.anchor };
 }

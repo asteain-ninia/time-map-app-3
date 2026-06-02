@@ -207,11 +207,11 @@ describe('sceneEntries 経路の対概念整合性', () => {
     // depth 順で container（depth=0）→ leaf（depth=1）の順に並ぶ
     expect(sceneEntries.map((e) => e.feature.id)).toEqual(['container', 'leaf']);
 
-    // hitTest: 派生形状内ならコンテナ・リーフどちらもヒット候補。最初にヒットする entry
-    // （container が depth 順で先）が返る。これは Phase 2.5-C で DOM target / depth tie-break で再設計予定
+    // hitTest: 派生形状内ならコンテナ・リーフどちらもヒット候補。Phase 2.5-C tie-break
+    // （depth DESC + preferredFeatureId、開発ガイド §6.2.25）で深い leaf が勝つ。
     const hitInside = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
     expect(hitInside).not.toBeNull();
-    expect(hitInside?.featureId).toBe('container');
+    expect(hitInside?.featureId).toBe('leaf');
 
     // 派生形状外はヒットしない
     const hitOutside = hitTest(new Coordinate(50, 50), sceneEntries, vertices, 1.0);
@@ -428,10 +428,13 @@ describe('sceneEntries 経路の対概念整合性', () => {
       const hitOutsideDerived = hitTest(new Coordinate(25, 25), sceneEntries, vertices, 1.0);
       // 子 leaf は (0..10) なので (25, 25) は子にも親派生にもヒットしない
       expect(hitOutsideDerived).toBeNull();
-      // 派生領域内（5, 5）は親（または子）がヒット
+      // 派生領域内（5, 5）は親（または子）がヒット。本テストの leaf-child は
+      // `polygonFeature` ヘルパー由来で `parentId: null` のリーフであり transitional とは
+      // 親子関係を成立させていないため、両者の depth は 0 で同点 → tie-break は stable
+      // sort で入力順（transitional が先）が勝つ。Phase 2.5-C tie-break ポリシーの DESC
+      // 第1キー検証は `hitTestUtils.test.ts > tie-break ポリシー` 群に集約している。
       const hitInsideDerived = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
       expect(hitInsideDerived).not.toBeNull();
-      // 親 entry が features 配列順で先 → 最初に hit する
       expect(hitInsideDerived?.featureId).toBe('transitional');
 
       // wrapOffsets: 親の経度範囲は派生形状の (0..10) ベース。広い shape (-50..50)

@@ -33,8 +33,7 @@ describe('editInteractionUtils', () => {
       toolMode: 'edit' as const,
       editInteractionMode: 'featureMove' as const,
       selectedFeatureId: 'f1',
-      clickedFeatureId: 'f1',
-      hitFeatureId: null,
+      hitFeatureId: 'f1',
       hasCurrentTime: true,
       isRingDrawing: false,
       isKnifeDrawing: false,
@@ -44,12 +43,29 @@ describe('editInteractionUtils', () => {
       expect(shouldStartFeatureDrag(baseParams)).toBe(true);
     });
 
-    it('ヒットテスト結果が選択中地物ならクリック元が空でも開始できる', () => {
+    it('hitFeatureId が選択中地物と一致すれば開始する', () => {
       expect(shouldStartFeatureDrag({
         ...baseParams,
-        clickedFeatureId: null,
         hitFeatureId: 'f1',
       })).toBe(true);
+    });
+
+    it('hitFeatureId が null なら開始しない', () => {
+      expect(shouldStartFeatureDrag({
+        ...baseParams,
+        hitFeatureId: null,
+      })).toBe(false);
+    });
+
+    it('hitFeatureId が選択中地物と異なれば開始しない', () => {
+      // 親集約地物が選択中で、重なり位置の hitTest は子（深い側）を返したケース。
+      // §6.2.25 採用ポリシー（hitTest 優先 + tie-break で深い子を選ぶ）と一貫させ、
+      // 「子をクリックしたつもりが親ドラッグになる」回帰を防ぐ。
+      expect(shouldStartFeatureDrag({
+        ...baseParams,
+        selectedFeatureId: 'parent',
+        hitFeatureId: 'child',
+      })).toBe(false);
     });
 
     it('編集モード以外では地物ドラッグを開始しない', () => {

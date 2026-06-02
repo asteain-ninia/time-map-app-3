@@ -38,6 +38,13 @@ export type PolygonRings = ReadonlyArray<RingCoords>;
  * (`LabelRenderer`)・wrapOffsets (`mapCanvasUtils`) の 4 経路は `entry.polygonRings !== null`
  * で polygon-like か否かを判定でき、判定基準のドリフトを構造的に排除する。
  *
+ * `depth` は `HierarchyService.deriveDepth` の結果を解決済みで保持する（Phase 2.5-C）。
+ * 経路ごとに `deriveDepth` を呼び直さず entry 側に集約することで、描画順ソート（ASC）と
+ * hitTest tie-break（DESC）が同じ値を共有し、対概念整合性を構造的に保証する
+ * （開発ガイド §6.6.9 / §6.2.25）。`deriveDepth` が壊れたデータ等で undefined を返す
+ * 場合は `Number.POSITIVE_INFINITY` を保持する（描画ソートで最後尾、tie-break では
+ * 最深扱いではなく実質中立になるよう hitTest 側で `-Infinity` 既定と組み合わせる）。
+ *
  * `polygonRings` の解決規則は描画・hitTest・wrapOffsets が共通で使う「解決済み座標列」
  * （territory/hole の階層は配列順で保持。evenodd 判定で扱う）:
  *   - リーフ（`shape` あり + `childIds` 空）: 自身の `shape.rings` の vertexIds を vertexCoordinates で解決
@@ -51,6 +58,7 @@ export interface MapSceneEntry {
   readonly anchor: FeatureAnchor;
   readonly featureIndex: number;
   readonly polygonRings: PolygonRings | null;
+  readonly depth: number;
 }
 
 /**
@@ -64,9 +72,9 @@ export interface MapSceneEntry {
  * 並び順は depth 昇順（親→子）でソートする（開発ガイド §6.6.9 / 現状.md §6.10 Phase 2.5-B）:
  *   - SVG では後ろの要素ほど手前に描画されるため、親（depth 小）が先 → 子（depth 大）が後で
  *     描画される。これにより視覚的に子が親を覆って見える適切な重なり順となる。
- *   - hitTest は sceneEntries を順次走査して最初にヒットした要素を返す。depth 昇順走査では
- *     親が先にヒットするが、子のクリックでも親背景が干渉しないようにする tie-break は
- *     Phase 2.5-C で DOM target ベースに再設計する計画。
+ *   - hitTest は全ヒットを収集後 (1) depth 降順 + (2) `preferredFeatureId` 一致で
+ *     tie-break する（開発ガイド §6.2.25 採用ポリシー）。描画順 (ASC) と hitTest tie-break
+ *     (DESC) は同じ派生値（`MapSceneEntry.depth`）を共有するため対概念整合性が保たれる。
  *   - depth が undefined（壊れたデータ）は最後尾へ送る。同一 depth は features 入力順を保持
  *     する（Array.sort は ECMAScript 2019 で stable 化済み）。
  *
@@ -114,12 +122,13 @@ export function collectMapSceneEntries(
     return da - db;
   });
 
-  // 3. 連番 featureIndex を割り当てる
+  // 3. 連番 featureIndex を割り当てる + depth を埋め込む
   return collected.map((c, idx) => ({
     feature: c.feature,
     anchor: c.anchor,
     featureIndex: idx,
     polygonRings: c.polygonRings,
+    depth: depthMap.get(c.feature.id) ?? Number.POSITIVE_INFINITY,
   }));
 }
 

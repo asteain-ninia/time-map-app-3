@@ -1047,20 +1047,26 @@
         refreshFeatureData();
       }
     } else if (toolMode === 'view' || toolMode === 'edit') {
-      if (clickedFeatureId) {
-        selectedFeatureId = clickedFeatureId;
-        selectedVertexIds = new Set();
-        return;
-      }
-
-      // ヒットテストで地物選択
+      // hitTest を最終決定として優先し、DOM target は `preferredFeatureId` として
+      // tie-break キー（depth 同点時の決め手）に渡す（開発ガイド §6.2.25 採用ポリシー）。
+      // DOM target を即採用すると親集約地物のパスが子末端の上に描画されたとき子を
+      // 選択できなくなる回帰を防ぐ。
       const result = hitTest(
         coord,
         sceneEntries,
         vertices,
-        getHitThreshold()
+        getHitThreshold(),
+        clickedFeatureId
       );
-      selectedFeatureId = result?.featureId ?? null;
+      if (result) {
+        selectedFeatureId = result.featureId;
+      } else if (clickedFeatureId) {
+        // hitTest が空振りの場合のみ DOM target にフォールバック
+        // （点/線で閾値由来の取りこぼし対策。§6.2.25 採用ポリシー）
+        selectedFeatureId = clickedFeatureId;
+      } else {
+        selectedFeatureId = null;
+      }
       selectedVertexIds = new Set();
     }
   }
@@ -1495,21 +1501,24 @@
   ): void {
     if (toolMode !== 'edit') return;
 
-    let hitFeatureId = clickedFeatureId;
-    if (!hitFeatureId && selectedFeatureId && currentTime) {
+    // hitTest を最終決定として優先し、DOM target は preferredFeatureId に渡す
+    // （開発ガイド §6.2.25 採用ポリシー）。ドラッグ開始判定でも親子コンテナ重なりの
+    // 選択優先を onMapClick と一貫させる。空振り時のみ DOM target にフォールバック。
+    let hitFeatureId: string | null = null;
+    if (selectedFeatureId && currentTime) {
       hitFeatureId = hitTest(
         coord,
         sceneEntries,
         vertices,
-        getHitThreshold()
-      )?.featureId ?? null;
+        getHitThreshold(),
+        clickedFeatureId
+      )?.featureId ?? clickedFeatureId;
     }
 
     if (shouldStartFeatureDrag({
       toolMode,
       editInteractionMode,
       selectedFeatureId,
-      clickedFeatureId,
       hitFeatureId,
       hasCurrentTime: currentTime !== undefined,
       isRingDrawing: ringDrawingState !== null,

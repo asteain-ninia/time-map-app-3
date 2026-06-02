@@ -408,10 +408,11 @@ describe('hitTest', () => {
         toCoordsMap(vertices)
       );
 
-      // コンテナは depth 順で先頭 → 派生形状内のクリックで先にヒット
+      // Phase 2.5-C tie-break: 親子いずれもヒットする位置では depth DESC で深い子が勝つ
+      // （開発ガイド §6.2.25 採用ポリシー）。preferredFeatureId 指定なし。
       const result = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
       expect(result).not.toBeNull();
-      expect(result!.featureId).toBe('container');
+      expect(result!.featureId).toBe('leaf');
     });
 
     it('派生形状外のクリックはヒットしない', () => {
@@ -449,6 +450,161 @@ describe('hitTest', () => {
 
       const result = hitTest(new Coordinate(50, 50), sceneEntries, vertices, 1.0);
       expect(result).toBeNull();
+    });
+  });
+
+  /**
+   * Phase 2.5-C: tie-break ポリシー（開発ガイド §6.2.25 採用ポリシー）
+   *
+   * 「親子コンテナを重ねたときに子（深い側）が選択される」「点/線をポリゴン上に置いて
+   * 点/線が選択される（depth 同点では preferredFeatureId が決める）」を構造的に固定する。
+   */
+  describe('tie-break ポリシー (depth DESC + preferredFeatureId)', () => {
+    /** 同じ正方形を共有する親集約地物 + 子リーフを構築する */
+    function buildContainerWithLeaf(): { container: Feature; leaf: Feature; vertices: ReadonlyMap<string, Vertex> } {
+      const vertices = makeVertices(
+        ['v1', 0, 0],
+        ['v2', 10, 0],
+        ['v3', 10, 10],
+        ['v4', 0, 10]
+      );
+      const leafAnchor = new FeatureAnchor(
+        'a-leaf',
+        { start: new TimePoint(0) },
+        { name: 'leaf', description: '' },
+        {
+          type: 'Polygon',
+          rings: [new Ring('r-leaf', ['v1', 'v2', 'v3', 'v4'], 'territory', null)],
+        },
+        { parentId: 'container', childIds: [], isTopLevel: false }
+      );
+      const leaf = new Feature('leaf', 'Polygon', [leafAnchor]);
+      const containerAnchor = new FeatureAnchor(
+        'a-container',
+        { start: new TimePoint(0) },
+        { name: 'container', description: '' },
+        undefined,
+        { parentId: null, childIds: ['leaf'], isTopLevel: true }
+      );
+      const container = new Feature('container', 'Polygon', [containerAnchor]);
+      return { container, leaf, vertices };
+    }
+
+    it('親子コンテナ重なりでは深い子（depth DESC）を選ぶ', () => {
+      // sceneEntries は depth ASC 順（container, leaf）で並ぶが、hitTest の tie-break は
+      // depth DESC のため、両方ヒットしても深い leaf が勝つ。
+      const { container, leaf, vertices } = buildContainerWithLeaf();
+      const sceneEntries = collectMapSceneEntries(
+        [container, leaf],
+        time,
+        toCoordsMap(vertices)
+      );
+
+      const result = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
+
+      expect(result).not.toBeNull();
+      expect(result!.featureId).toBe('leaf');
+    });
+
+    it('入力順を逆にしても深い子が勝つ', () => {
+      // collectMapSceneEntries が depth ASC ソートで並びを正規化するため、入力順に依存しない
+      // ことを別ケースで固定する。
+      const { container, leaf, vertices } = buildContainerWithLeaf();
+      const sceneEntries = collectMapSceneEntries(
+        [leaf, container],
+        time,
+        toCoordsMap(vertices)
+      );
+
+      const result = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
+
+      expect(result).not.toBeNull();
+      expect(result!.featureId).toBe('leaf');
+    });
+
+    it('同 depth で複数ヒットした場合は preferredFeatureId 一致を優先する', () => {
+      // 同一座標を共有する 2 つのリーフ Polygon（どちらも depth=0）を作り、
+      // preferredFeatureId に後者を指定すると後者が勝つ。
+      const vertices = makeVertices(
+        ['v1', 0, 0],
+        ['v2', 10, 0],
+        ['v3', 10, 10],
+        ['v4', 0, 10]
+      );
+      const pgA = makePolygonFeature('pgA', ['v1', 'v2', 'v3', 'v4']);
+      const pgB = makePolygonFeature('pgB', ['v1', 'v2', 'v3', 'v4']);
+      const sceneEntries = collectMapSceneEntries(
+        [pgA, pgB],
+        time,
+        toCoordsMap(vertices)
+      );
+
+      const resultPreferB = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0, 'pgB');
+      expect(resultPreferB!.featureId).toBe('pgB');
+
+      const resultPreferA = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0, 'pgA');
+      expect(resultPreferA!.featureId).toBe('pgA');
+    });
+
+    it('preferredFeatureId 指定なしでは入力順（sceneEntries の先頭ヒット）を採用する', () => {
+      // depth 同点 + preferredFeatureId なし → sort は安定（ECMAScript 2019 以降）のため
+      // 入力順を保持し、先頭エントリが勝つ。
+      const vertices = makeVertices(
+        ['v1', 0, 0],
+        ['v2', 10, 0],
+        ['v3', 10, 10],
+        ['v4', 0, 10]
+      );
+      const pgA = makePolygonFeature('pgA', ['v1', 'v2', 'v3', 'v4']);
+      const pgB = makePolygonFeature('pgB', ['v1', 'v2', 'v3', 'v4']);
+      const sceneEntries = collectMapSceneEntries(
+        [pgA, pgB],
+        time,
+        toCoordsMap(vertices)
+      );
+
+      const result = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0);
+      expect(result!.featureId).toBe('pgA');
+    });
+
+    it('preferredFeatureId が指定されても depth DESC が優先される（DOM target が浅いとき）', () => {
+      // 子（leaf, depth=1）と親（container, depth=0）がともにヒットする位置で
+      // preferredFeatureId に親を指定しても、tie-break 第1キーは depth DESC のため子が勝つ。
+      // これは「DOM 由来 ID を即採用する」誘惑への安全弁（開発ガイド §6.2.25）。
+      const { container, leaf, vertices } = buildContainerWithLeaf();
+      const sceneEntries = collectMapSceneEntries(
+        [container, leaf],
+        time,
+        toCoordsMap(vertices)
+      );
+
+      const result = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0, 'container');
+
+      expect(result!.featureId).toBe('leaf');
+    });
+
+    it('点情報がポリゴン上にあるとき preferredFeatureId で点を選べる', () => {
+      // ポイントとポリゴンが同じ位置にあり、両方が hit する。depth 同点（ともに depth=0）の
+      // 同点状態を preferredFeatureId='pt1' で解決し、点が選ばれる（§6.2.25 検出観点）。
+      const vertices = makeVertices(
+        ['v-pt', 5, 5],
+        ['v1', 0, 0],
+        ['v2', 10, 0],
+        ['v3', 10, 10],
+        ['v4', 0, 10]
+      );
+      const pt = makePointFeature('pt1', 'v-pt');
+      const pg = makePolygonFeature('pgUnder', ['v1', 'v2', 'v3', 'v4']);
+      const sceneEntries = collectMapSceneEntries(
+        [pg, pt],
+        time,
+        toCoordsMap(vertices)
+      );
+
+      const result = hitTest(new Coordinate(5, 5), sceneEntries, vertices, 1.0, 'pt1');
+
+      expect(result).not.toBeNull();
+      expect(result!.featureId).toBe('pt1');
     });
   });
 });

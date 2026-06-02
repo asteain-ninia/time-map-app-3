@@ -421,4 +421,73 @@ describe('collectMapSceneEntries', () => {
       expect(entries[0].polygonRings).toBeNull();
     });
   });
+
+  /**
+   * Phase 2.5-C: `depth` フィールドは `HierarchyService.deriveDepth` の派生値を集約済みで
+   * 保持する。経路ごとに deriveDepth を呼び直すと描画順ソート（ASC）と hitTest tie-break
+   * （DESC）が同じ値を共有できなくなるため、入力時点で 1 回だけ計算して entry 側に寄せる
+   * （開発ガイド §6.6.9 適用パターン）。
+   */
+  describe('MapSceneEntry 規約: depth フィールドは派生階層値を保持する', () => {
+    it('最上位地物の depth は 0', () => {
+      const features = [
+        new Feature('root', 'Polygon', [
+          makeAnchor('a1', 1000, 2000, polygonShape(['v1', 'v2', 'v3'])),
+        ]),
+      ];
+      const vertexCoords = new Map<string, Coordinate>([
+        ['v1', new Coordinate(0, 0)],
+        ['v2', new Coordinate(10, 0)],
+        ['v3', new Coordinate(5, 10)],
+      ]);
+
+      const entries = collectMapSceneEntries(features, new TimePoint(1500), vertexCoords);
+
+      expect(entries[0].depth).toBe(0);
+    });
+
+    it('多段階層の depth が親→子で 0 → 1 → 2 と並ぶ', () => {
+      const features = [
+        new Feature('grandchild', 'Polygon', [
+          makeAnchor('a-gc', 1000, 2000, polygonShape(['v1', 'v2', 'v3', 'v4']), {
+            parentId: 'parent',
+          }),
+        ]),
+        new Feature('parent', 'Polygon', [
+          makeAnchor('a-p', 1000, 2000, undefined, {
+            childIds: ['grandchild'],
+            parentId: 'grandparent',
+          }),
+        ]),
+        new Feature('grandparent', 'Polygon', [
+          makeAnchor('a-gp', 1000, 2000, undefined, { childIds: ['parent'] }),
+        ]),
+      ];
+      const vertexCoords = new Map<string, Coordinate>([
+        ['v1', new Coordinate(0, 0)],
+        ['v2', new Coordinate(10, 0)],
+        ['v3', new Coordinate(10, 10)],
+        ['v4', new Coordinate(0, 10)],
+      ]);
+
+      const entries = collectMapSceneEntries(features, new TimePoint(1500), vertexCoords);
+
+      expect(entries.map((e) => ({ id: e.feature.id, depth: e.depth }))).toEqual([
+        { id: 'grandparent', depth: 0 },
+        { id: 'parent', depth: 1 },
+        { id: 'grandchild', depth: 2 },
+      ]);
+    });
+
+    it('Point リーフの depth は 0', () => {
+      const features = [
+        new Feature('p1', 'Point', [makeAnchor('a1', 1000, 2000, pointShape('v1'))]),
+      ];
+      const vertexCoords = new Map<string, Coordinate>([['v1', new Coordinate(0, 0)]]);
+
+      const entries = collectMapSceneEntries(features, new TimePoint(1500), vertexCoords);
+
+      expect(entries[0].depth).toBe(0);
+    });
+  });
 });
