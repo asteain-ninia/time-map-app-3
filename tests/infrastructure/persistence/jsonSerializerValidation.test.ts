@@ -187,6 +187,297 @@ describe('validateJsonWorld - shape 保持規則 (Phase 2-C-4)', () => {
 });
 
 /**
+ * Phase 3-1: 階層参照の構造的健全性バリデーション（ロード時）。
+ * 要件定義書 §2.5.2「データ読み込み時の詳細な挙動」のデータ整合性チェック
+ * 「ツリー位相の不整合（…子の親側参照欠落、親の子側参照欠落 など）」のうち、
+ * 各錨ローカルで完結する参照整合（存在・Polygon 型・自己参照・重複）を対象とする。
+ * §2.1: 集約地物・上位領域を担えるのは Polygon のみ。開発ガイド §6.6.8。
+ */
+describe('validateJsonWorld - 階層参照の構造的健全性 (Phase 3-1)', () => {
+  describe('合格ケース（正しいツリーを誤拒否しない）', () => {
+    it('集約地物（コンテナ）+ 子 Polygon の正常な親子参照はエラーが出ない', () => {
+      const container = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ childIds: ['child'] }))],
+        'container'
+      );
+      const child = createFeature(
+        'Polygon',
+        [
+          createAnchor(
+            { type: 'Polygon', rings: [TRIANGLE_RING] },
+            createPlacement({ parentId: 'container', isTopLevel: false })
+          ),
+        ],
+        'child'
+      );
+
+      const errors = validateJsonWorld(createWorld([container, child]));
+
+      expect(errors).toEqual([]);
+    });
+
+    it('多段階層（祖父→親→子、すべて Polygon）の参照はエラーが出ない', () => {
+      const grandparent = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ childIds: ['parent'] }))],
+        'grandparent'
+      );
+      const parent = createFeature(
+        'Polygon',
+        [
+          createAnchor(
+            undefined,
+            createPlacement({ parentId: 'grandparent', childIds: ['child'], isTopLevel: false })
+          ),
+        ],
+        'parent'
+      );
+      const child = createFeature(
+        'Polygon',
+        [
+          createAnchor(
+            { type: 'Polygon', rings: [TRIANGLE_RING] },
+            createPlacement({ parentId: 'parent', isTopLevel: false })
+          ),
+        ],
+        'child'
+      );
+
+      const errors = validateJsonWorld(createWorld([grandparent, parent, child]));
+
+      expect(errors).toEqual([]);
+    });
+
+    it('親子関係を持たない単独地物はエラーが出ない', () => {
+      const point = createFeature('Point', [
+        createAnchor({ type: 'Point', vertexId: 'v1' }, createPlacement()),
+      ]);
+
+      const errors = validateJsonWorld(createWorld([point]));
+
+      expect(errors).toEqual([]);
+    });
+  });
+
+  describe('parentId の参照エラー', () => {
+    it('parentId が自身を指す場合は自己参照エラー', () => {
+      const anchor = createAnchor(
+        { type: 'Polygon', rings: [TRIANGLE_RING] },
+        createPlacement({ parentId: 'f1', isTopLevel: false })
+      );
+      const errors = validateJsonWorld(createWorld([createFeature('Polygon', [anchor])]));
+
+      expect(errors).toContain('Feature "f1" anchor "a1" references itself as parent');
+    });
+
+    it('parentId が存在しない地物を指す場合はエラー', () => {
+      const anchor = createAnchor(
+        { type: 'Polygon', rings: [TRIANGLE_RING] },
+        createPlacement({ parentId: 'ghost', isTopLevel: false })
+      );
+      const errors = validateJsonWorld(createWorld([createFeature('Polygon', [anchor])]));
+
+      expect(errors).toContain('Feature "f1" anchor "a1" references non-existent parent "ghost"');
+    });
+
+    it('parentId が Polygon でない地物（Point）を指す場合はエラー', () => {
+      const pointParent = createFeature(
+        'Point',
+        [createAnchor({ type: 'Point', vertexId: 'v1' }, createPlacement())],
+        'point-parent'
+      );
+      const child = createFeature(
+        'Polygon',
+        [
+          createAnchor(
+            { type: 'Polygon', rings: [TRIANGLE_RING] },
+            createPlacement({ parentId: 'point-parent', isTopLevel: false })
+          ),
+        ],
+        'child'
+      );
+
+      const errors = validateJsonWorld(createWorld([pointParent, child]));
+
+      expect(errors).toContain('Feature "child" anchor "a1" parent "point-parent" is not a Polygon');
+    });
+  });
+
+  describe('childIds の参照エラー', () => {
+    it('childIds に重複がある場合はエラー', () => {
+      const container = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ childIds: ['child', 'child'] }))],
+        'container'
+      );
+      const child = createFeature(
+        'Polygon',
+        [
+          createAnchor(
+            { type: 'Polygon', rings: [TRIANGLE_RING] },
+            createPlacement({ parentId: 'container', isTopLevel: false })
+          ),
+        ],
+        'child'
+      );
+
+      const errors = validateJsonWorld(createWorld([container, child]));
+
+      expect(errors).toContain('Feature "container" anchor "a1" contains duplicate child "child"');
+    });
+
+    it('childIds に自身を含む場合は自己参照エラー', () => {
+      const anchor = createAnchor(undefined, createPlacement({ childIds: ['f1'] }));
+      const errors = validateJsonWorld(createWorld([createFeature('Polygon', [anchor])]));
+
+      expect(errors).toContain('Feature "f1" anchor "a1" references itself as child');
+    });
+
+    it('childIds が存在しない地物を指す場合はエラー', () => {
+      const anchor = createAnchor(undefined, createPlacement({ childIds: ['ghost'] }));
+      const errors = validateJsonWorld(createWorld([createFeature('Polygon', [anchor], 'container')]));
+
+      expect(errors).toContain('Feature "container" anchor "a1" references non-existent child "ghost"');
+    });
+
+    it('childIds が Polygon でない地物（Point）を指す場合はエラー', () => {
+      const container = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ childIds: ['point-child'] }))],
+        'container'
+      );
+      const pointChild = createFeature(
+        'Point',
+        [createAnchor({ type: 'Point', vertexId: 'v1' }, createPlacement())],
+        'point-child'
+      );
+
+      const errors = validateJsonWorld(createWorld([container, pointChild]));
+
+      expect(errors).toContain('Feature "container" anchor "a1" child "point-child" is not a Polygon');
+    });
+  });
+
+  describe('階層参加の型エラー（参加できるのは面情報 = Polygon のみ）', () => {
+    it('childIds が非空だが地物自身が Polygon でない（Point）場合はエラー', () => {
+      const pointWithChild = createFeature(
+        'Point',
+        [createAnchor({ type: 'Point', vertexId: 'v1' }, createPlacement({ childIds: ['child'] }))],
+        'point-with-child'
+      );
+      const child = createFeature(
+        'Polygon',
+        [createAnchor({ type: 'Polygon', rings: [TRIANGLE_RING] }, createPlacement())],
+        'child'
+      );
+
+      const errors = validateJsonWorld(createWorld([pointWithChild, child]));
+
+      expect(errors).toContain(
+        'Feature "point-with-child" anchor "a1" has children but feature type "Point" is not a Polygon'
+      );
+    });
+
+    it('parentId が非 null だが地物自身が Polygon でない（Point）場合はエラー', () => {
+      // 線情報・点情報は面情報の階層に参加できない（要件定義書 §2.1 line 160）。
+      const polygonParent = createFeature(
+        'Polygon',
+        [createAnchor({ type: 'Polygon', rings: [TRIANGLE_RING] }, createPlacement())],
+        'polygon-parent'
+      );
+      const pointWithParent = createFeature(
+        'Point',
+        [
+          createAnchor(
+            { type: 'Point', vertexId: 'v1' },
+            createPlacement({ parentId: 'polygon-parent', isTopLevel: false })
+          ),
+        ],
+        'point-with-parent'
+      );
+
+      const errors = validateJsonWorld(createWorld([polygonParent, pointWithParent]));
+
+      expect(errors).toContain(
+        'Feature "point-with-parent" anchor "a1" has a parent but feature type "Point" is not a Polygon'
+      );
+    });
+  });
+
+  /**
+   * 開発ガイド §6.4.15「永続化 shim は read / write / validate / round-trip test を
+   * 同じ変更単位で同期する」。新たな参照整合検証が正しいコンテナ＋子のツリーを
+   * 誤拒否せず、再保存→再読込が往復することを固定する。
+   */
+  it('正常な親子構造の .gimoza は再保存→再読込が往復する（誤拒否しない）', async () => {
+    const { serialize, deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+    const validHierarchyJson = JSON.stringify({
+      version: '1.0.0',
+      vertices: [
+        { id: 'v1', x: 0, y: 0 },
+        { id: 'v2', x: 10, y: 0 },
+        { id: 'v3', x: 0, y: 10 },
+      ],
+      features: [
+        {
+          id: 'container',
+          featureType: 'Polygon',
+          anchors: [
+            {
+              id: 'ac',
+              timeRange: { start: { year: 100 } },
+              property: { name: 'コンテナ', description: '' },
+              // 集約地物: shape フィールド自体を持たない
+              placement: { parentId: null, childIds: ['child'], isTopLevel: true },
+            },
+          ],
+        },
+        {
+          id: 'child',
+          featureType: 'Polygon',
+          anchors: [
+            {
+              id: 'ach',
+              timeRange: { start: { year: 100 } },
+              property: { name: '子', description: '' },
+              shape: {
+                type: 'Polygon',
+                rings: [{ id: 'r1', vertexIds: ['v1', 'v2', 'v3'], ringType: 'territory', parentId: null }],
+              },
+              placement: { parentId: 'container', childIds: [], isTopLevel: false },
+            },
+          ],
+        },
+      ],
+      sharedVertexGroups: [],
+      timelineMarkers: [],
+      metadata: DEFAULT_METADATA,
+    });
+
+    // 正常な親子構造 → in-memory World（誤拒否されない）
+    const world = deserialize(validHierarchyJson);
+    // in-memory → 再保存
+    const resavedJsonString = serialize(world);
+    const resaved = JSON.parse(resavedJsonString);
+
+    // 再保存ファイルが validateJsonWorld を通る
+    expect(validateJsonWorld(resaved)).toEqual([]);
+
+    // 親子参照が保たれている
+    expect(resaved.features.find((f: { id: string }) => f.id === 'container').anchors[0].placement.childIds).toEqual([
+      'child',
+    ]);
+    expect(resaved.features.find((f: { id: string }) => f.id === 'child').anchors[0].placement.parentId).toBe(
+      'container'
+    );
+
+    // さらに再ロードできる
+    expect(() => deserialize(resavedJsonString)).not.toThrow();
+  });
+});
+
+/**
  * Phase 2-D-6-3c で `JsonAnchorPlacement.layerId` を、Phase 2-D-7c-2b で
  * `JsonWorld.layers` フィールドを JSON 型から完全撤去した。
  * 要件定義書 §2.5.2「旧モデル（レイヤー概念を含む形式バージョン）のファイルは

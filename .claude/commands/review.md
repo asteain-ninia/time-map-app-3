@@ -16,5 +16,4 @@ allowed-tools: Read, Grep, Glob, Bash(git diff:*), Bash(git status:*), Bash(git 
 ## アウトプット
 - 良い点（過去教訓のどれを踏襲しているか参照付きで）
 - 指摘事項（重要度付き、ファイル/行参照付き）
-- テスト件数の内訳が現状.md / 実装済み.md と整合するか
 - コミット可能か / 修正が必要か

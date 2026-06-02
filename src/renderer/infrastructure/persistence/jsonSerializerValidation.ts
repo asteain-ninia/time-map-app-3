@@ -237,7 +237,8 @@ function validatePolygonRings(
  * 要件定義書 §4.1 のスコープ:
  *   - `shape === undefined` ⟹ `featureType === 'Polygon'` かつ `placement.childIds.length > 0`（コンテナ）
  *   - `shape !== undefined` ⟹ `featureType` と `shape.type` が整合（Point↔Point / Line↔LineString / Polygon↔Polygon）
- * 子参照健全性・親子相互整合・循環検出・リーフ排他・親≡子の和は Phase 3 のスコープ。
+ * 子参照健全性（参照の存在・Polygon 型）は `validateHierarchyReferences` が担う。
+ * 親子相互整合・循環検出・リーフ排他・親≡子の和は後続フェーズのスコープ。
  */
 function validateShapePresence(json: JsonWorld): string[] {
   const errors: string[] = [];
@@ -280,12 +281,110 @@ function expectedShapeTypeFor(featureType: string): string | null {
   return null;
 }
 
+/**
+ * 階層参照（`placement.parentId` / `placement.childIds`）の構造的健全性を検証する。
+ *
+ * 要件定義書 §2.5.2「データ読み込み時の詳細な挙動」のデータ整合性チェック項目
+ * 「ツリー位相の不整合（…子の親側参照欠落、親の子側参照欠落 など）」のうち、
+ * **各錨ローカルで完結する参照整合のみ**を対象とする。
+ *
+ * §2.1: 集約地物（下位領域を持つ面情報）・上位領域を担えるのは面情報（Polygon）のみ。
+ * §4.1: shape は末端地物のみ保持し、集約地物は Polygon。
+ * 開発ガイド §6.6.8: childIds-only のリーフ判定経路は「shape なし ⟹ childIds 非空」+
+ *   「子・親は Polygon」という不変条件群に依存する。本関数が参照整合側を担保する。
+ *
+ * 検証内容（すべて単一錨内で完結）:
+ *   - `parentId !== null` のとき:
+ *       - 当該地物自身が Polygon であること（階層に参加できるのは面情報のみ。
+ *         §2.1 line 160「線情報と点情報は面情報との干渉を受けない」）
+ *       - 自身を親として指していないこと（自己参照禁止）
+ *       - 指す先の地物が存在すること
+ *       - 指す先の地物が Polygon であること（上位領域は集約地物 = Polygon のみ）
+ *   - `childIds`:
+ *       - 重複が無いこと
+ *       - 自身を子として含まないこと（自己参照禁止）
+ *       - 各 ID が指す地物が存在すること
+ *       - 各 ID が指す地物が Polygon であること
+ *   - `childIds` が非空のとき、当該地物自身が Polygon であること（集約地物は Polygon のみ）
+ *
+ * スコープ外（後続サブフェーズ）: 親子相互整合（時間区間カバレッジ・双方向の参照欠落）、
+ * 循環検出（時間スライス）、リーフ排他（地図全体）、親 ≡ 子の和。
+ */
+function validateHierarchyReferences(json: JsonWorld): string[] {
+  const errors: string[] = [];
+  const featureTypeById = new Map(
+    json.features.map((feature) => [feature.id, feature.featureType])
+  );
+
+  for (const feature of json.features) {
+    for (const anchor of feature.anchors) {
+      const { parentId, childIds } = anchor.placement;
+
+      if (parentId !== null) {
+        if (feature.featureType !== 'Polygon') {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" has a parent but feature type "${feature.featureType}" is not a Polygon`
+          );
+        }
+        if (parentId === feature.id) {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" references itself as parent`
+          );
+        } else if (!featureTypeById.has(parentId)) {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" references non-existent parent "${parentId}"`
+          );
+        } else if (featureTypeById.get(parentId) !== 'Polygon') {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" parent "${parentId}" is not a Polygon`
+          );
+        }
+      }
+
+      for (const duplicateChildId of findDuplicates(childIds)) {
+        errors.push(
+          `Feature "${feature.id}" anchor "${anchor.id}" contains duplicate child "${duplicateChildId}"`
+        );
+      }
+
+      for (const childId of childIds) {
+        if (childId === feature.id) {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" references itself as child`
+          );
+          continue;
+        }
+        if (!featureTypeById.has(childId)) {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" references non-existent child "${childId}"`
+          );
+          continue;
+        }
+        if (featureTypeById.get(childId) !== 'Polygon') {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" child "${childId}" is not a Polygon`
+          );
+        }
+      }
+
+      if (childIds.length > 0 && feature.featureType !== 'Polygon') {
+        errors.push(
+          `Feature "${feature.id}" anchor "${anchor.id}" has children but feature type "${feature.featureType}" is not a Polygon`
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
 function validateJsonWorld(json: JsonWorld): string[] {
   return [
     ...validateOrphanedVertices(json),
     ...validateTimeRanges(json),
     ...validatePlacementInvariants(json),
     ...validateShapePresence(json),
+    ...validateHierarchyReferences(json),
     ...validateSharedVertexGroups(json),
     ...validatePolygons(json),
   ];

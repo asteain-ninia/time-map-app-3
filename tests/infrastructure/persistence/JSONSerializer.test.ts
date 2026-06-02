@@ -88,6 +88,17 @@ function createWorldWithPolygon(): World {
   const features = new Map<string, Feature>();
   features.set('f1', feature);
 
+  // childIds: ['f2'] が指す子地物を実在させる（Phase 3-1: 参照整合 — 子は存在する Polygon）
+  const childRing = new Ring('r2', ['v1', 'v2', 'v3'], 'territory', null);
+  const childAnchor = new FeatureAnchor(
+    'a2',
+    { start: new TimePoint(1000) },
+    { name: '属国B', description: '南方の属国' },
+    { type: 'Polygon', rings: [childRing] },
+    { parentId: 'f1', childIds: [], isTopLevel: false }
+  );
+  features.set('f2', new Feature('f2', 'Polygon', [childAnchor]));
+
   return new World('1.0.0', vertices, features, new Map(), [], DEFAULT_METADATA);
 }
 
@@ -884,10 +895,47 @@ describe('JSONSerializer', () => {
     });
 
     it('parentId が指定された旧形式は isTopLevel=false を派生する', () => {
-      const json = createValidJsonWorld();
-      const placement = ((json.features as Array<Record<string, unknown>>)[0].anchors as Array<Record<string, unknown>>)[0].placement as Record<string, unknown>;
-      placement.parentId = 'p-something';
-      delete placement.isTopLevel;
+      // 子 f1 が実在する親コンテナ parent を指す正当なツリー（Phase 3-1 参照整合を満たす）で、
+      // isTopLevel 欠落（旧形式）から false が派生することを確認する。
+      const json = {
+        version: '1.0.0',
+        vertices: [
+          { id: 'v1', x: 0, y: 0 },
+          { id: 'v2', x: 10, y: 0 },
+          { id: 'v3', x: 0, y: 10 },
+        ],
+        features: [
+          {
+            id: 'f1',
+            featureType: 'Polygon',
+            anchors: [{
+              id: 'a1',
+              timeRange: { start: { year: 100 } },
+              property: { name: 'child', description: '' },
+              shape: {
+                type: 'Polygon',
+                rings: [{ id: 'r1', vertexIds: ['v1', 'v2', 'v3'], ringType: 'territory', parentId: null }],
+              },
+              // isTopLevel 欠落（旧形式）→ parentId から false が派生される
+              placement: { parentId: 'parent', childIds: [] },
+            }],
+          },
+          {
+            id: 'parent',
+            featureType: 'Polygon',
+            anchors: [{
+              id: 'ap',
+              timeRange: { start: { year: 100 } },
+              property: { name: 'parent', description: '' },
+              // 集約地物（shape フィールドなし）
+              placement: { parentId: null, childIds: ['f1'], isTopLevel: true },
+            }],
+          },
+        ],
+        sharedVertexGroups: [],
+        timelineMarkers: [],
+        metadata: DEFAULT_METADATA,
+      };
       const restored = deserialize(JSON.stringify(json));
       expect(restored.features.get('f1')!.anchors[0].placement.isTopLevel).toBe(false);
     });
