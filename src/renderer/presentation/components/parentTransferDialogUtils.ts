@@ -21,14 +21,25 @@ interface TimeSlice {
   readonly end?: TimePoint;
 }
 
+/**
+ * 面情報（末端ポリゴン・集約地物コンテナの双方）の指定時刻における有効錨を返す。
+ *
+ * ParentTransferDialog は sceneEntries を介さず `Feature` を直接受け取るため、
+ * 現状.md §6.10 Phase 2.5-E / 開発ガイド §6.6.9「判定をデータ側に寄せる」に従い、
+ * polygon-like の判定基準を `feature.featureType === 'Polygon'` に統一する
+ * （PropertyPanel の `isPolygonLikeFeature` と同一基準。Feature ベース経路間でドリフトさせない）。
+ * これにより shape を持たない集約地物（コンテナ）も親候補・所属変更対象として扱える。
+ *
+ * Polygon 地物の有効錨は末端（`shape.type === 'Polygon'`）か集約地物（`shape === undefined`）の
+ * いずれかであり、型整合は `jsonSerializerValidation.validateShapePresence`（Phase 2-C-4）が
+ * 保証する。よって shape の有無で弾かず、Polygon 地物の有効錨をそのまま返す。
+ */
 export function getActivePolygonAnchor(
   feature: Feature | null,
   time: TimePoint | undefined
 ): FeatureAnchor | null {
   if (!feature || !time || feature.featureType !== 'Polygon') return null;
-  const anchor = feature.getActiveAnchor(time);
-  if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') return null;
-  return anchor;
+  return feature.getActiveAnchor(time) ?? null;
 }
 
 export function getFeatureDisplayName(

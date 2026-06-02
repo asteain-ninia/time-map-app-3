@@ -5,6 +5,7 @@ import {
   canTransferChildren,
   canTransferSelectedFeature,
   collectDescendantIds,
+  getActivePolygonAnchor,
   getTransferFeatureIds,
   isLeafFromTime,
   resolveParentTransferSelection,
@@ -41,6 +42,27 @@ function makeFeature(
       { name: id, description: '' },
       shape,
       placement
+    ),
+  ]);
+}
+
+/**
+ * 集約地物（コンテナ）を生成する。
+ * Polygon 地物だが shape を持たず（`undefined`）、下位領域を持つ。
+ * 形状は子の和として実行時に導出される（要件定義書 §4.1 / 現状.md §6.4）。
+ */
+function makeContainer(
+  id: string,
+  parentId: string | null,
+  childIds: readonly string[]
+): Feature {
+  return new Feature(id, 'Polygon', [
+    new FeatureAnchor(
+      `${id}-a1`,
+      { start: time },
+      { name: id, description: '' },
+      undefined,
+      createAnchorPlacement(parentId, childIds)
     ),
   ]);
 }
@@ -214,5 +236,65 @@ describe('parentTransferDialogUtils', () => {
       movedFeatureIds: ['child'],
       newParentId: 'new-parent',
     })).toBe('new-parent');
+  });
+});
+
+describe('parentTransferDialogUtils 集約地物（コンテナ）の受容 (Phase 2.5-E)', () => {
+  it('コンテナ（shape なし）はリーフ扱いせず、選択地物のみの所属変更を無効にする', () => {
+    const container = makeContainer('container', null, ['leaf']);
+    const leaf = makeFeature('leaf', 'container');
+
+    // 本変更（Phase 2.5-E）の本質を pin する負のコントロール:
+    // コンテナ錨が受容される（旧実装は shape なしを null で弾いていたため、ここで fail する）。
+    // これにより以降の「錨は取れるが非リーフ」の判定経路が旧実装と弁別される。
+    expect(getActivePolygonAnchor(container, time)).not.toBeNull();
+    // 対概念の同期（開発ガイド §6.0.1 検出観点2）: 錨は取れるが childIds 非空なのでリーフではない
+    expect(isLeafFromTime(container, time)).toBe(false);
+    expect(canTransferSelectedFeature(container, time)).toBe(false);
+    // コンテナ自身の所属変更（連邦への編入など）は Phase 4 で扱うため、ここでは無効のまま
+    expect(canTransferSelectedFeature(leaf, time)).toBe(true);
+  });
+
+  it('コンテナの下位領域すべての所属変更を許容する（子がすべてリーフのとき）', () => {
+    const container = makeContainer('container', null, ['leaf-a', 'leaf-b']);
+    const leafA = makeFeature('leaf-a', 'container');
+    const leafB = makeFeature('leaf-b', 'container');
+
+    expect(canTransferChildren(container, time, [container, leafA, leafB])).toBe(true);
+    expect(getTransferFeatureIds(container, time, 'children')).toEqual(['leaf-a', 'leaf-b']);
+  });
+
+  it('子に非リーフ（移行期間ノード）が混ざるコンテナは一括所属変更を無効にする', () => {
+    const container = makeContainer('container', null, ['mid']);
+    const mid = makeFeature('mid', 'container', ['grandchild']);
+    const grandchild = makeFeature('grandchild', 'mid');
+
+    expect(canTransferChildren(container, time, [container, mid, grandchild])).toBe(false);
+  });
+
+  it('コンテナを所属変更の親候補として提示する', () => {
+    const container = makeContainer('container', null, ['existing']);
+    const existing = makeFeature('existing', 'container');
+    const moving = makeFeature('moving', null);
+
+    const candidates = buildParentCandidateItems({
+      features: [container, existing, moving],
+      time,
+      movingFeatureIds: ['moving'],
+    });
+
+    expect(candidates.map((item) => item.id)).toContain('container');
+  });
+
+  it('コンテナを新規面の親候補として提示する', () => {
+    const container = makeContainer('container', null, ['existing']);
+    const existing = makeFeature('existing', 'container');
+
+    const candidates = buildNewFeatureParentCandidateItems({
+      features: [container, existing],
+      time,
+    });
+
+    expect(candidates.map((item) => item.id)).toContain('container');
   });
 });
