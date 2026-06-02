@@ -13,6 +13,7 @@
     getCurrentTimePercent,
     sortAnchorsByStart,
   } from './propertyPanelHistoryUtils';
+  import { buildUpdatedAnchorProperty, isPolygonLikeFeature } from './propertyPanelUtils';
 
   let {
     feature = null as Feature | null,
@@ -42,6 +43,11 @@
   let anchor = $derived(
     feature && currentTime ? feature.getActiveAnchor(currentTime) : null
   );
+
+  /** 面情報（leaf polygon / 集約地物コンテナ）か。親子・面スタイル表示の判定に使う。 */
+  let isPolygonFeature = $derived(isPolygonLikeFeature(feature));
+  /** 集約地物（面情報だが自身の shape を持たないコンテナ）か。 */
+  let isContainer = $derived(isPolygonFeature && !anchor?.shape);
 
   /** 編集中の名前 */
   let editName = $state('');
@@ -87,20 +93,16 @@
   /** プロパティの変更を適用 */
   function applyChanges(): void {
     if (!feature || !anchor) return;
-    const style = anchor.shape?.type === 'Polygon'
-      ? {
-          fillColor: editFillColor,
-          selectedFillColor: editSelectedFillColor,
-          autoColor: editAutoColor,
-          palette: editPalette,
-        }
-      : anchor.property.style;
-    const newProperty: AnchorProperty = {
-      ...anchor.property,
+    const newProperty = buildUpdatedAnchorProperty(feature, anchor, {
       name: editName,
       description: editDescription,
-      style,
-    };
+      style: {
+        fillColor: editFillColor,
+        selectedFillColor: editSelectedFillColor,
+        autoColor: editAutoColor,
+        palette: editPalette,
+      },
+    });
     onPropertyChange?.(feature.id, anchor.id, newProperty);
   }
 
@@ -210,9 +212,14 @@
         <label class="field-label">頂点数</label>
         <span class="field-value">{anchor.shape.rings.reduce((sum, r) => sum + r.vertexIds.length, 0)}</span>
       </div>
+    {:else if isContainer}
+      <div class="field">
+        <label class="field-label">形状</label>
+        <span class="field-value">下位領域の和として導出（{anchor.placement.childIds.length} 領域）</span>
+      </div>
     {/if}
 
-    {#if anchor.shape?.type === 'Polygon'}
+    {#if isPolygonFeature}
       <div class="field">
         <label class="field-label">親</label>
         <span class="field-value">
