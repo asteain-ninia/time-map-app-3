@@ -7,6 +7,7 @@ import type {
   JsonFeature,
   JsonFeatureAnchor,
   JsonFeatureShape,
+  JsonTimeRange,
   JsonWorld,
 } from '@infrastructure/persistence/jsonSerializerTypes';
 
@@ -474,6 +475,253 @@ describe('validateJsonWorld - 階層参照の構造的健全性 (Phase 3-1)', ()
 
     // さらに再ロードできる
     expect(() => deserialize(resavedJsonString)).not.toThrow();
+  });
+});
+
+/**
+ * Phase 3-2: 親子相互整合（双方向の参照欠落・時間区間カバレッジ）+ 循環検出（時間スライス）。
+ * 要件定義書 §2.5.2 line 936「ツリー位相の不整合（…循環参照、子の親側参照欠落、親の子側参照欠落 など）」。
+ * placement は錨ごとに時間依存のため、全錨の境界時刻で区切る時間スライスごとに評価する。
+ * ランタイム版 `HierarchyService.validateHierarchy`（循環・親存在）/
+ * `ReassignFeatureParentUseCase.validateChildReferences`（親→子整合）と判定を揃える。
+ */
+describe('validateJsonWorld - 親子相互整合・循環検出（時間スライス） (Phase 3-2)', () => {
+  const POLY_SHAPE: JsonFeatureShape = { type: 'Polygon', rings: [TRIANGLE_RING] };
+
+  function anchorAt(
+    id: string,
+    timeRange: JsonTimeRange,
+    shape: JsonFeatureShape | undefined,
+    placement: JsonAnchorPlacement
+  ): JsonFeatureAnchor {
+    return { id, timeRange, property: PROPERTY, shape, placement };
+  }
+
+  describe('合格ケース（正しいツリー・時変ツリーを誤拒否しない）', () => {
+    it('時変連邦シナリオ（早期は最上位 / 後期は連邦の子）はエラーが出ない', () => {
+      // c1 は [100,200) で最上位、[200,∞) で連邦 fed の子。fed は [200,∞) のみ存在。
+      const fed = createFeature(
+        'Polygon',
+        [anchorAt('af', { start: { year: 200 } }, undefined, createPlacement({ childIds: ['c1'] }))],
+        'fed'
+      );
+      const c1 = createFeature(
+        'Polygon',
+        [
+          anchorAt('ac-early', { start: { year: 100 }, end: { year: 200 } }, POLY_SHAPE, createPlacement()),
+          anchorAt(
+            'ac-late',
+            { start: { year: 200 } },
+            POLY_SHAPE,
+            createPlacement({ parentId: 'fed', isTopLevel: false })
+          ),
+        ],
+        'c1'
+      );
+
+      const errors = validateJsonWorld(createWorld([fed, c1]));
+
+      expect(errors).toEqual([]);
+    });
+
+    it('時変連邦シナリオは deserialize で例外を投げない', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const fed = createFeature(
+        'Polygon',
+        [anchorAt('af', { start: { year: 200 } }, undefined, createPlacement({ childIds: ['c1'] }))],
+        'fed'
+      );
+      const c1 = createFeature(
+        'Polygon',
+        [
+          anchorAt('ac-early', { start: { year: 100 }, end: { year: 200 } }, POLY_SHAPE, createPlacement()),
+          anchorAt(
+            'ac-late',
+            { start: { year: 200 } },
+            POLY_SHAPE,
+            createPlacement({ parentId: 'fed', isTopLevel: false })
+          ),
+        ],
+        'c1'
+      );
+
+      expect(() => deserialize(JSON.stringify(createWorld([fed, c1])))).not.toThrow();
+    });
+
+    it('複数の子を持つコンテナが双方向に整合していればエラーが出ない', () => {
+      const container = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ childIds: ['c1', 'c2'] }))],
+        'container'
+      );
+      const c1 = createFeature(
+        'Polygon',
+        [createAnchor(POLY_SHAPE, createPlacement({ parentId: 'container', isTopLevel: false }))],
+        'c1'
+      );
+      const c2 = createFeature(
+        'Polygon',
+        [createAnchor(POLY_SHAPE, createPlacement({ parentId: 'container', isTopLevel: false }))],
+        'c2'
+      );
+
+      const errors = validateJsonWorld(createWorld([container, c1, c2]));
+
+      expect(errors).toEqual([]);
+    });
+  });
+
+  describe('親の子側参照欠落（子が親を指すが親が子を列挙しない）', () => {
+    it('子の parentId が指す親の childIds に当該子が含まれない場合はエラー', () => {
+      // P は legit のみを子に持つ正当なコンテナ。C は P を親に指すが P は C を列挙しない。
+      const parent = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ childIds: ['legit'] }))],
+        'P'
+      );
+      const legit = createFeature(
+        'Polygon',
+        [createAnchor(POLY_SHAPE, createPlacement({ parentId: 'P', isTopLevel: false }))],
+        'legit'
+      );
+      const orphanChild = createFeature(
+        'Polygon',
+        [createAnchor(POLY_SHAPE, createPlacement({ parentId: 'P', isTopLevel: false }))],
+        'C'
+      );
+
+      const errors = validateJsonWorld(createWorld([parent, legit, orphanChild]));
+
+      expect(errors).toContain(
+        'Feature "C" anchor "a1" references parent "P" which does not list it as a child'
+      );
+    });
+  });
+
+  describe('子の親側参照欠落（親が子を列挙するが子が親を指さない）', () => {
+    it('親の childIds に挙がる子の parentId が親を指していない場合はエラー', () => {
+      // P は C を子に列挙するが、C は最上位（parentId=null）のまま P を指していない。
+      const parent = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ childIds: ['C'] }))],
+        'P'
+      );
+      const child = createFeature(
+        'Polygon',
+        [createAnchor(POLY_SHAPE, createPlacement())],
+        'C'
+      );
+
+      const errors = validateJsonWorld(createWorld([parent, child]));
+
+      expect(errors).toContain(
+        'Feature "P" anchor "a1" lists child "C" which does not reference it as parent'
+      );
+    });
+  });
+
+  describe('時間区間カバレッジ', () => {
+    it('子が親を指す期間に親が存在しない時刻があるとエラー', () => {
+      // C は [100,∞) で fed を親に指すが、fed は [100,200) のみ存在。T=200 で親が非有効。
+      const fed = createFeature(
+        'Polygon',
+        [anchorAt('af', { start: { year: 100 }, end: { year: 200 } }, undefined, createPlacement({ childIds: ['C'] }))],
+        'fed'
+      );
+      const child = createFeature(
+        'Polygon',
+        [anchorAt('ac', { start: { year: 100 } }, POLY_SHAPE, createPlacement({ parentId: 'fed', isTopLevel: false }))],
+        'C'
+      );
+
+      const errors = validateJsonWorld(createWorld([fed, child]));
+
+      expect(errors).toContain(
+        'Feature "C" anchor "ac" references parent "fed" which is not active at the same time'
+      );
+    });
+
+    it('親が子を列挙する期間に子が存在しない時刻があるとエラー', () => {
+      // P は [100,∞) で C を子に列挙するが、C は [100,200) のみ存在。T=200 で子が非有効。
+      const parent = createFeature(
+        'Polygon',
+        [anchorAt('ap', { start: { year: 100 } }, undefined, createPlacement({ childIds: ['C'] }))],
+        'P'
+      );
+      const child = createFeature(
+        'Polygon',
+        [anchorAt('ac', { start: { year: 100 }, end: { year: 200 } }, POLY_SHAPE, createPlacement({ parentId: 'P', isTopLevel: false }))],
+        'C'
+      );
+
+      const errors = validateJsonWorld(createWorld([parent, child]));
+
+      expect(errors).toContain(
+        'Feature "P" anchor "ap" lists child "C" which is not active at the same time'
+      );
+    });
+  });
+
+  describe('循環参照（時間スライス）', () => {
+    it('相互参照の2地物循環を循環メンバーとして検出する', () => {
+      // A↔B: 双方向参照は整合（reciprocal）だが親方向に循環する。
+      const a = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ parentId: 'B', childIds: ['B'], isTopLevel: false }))],
+        'A'
+      );
+      const b = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ parentId: 'A', childIds: ['A'], isTopLevel: false }))],
+        'B'
+      );
+
+      const errors = validateJsonWorld(createWorld([a, b]));
+
+      expect(errors).toContain('Feature "A" is part of a circular parent reference');
+      expect(errors).toContain('Feature "B" is part of a circular parent reference');
+    });
+
+    it('循環へ流れ込むだけの尾は循環メンバーとして報告しない', () => {
+      // A↔B が循環。D は A を親に指すが循環には乗っていない（尾）。
+      const a = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ parentId: 'B', childIds: ['B', 'D'], isTopLevel: false }))],
+        'A'
+      );
+      const b = createFeature(
+        'Polygon',
+        [createAnchor(undefined, createPlacement({ parentId: 'A', childIds: ['A'], isTopLevel: false }))],
+        'B'
+      );
+      const d = createFeature(
+        'Polygon',
+        [createAnchor(POLY_SHAPE, createPlacement({ parentId: 'A', isTopLevel: false }))],
+        'D'
+      );
+
+      const errors = validateJsonWorld(createWorld([a, b, d]));
+
+      expect(errors).toContain('Feature "A" is part of a circular parent reference');
+      expect(errors).toContain('Feature "B" is part of a circular parent reference');
+      expect(errors).not.toContain('Feature "D" is part of a circular parent reference');
+    });
+
+    it('自己親（parentId === 自身）は Phase 3-1 が報告し、循環としては併報しない', () => {
+      // 自己ループは長さ1の循環だが、二重報告を避け循環チェックはスキップする
+      // （JSDoc「自己参照は Phase 3-1 が報告するためスキップ」とコードを一致させる）。
+      const selfParent = createFeature(
+        'Polygon',
+        [createAnchor(POLY_SHAPE, createPlacement({ parentId: 'self', isTopLevel: false }))],
+        'self'
+      );
+
+      const errors = validateJsonWorld(createWorld([selfParent]));
+
+      expect(errors).not.toContain('Feature "self" is part of a circular parent reference');
+      // 拒否自体は Phase 3-1 の自己参照エラーで担保される
+      expect(errors).toContain('Feature "self" anchor "a1" references itself as parent');
+    });
   });
 });
 

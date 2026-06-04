@@ -4,7 +4,13 @@ import { Vertex } from '@domain/entities/Vertex';
 import { Ring, type RingType } from '@domain/value-objects/Ring';
 import { isSelfIntersecting, type RingCoords } from '@domain/services/GeometryService';
 import { validatePolygonRingHierarchy } from '@domain/services/RingEditService';
-import type { JsonRing, JsonWorld } from './jsonSerializerTypes';
+import type {
+  JsonFeature,
+  JsonFeatureAnchor,
+  JsonRing,
+  JsonTimePoint,
+  JsonWorld,
+} from './jsonSerializerTypes';
 
 const COORDINATE_EPSILON = 1e-9;
 
@@ -237,8 +243,9 @@ function validatePolygonRings(
  * 要件定義書 §4.1 のスコープ:
  *   - `shape === undefined` ⟹ `featureType === 'Polygon'` かつ `placement.childIds.length > 0`（コンテナ）
  *   - `shape !== undefined` ⟹ `featureType` と `shape.type` が整合（Point↔Point / Line↔LineString / Polygon↔Polygon）
- * 子参照健全性（参照の存在・Polygon 型）は `validateHierarchyReferences` が担う。
- * 親子相互整合・循環検出・リーフ排他・親≡子の和は後続フェーズのスコープ。
+ * 子参照健全性（参照の存在・Polygon 型）は `validateHierarchyReferences`、
+ * 親子相互整合・循環検出（時間スライス）は `validateHierarchyConsistency` が担う。
+ * リーフ排他・親≡子の和は後続フェーズ（Phase 3-3 / 3-4）のスコープ。
  */
 function validateShapePresence(json: JsonWorld): string[] {
   const errors: string[] = [];
@@ -307,8 +314,9 @@ function expectedShapeTypeFor(featureType: string): string | null {
  *       - 各 ID が指す地物が Polygon であること
  *   - `childIds` が非空のとき、当該地物自身が Polygon であること（集約地物は Polygon のみ）
  *
- * スコープ外（後続サブフェーズ）: 親子相互整合（時間区間カバレッジ・双方向の参照欠落）、
- * 循環検出（時間スライス）、リーフ排他（地図全体）、親 ≡ 子の和。
+ * 親子相互整合（双方向の参照欠落・時間区間カバレッジ）と循環検出（時間スライス）は
+ * `validateHierarchyConsistency`（Phase 3-2）が担う。
+ * スコープ外（後続サブフェーズ）: リーフ排他（地図全体, Phase 3-3）、親 ≡ 子の和（Phase 3-4）。
  */
 function validateHierarchyReferences(json: JsonWorld): string[] {
   const errors: string[] = [];
@@ -378,6 +386,173 @@ function validateHierarchyReferences(json: JsonWorld): string[] {
   return errors;
 }
 
+/**
+ * 階層の親子相互整合（双方向参照）と循環参照を、時間スライスごとに検証する。
+ *
+ * 要件定義書 §2.5.2「データ読み込み時の詳細な挙動」のデータ整合性チェック項目
+ * 「ツリー位相の不整合（…循環参照、子の親側参照欠落、親の子側参照欠落 など）」のうち、
+ * **複数地物にまたがり、時刻ごとに評価する必要がある整合性**を対象とする
+ * （Phase 3-1 `validateHierarchyReferences` は各錨ローカルの参照整合を担う）。
+ *
+ * placement（parentId / childIds / isTopLevel）は錨ごとに保持され時間依存のため
+ * （§6.2 / 現状.md §6.3）、相互整合は単一時刻ではなく「全錨の境界時刻（start / end）で
+ * 区切られた各時間スライス」で評価する。スライス間で有効錨の組み合わせは一定なので、
+ * 全境界時刻で評価すれば「時間区間カバレッジ」を厳密に検証できる。
+ *
+ * 各スライス T で、各地物の有効錨を `getActiveJsonAnchor`（`Feature.getActiveAnchor` 相当:
+ * 配列末尾優先 + 半開区間 `[start, end)`）で解決し、以下を検証する:
+ *   - 親の子側参照欠落: 子 C の有効錨が親 P を指すなら、P の同時刻有効錨が C を
+ *     childIds に含むこと（含まない / P が同時刻に非有効 ならエラー）
+ *   - 子の親側参照欠落: 親 P の有効錨が子 C を含むなら、C の同時刻有効錨が P を
+ *     parentId に指すこと（指さない / C が同時刻に非有効 ならエラー）
+ *   - 循環参照: 親方向に辿って自身へ戻る地物を循環メンバーとして検出（§6.4.14 visited guard）
+ *
+ * ランタイム版との対応:
+ *   - 循環・親存在 → `HierarchyService.validateHierarchy`
+ *   - 親 P → 子 C の整合（C の存在・C.parentId === P）→ `ReassignFeatureParentUseCase.validateChildReferences`
+ *   いずれも単一時刻 API（編集確定時）。本関数はそれらをロード時に全時間スライスへ広げ、
+ *   さらに「子 C → 親 P が P の childIds に含まれるか」（親の子側参照欠落）も加える。
+ *   ランタイム側の編集確定時プロセスへの同期は Phase 4（操作 UseCase 再設計）で扱う。
+ *   循環については「循環の有無 → 拒否」の結論はランタイムと一致するが、報告する循環メンバー
+ *   集合は本関数の方が精密: ランタイム `validateHierarchy` は循環へ流れ込むだけの尾も
+ *   報告するのに対し、本関数は「自身へ戻る」構成地物のみを報告する（尾を除外）。後続の
+ *   修復 UI / 診断統一（Phase 3-3 以降）で循環メンバー定義を揃える際はこの差に留意する。
+ *
+ * 非存在地物・自己参照を指す参照は Phase 3-1 が報告するため、本関数は二重報告を避けて
+ * スキップする（双方向チェックは `id !== feature.id`、循環チェックは自己親を guard でスキップ）。
+ * スコープ外（後続サブフェーズ）: リーフ排他（地図全体, Phase 3-3）、親 ≡ 子の和（Phase 3-4）。
+ */
+function validateHierarchyConsistency(json: JsonWorld): string[] {
+  const errors: string[] = [];
+  const featureIds = new Set(json.features.map((feature) => feature.id));
+  const sliceTimes = collectSliceTimes(json);
+
+  for (const time of sliceTimes) {
+    const activeByFeatureId = new Map<string, JsonFeatureAnchor>();
+    for (const feature of json.features) {
+      const anchor = getActiveJsonAnchor(feature, time);
+      if (anchor) {
+        activeByFeatureId.set(feature.id, anchor);
+      }
+    }
+
+    for (const feature of json.features) {
+      const anchor = activeByFeatureId.get(feature.id);
+      if (!anchor) continue;
+
+      const { parentId, childIds } = anchor.placement;
+
+      // 子 → 親（親の子側参照欠落）。非存在・自己参照は Phase 3-1 が担うためスキップ。
+      if (parentId !== null && parentId !== feature.id && featureIds.has(parentId)) {
+        const parentAnchor = activeByFeatureId.get(parentId);
+        if (!parentAnchor) {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" references parent "${parentId}" which is not active at the same time`
+          );
+        } else if (!parentAnchor.placement.childIds.includes(feature.id)) {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" references parent "${parentId}" which does not list it as a child`
+          );
+        }
+      }
+
+      // 親 → 子（子の親側参照欠落）。非存在・自己参照は Phase 3-1 が担うためスキップ。
+      for (const childId of childIds) {
+        if (childId === feature.id || !featureIds.has(childId)) continue;
+        const childAnchor = activeByFeatureId.get(childId);
+        if (!childAnchor) {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" lists child "${childId}" which is not active at the same time`
+          );
+        } else if (childAnchor.placement.parentId !== feature.id) {
+          errors.push(
+            `Feature "${feature.id}" anchor "${anchor.id}" lists child "${childId}" which does not reference it as parent`
+          );
+        }
+      }
+    }
+
+    // 循環参照（時間スライス）。親方向に辿って自身へ戻る地物を循環メンバーとする。
+    // 自己親（parentId === 自身）は長さ1の循環だが Phase 3-1 が報告するためスキップ（二重報告回避）。
+    for (const feature of json.features) {
+      const anchor = activeByFeatureId.get(feature.id);
+      const parentId = anchor?.placement.parentId ?? null;
+      if (parentId === null || parentId === feature.id) continue;
+      if (isOnParentCycle(feature.id, activeByFeatureId)) {
+        errors.push(`Feature "${feature.id}" is part of a circular parent reference`);
+      }
+    }
+  }
+
+  // 同一論理違反が複数スライスで重複し得るため、メッセージ単位で重複排除する。
+  return [...new Set(errors)];
+}
+
+/** 全錨の境界時刻（start / end）を時間スライスの breakpoint として収集する（compareTo で重複排除）。 */
+function collectSliceTimes(json: JsonWorld): TimePoint[] {
+  const times: TimePoint[] = [];
+  const pushDistinct = (time: TimePoint): void => {
+    if (!times.some((existing) => existing.compareTo(time) === 0)) {
+      times.push(time);
+    }
+  };
+  for (const feature of json.features) {
+    for (const anchor of feature.anchors) {
+      pushDistinct(toTimePoint(anchor.timeRange.start));
+      if (anchor.timeRange.end) {
+        pushDistinct(toTimePoint(anchor.timeRange.end));
+      }
+    }
+  }
+  return times;
+}
+
+function toTimePoint(jsonTime: JsonTimePoint): TimePoint {
+  return new TimePoint(jsonTime.year, jsonTime.month, jsonTime.day);
+}
+
+/** `Feature.getActiveAnchor` 相当: 配列末尾優先で半開区間 `[start, end)` の有効錨を返す。 */
+function getActiveJsonAnchor(
+  feature: JsonFeature,
+  time: TimePoint
+): JsonFeatureAnchor | undefined {
+  for (let i = feature.anchors.length - 1; i >= 0; i--) {
+    if (isJsonAnchorActiveAt(feature.anchors[i], time)) {
+      return feature.anchors[i];
+    }
+  }
+  return undefined;
+}
+
+/** `FeatureAnchor.isActiveAt` 相当: `time >= start && (end 無し || time < end)`。 */
+function isJsonAnchorActiveAt(anchor: JsonFeatureAnchor, time: TimePoint): boolean {
+  if (time.isBefore(toTimePoint(anchor.timeRange.start))) return false;
+  if (anchor.timeRange.end && time.isAtOrAfter(toTimePoint(anchor.timeRange.end))) return false;
+  return true;
+}
+
+/**
+ * 指定スライスの有効錨マップ上で、`startId` から親方向に辿って自身へ戻るか判定する。
+ * 戻れば `startId` は循環メンバー（純粋な循環の各構成地物は自身へ戻る）。別の循環へ
+ * 流れ込むだけの尾（tail）は false。`visited` で再入を遮断し有限終了する（§6.4.14）。
+ */
+function isOnParentCycle(
+  startId: string,
+  activeByFeatureId: ReadonlyMap<string, JsonFeatureAnchor>
+): boolean {
+  const visited = new Set<string>();
+  let currentId: string | null = startId;
+  while (currentId !== null) {
+    const parentId = activeByFeatureId.get(currentId)?.placement.parentId ?? null;
+    if (parentId === null) return false; // ルート到達 or 親が同時刻に非有効 → 循環なし
+    if (parentId === startId) return true; // 開始地物へ戻った → 循環メンバー
+    if (visited.has(parentId)) return false; // 別の循環へ流れ込む尾 → 非メンバー
+    visited.add(parentId);
+    currentId = parentId;
+  }
+  return false;
+}
+
 function validateJsonWorld(json: JsonWorld): string[] {
   return [
     ...validateOrphanedVertices(json),
@@ -385,6 +560,7 @@ function validateJsonWorld(json: JsonWorld): string[] {
     ...validatePlacementInvariants(json),
     ...validateShapePresence(json),
     ...validateHierarchyReferences(json),
+    ...validateHierarchyConsistency(json),
     ...validateSharedVertexGroups(json),
     ...validatePolygons(json),
   ];
