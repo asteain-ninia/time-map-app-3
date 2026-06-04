@@ -243,6 +243,27 @@ export function deriveParentShape(
 }
 
 /**
+ * 子地物の形状和を MultiPolygon 構造（`RingCoords[][]`）のまま導出する。
+ *
+ * `deriveParentShape` がトップレベルでフラット化する前の結果を公開する版。
+ * フラット化すると territory/hole の polygon 境界が失われ、polygon-clipping での
+ * 厳密な集合演算（対称差による「親 ≡ 子の和」検証など）が正しく行えないため、
+ * MultiPolygon 構造を保ったまま受け取りたい呼び出し側（ロード時の親 ≡ 子の和検証）が使う。
+ *
+ * `deriveParentShape` と同一の内部再帰 `deriveParentPolygonsInternal` を共有するため、
+ * 子の和の解決規則（リーフ / 集約地物 / 移行期間ノードの fallback・cycle guard）は
+ * 両者で完全に一致する（開発ガイド §6.6.9: 派生サービスは同じ shape 解決経路を共有する）。
+ */
+export function deriveParentPolygons(
+  feature: Feature,
+  allFeatures: readonly Feature[],
+  vertices: ReadonlyMap<string, Coordinate>,
+  time: TimePoint
+): readonly RingCoords[][] {
+  return deriveParentPolygonsInternal(feature, allFeatures, vertices, time, new Set());
+}
+
+/**
  * `deriveParentShape` の内部実装。MultiPolygon 構造（`RingCoords[][]`）を保持したまま再帰し、
  * 子の polygon 集合を集約地物に持ち上げる。visited セットで循環親子参照に対する cycle guard を
  * 行い、既訪問の地物を辿ろうとした場合は空配列で早期 return し無限再帰を防ぐ（§6.4.14）。

@@ -10,6 +10,7 @@ export {
   getDescendants,
   getAncestors,
   deriveParentShape,
+  deriveParentPolygons,
   deriveDepth,
   validateHierarchy,
   isShapeEditable,

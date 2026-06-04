@@ -267,3 +267,30 @@ export function polygonUnionAll(
     isEmpty: mergedPolygons.length === 0,
   };
 }
+
+/**
+ * 2つの MultiPolygon（占有ポリゴン集合）が幾何的に厳密一致するか判定する。
+ *
+ * 対称差（symmetric difference = XOR）が空であることを一致の必要十分条件とする。
+ * 一方にしか属さない領域が1片でも残れば不一致。境界上の余分な共線頂点や
+ * territory の並び順は polygon-clipping が正規化するため結果に影響しない。
+ *
+ * 面積の閾値は設けず polygon-clipping の `xor` 結果が空かどうかで判定する
+ * （`territorySetsOverlap` が `intersection().isEmpty` で重なりを判定するのと同じ方針。
+ * 共有頂点で厳密にタイル化された正当なデータでは対称差は空になる）。
+ *
+ * 各引数は「1 territory + 直下 holes」単位のポリゴン群（`RingCoords[]`）の配列 =
+ * MultiPolygon。空ポリゴンは除外して polygon-clipping へ渡す。
+ */
+export function multiPolygonsEquivalent(
+  a: readonly (readonly RingCoords[])[],
+  b: readonly (readonly RingCoords[])[]
+): boolean {
+  const aGeom = a.filter((polygon) => polygon.length > 0).map((polygon) => toClipPolygon(polygon));
+  const bGeom = b.filter((polygon) => polygon.length > 0).map((polygon) => toClipPolygon(polygon));
+
+  if (aGeom.length === 0 && bGeom.length === 0) return true;
+  if (aGeom.length === 0 || bGeom.length === 0) return false;
+
+  return polygonClipping.xor(aGeom, bGeom).length === 0;
+}

@@ -88,8 +88,10 @@ function createWorldWithPolygon(): World {
   const features = new Map<string, Feature>();
   features.set('f1', feature);
 
-  // childIds: ['f2'] が指す子地物を実在させる（Phase 3-1: 参照整合 — 子は存在する Polygon）
-  const childRing = new Ring('r2', ['v1', 'v2', 'v3'], 'territory', null);
+  // childIds: ['f2'] が指す子地物を実在させる（Phase 3-1: 参照整合 — 子は存在する Polygon）。
+  // Phase 3-4（親 ≡ 子の和）: f1 は shape あり + 子ありの移行期間ノードのため、子 f2 の形状を
+  // 親 f1 と同一の全体正方形にして「親形状 ≡ 子の和」を満たす（ロード時検証を通すため）。
+  const childRing = new Ring('r2', ['v1', 'v2', 'v3', 'v4'], 'territory', null);
   const childAnchor = new FeatureAnchor(
     'a2',
     { start: new TimePoint(1000) },

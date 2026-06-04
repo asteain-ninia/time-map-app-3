@@ -250,7 +250,7 @@ function validatePolygonRings(
  * 子参照健全性（参照の存在・Polygon 型）は `validateHierarchyReferences`、
  * 親子相互整合・循環検出（時間スライス）は `validateHierarchyConsistency`、
  * リーフ排他（地図全体）は `validateLeafExclusivity` が担う。
- * 親 ≡ 子の和は後続フェーズ（Phase 3-4）のスコープ。
+ * 親 ≡ 子の和は `worldValidation.validateParentChildUnion`（デシリアライズ後のドメイン検証）が担う。
  */
 function validateShapePresence(json: JsonWorld): string[] {
   const errors: string[] = [];
@@ -322,7 +322,7 @@ function expectedShapeTypeFor(featureType: string): string | null {
  * 親子相互整合（双方向の参照欠落・時間区間カバレッジ）と循環検出（時間スライス）は
  * `validateHierarchyConsistency`（Phase 3-2）、リーフ排他（地図全体）は
  * `validateLeafExclusivity`（Phase 3-3）が担う。
- * スコープ外（後続サブフェーズ）: 親 ≡ 子の和（Phase 3-4）。
+ * 親 ≡ 子の和は `worldValidation.validateParentChildUnion`（デシリアライズ後のドメイン検証）が担う。
  */
 function validateHierarchyReferences(json: JsonWorld): string[] {
   const errors: string[] = [];
@@ -427,7 +427,7 @@ function validateHierarchyReferences(json: JsonWorld): string[] {
  * 非存在地物・自己参照を指す参照は Phase 3-1 が報告するため、本関数は二重報告を避けて
  * スキップする（双方向チェックは `id !== feature.id`、循環チェックは自己親を guard でスキップ）。
  * リーフ排他（地図全体）は `validateLeafExclusivity`（Phase 3-3）が担う。
- * スコープ外（後続サブフェーズ）: 親 ≡ 子の和（Phase 3-4）。
+ * 親 ≡ 子の和は `worldValidation.validateParentChildUnion`（デシリアライズ後のドメイン検証）が担う。
  */
 function validateHierarchyConsistency(json: JsonWorld): string[] {
   const errors: string[] = [];
