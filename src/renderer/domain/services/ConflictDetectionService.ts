@@ -166,31 +166,46 @@ function collectLeafPolygons(
   return result;
 }
 
-/** FeatureAnchor のポリゴンリング座標を解決する */
+/** 占有領域解決に必要なリングの最小構造（domain `Ring` / `JsonRing` 共通）。 */
+export interface RingLike {
+  readonly id: string;
+  readonly ringType: string;
+  readonly parentId: string | null;
+  readonly vertexIds: readonly string[];
+}
+
 interface ResolvedPolygonRing {
   readonly ringId: string;
-  readonly ringType: 'territory' | 'hole';
+  readonly ringType: string;
   readonly parentId: string | null;
   readonly coords: RingCoords;
 }
 
-function resolveOccupiedPolygons(
-  anchor: FeatureAnchor,
-  vertices: ReadonlyMap<string, Vertex>
+/**
+ * リング集合を「territory リング + 直下の hole リング」単位の占有ポリゴンへ解決する。
+ *
+ * §6.6.2: 占有面の判定は「領土リング + 直下の穴リング」を単位にし、複数領土・穴・飛び地を
+ * 平坦化しない。穴内の島は hole 配下の territory として再構築される。
+ *
+ * domain 経路（`Ring` + `Vertex` マップ）と JSON 経路（`JsonRing` + `JsonVertex`）の双方から
+ * 再利用するため、頂点座標の解決を `resolveVertex` コールバックへ委ねる（§6.6.1: ランタイム排他
+ * 検証とロード時検証で同じ占有領域解決を共有し、判定経路のドリフトを防ぐ）。
+ */
+export function resolveOccupiedTerritories(
+  rings: readonly RingLike[],
+  resolveVertex: (vertexId: string) => { x: number; y: number } | undefined
 ): RingCoords[][] {
-  if (!anchor.shape || anchor.shape.type !== 'Polygon') return [];
-
-  const rings: ResolvedPolygonRing[] = [];
-  for (const ring of anchor.shape.rings) {
+  const resolved: ResolvedPolygonRing[] = [];
+  for (const ring of rings) {
     const coords: { x: number; y: number }[] = [];
     let valid = true;
     for (const vid of ring.vertexIds) {
-      const v = vertices.get(vid);
+      const v = resolveVertex(vid);
       if (!v) { valid = false; break; }
       coords.push({ x: v.x, y: v.y });
     }
     if (valid && coords.length >= 3) {
-      rings.push({
+      resolved.push({
         ringId: ring.id,
         ringType: ring.ringType,
         parentId: ring.parentId,
@@ -200,7 +215,7 @@ function resolveOccupiedPolygons(
   }
 
   const holesByParentId = new Map<string, RingCoords[]>();
-  for (const ring of rings) {
+  for (const ring of resolved) {
     if (ring.ringType !== 'hole' || ring.parentId === null) continue;
 
     if (!holesByParentId.has(ring.parentId)) {
@@ -209,12 +224,22 @@ function resolveOccupiedPolygons(
     holesByParentId.get(ring.parentId)!.push(ring.coords);
   }
 
-  return rings
+  return resolved
     .filter((ring) => ring.ringType === 'territory')
     .map((ring) => [ring.coords, ...(holesByParentId.get(ring.ringId) ?? [])]);
 }
 
-function territorySetsOverlap(
+/** FeatureAnchor のポリゴンリング座標を占有ポリゴン単位へ解決する（domain 経路）。 */
+function resolveOccupiedPolygons(
+  anchor: FeatureAnchor,
+  vertices: ReadonlyMap<string, Vertex>
+): RingCoords[][] {
+  if (!anchor.shape || anchor.shape.type !== 'Polygon') return [];
+  return resolveOccupiedTerritories(anchor.shape.rings, (vid) => vertices.get(vid));
+}
+
+/** 2つの占有ポリゴン集合のいずれかのペアが空間的に重なるか判定する（境界接触は重なりに含めない）。 */
+export function territorySetsOverlap(
   ringsA: readonly RingCoords[][],
   ringsB: readonly RingCoords[][]
 ): boolean {

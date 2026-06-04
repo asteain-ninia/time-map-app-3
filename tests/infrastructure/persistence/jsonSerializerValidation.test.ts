@@ -487,6 +487,12 @@ describe('validateJsonWorld - 階層参照の構造的健全性 (Phase 3-1)', ()
  */
 describe('validateJsonWorld - 親子相互整合・循環検出（時間スライス） (Phase 3-2)', () => {
   const POLY_SHAPE: JsonFeatureShape = { type: 'Polygon', rings: [TRIANGLE_RING] };
+  // TRIANGLE_RING (v1,v2,v3) と対角辺 v2-v3 を共有する補三角形。境界接触のみで
+  // 重ならないため、兄弟リーフを並べても末端地物排他（Phase 3-3）に違反しない。
+  const POLY_SHAPE_2: JsonFeatureShape = {
+    type: 'Polygon',
+    rings: [{ id: 'r2', vertexIds: ['v2', 'v4', 'v3'], ringType: 'territory', parentId: null }],
+  };
 
   function anchorAt(
     id: string,
@@ -561,7 +567,7 @@ describe('validateJsonWorld - 親子相互整合・循環検出（時間スラ�
       );
       const c2 = createFeature(
         'Polygon',
-        [createAnchor(POLY_SHAPE, createPlacement({ parentId: 'container', isTopLevel: false }))],
+        [createAnchor(POLY_SHAPE_2, createPlacement({ parentId: 'container', isTopLevel: false }))],
         'c2'
       );
 
@@ -1217,5 +1223,149 @@ describe('v1.0.0 旧構造の拒否 (Phase 2-D-7c-1)', () => {
     });
 
     expect(() => deserialize(payload)).toThrow(SerializationError);
+  });
+});
+
+/**
+ * Phase 3-3: 末端地物排他（地図全体）のロード時検証。
+ * 要件定義書 §2.5.2 line 938「末端地物排他の違反（地図全体での末端地物同士の空間重複）」/
+ * §2.1 line 145-153「末端地物の排他性は地図全体に適用する」「排他検証は末端地物同士のみ。
+ * 集約地物には直接の排他制約を課さない」。
+ * placement は時間依存のため、全錨の境界時刻で区切る時間スライスごとに評価する。
+ * 占有領域解決・重なり判定は `ConflictDetectionService` のランタイム排他検証と共有する
+ * （開発ガイド §6.6.1 / §6.6.8）。
+ */
+describe('validateJsonWorld - 末端地物排他（地図全体） (Phase 3-3)', () => {
+  // 末端地物排他テスト用の頂点。離れた / 重なる / 境界接触する正方形を表現する。
+  const EXCLUSIVITY_VERTICES = [
+    // square A: (0,0)-(10,10)
+    { id: 'a1', x: 0, y: 0 }, { id: 'a2', x: 10, y: 0 }, { id: 'a3', x: 10, y: 10 }, { id: 'a4', x: 0, y: 10 },
+    // square B: (5,0)-(15,10) — A と重なる
+    { id: 'b1', x: 5, y: 0 }, { id: 'b2', x: 15, y: 0 }, { id: 'b3', x: 15, y: 10 }, { id: 'b4', x: 5, y: 10 },
+    // square C: (20,0)-(30,10) — 離れている
+    { id: 'c1', x: 20, y: 0 }, { id: 'c2', x: 30, y: 0 }, { id: 'c3', x: 30, y: 10 }, { id: 'c4', x: 20, y: 10 },
+    // square D: (10,0)-(20,10) — A と辺 x=10 で接触（共有辺、重ならない）
+    { id: 'd1', x: 10, y: 0 }, { id: 'd2', x: 20, y: 0 }, { id: 'd3', x: 20, y: 10 }, { id: 'd4', x: 10, y: 10 },
+  ];
+
+  const SQUARE_A = ['a1', 'a2', 'a3', 'a4'];
+  const SQUARE_B = ['b1', 'b2', 'b3', 'b4'];
+  const SQUARE_C = ['c1', 'c2', 'c3', 'c4'];
+  const SQUARE_D = ['d1', 'd2', 'd3', 'd4'];
+
+  function squareShape(vertexIds: string[]): JsonFeatureShape {
+    return {
+      type: 'Polygon',
+      rings: [{ id: `ring-${vertexIds.join('')}`, vertexIds, ringType: 'territory', parentId: null }],
+    };
+  }
+
+  function exclusivityWorld(features: JsonFeature[]): JsonWorld {
+    return {
+      version: '1.0.0',
+      vertices: EXCLUSIVITY_VERTICES,
+      sharedVertexGroups: [],
+      timelineMarkers: [],
+      features,
+      metadata: DEFAULT_METADATA,
+    };
+  }
+
+  function leaf(id: string, vertexIds: string[], timeRange: JsonTimeRange = TIME_RANGE): JsonFeature {
+    return {
+      id,
+      featureType: 'Polygon',
+      anchors: [
+        { id: `${id}-a`, timeRange, property: PROPERTY, shape: squareShape(vertexIds), placement: createPlacement() },
+      ],
+    };
+  }
+
+  describe('合格ケース（正しい配置を誤拒否しない）', () => {
+    it('離れた末端地物同士はエラーが出ない', () => {
+      const errors = validateJsonWorld(exclusivityWorld([leaf('A', SQUARE_A), leaf('C', SQUARE_C)]));
+      expect(errors).toEqual([]);
+    });
+
+    it('境界接触（共有辺）は重なりに含めずエラーが出ない', () => {
+      const errors = validateJsonWorld(exclusivityWorld([leaf('A', SQUARE_A), leaf('D', SQUARE_D)]));
+      expect(errors).toEqual([]);
+    });
+
+    it('重なる領域でも有効時間が重複しなければエラーが出ない', () => {
+      // A は [100,200) で終了、B は [200,∞)。同時刻に両方有効になる瞬間がない。
+      const a = leaf('A', SQUARE_A, { start: { year: 100 }, end: { year: 200 } });
+      const b = leaf('B', SQUARE_B, { start: { year: 200 } });
+      const errors = validateJsonWorld(exclusivityWorld([a, b]));
+      expect(errors).toEqual([]);
+    });
+
+    it('集約地物（コンテナ）とその子の包含は誤検出しない（コンテナは排他対象外）', () => {
+      // コンテナの導出形状は子の領域（SQUARE_A）と一致し空間的に重なるが、コンテナは
+      // 末端地物ではないため排他対象外。末端地物は child 1 件のみでペアが成立しない。
+      const container: JsonFeature = {
+        id: 'cont',
+        featureType: 'Polygon',
+        anchors: [
+          { id: 'cont-a', timeRange: TIME_RANGE, property: PROPERTY, placement: createPlacement({ childIds: ['child'] }) },
+        ],
+      };
+      const child: JsonFeature = {
+        id: 'child',
+        featureType: 'Polygon',
+        anchors: [
+          {
+            id: 'child-a',
+            timeRange: TIME_RANGE,
+            property: PROPERTY,
+            shape: squareShape(SQUARE_A),
+            placement: createPlacement({ parentId: 'cont', isTopLevel: false }),
+          },
+        ],
+      };
+      const errors = validateJsonWorld(exclusivityWorld([container, child]));
+      expect(errors).toEqual([]);
+    });
+
+    it('離れた末端地物の .gimoza は deserialize で例外を投げない', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const payload = JSON.stringify(exclusivityWorld([leaf('A', SQUARE_A), leaf('C', SQUARE_C)]));
+      expect(() => deserialize(payload)).not.toThrow();
+    });
+  });
+
+  describe('排他違反', () => {
+    it('空間的に重なる末端地物同士はエラー', () => {
+      const errors = validateJsonWorld(exclusivityWorld([leaf('A', SQUARE_A), leaf('B', SQUARE_B)]));
+      expect(errors).toContain(
+        'Leaf features "A" and "B" overlap spatially (leaf exclusivity violated)'
+      );
+    });
+
+    it('同一ペアの重なりは複数の時間スライスにまたがっても1件に重複排除される', () => {
+      // A は 250 を境に2錨（同形状）に分割され、スライス境界は {100, 250}。
+      // B は [100,∞)。両スライスで A と B が重なるが、エラーは1件に集約される。
+      const aTwoAnchors: JsonFeature = {
+        id: 'A',
+        featureType: 'Polygon',
+        anchors: [
+          { id: 'A-a1', timeRange: { start: { year: 100 }, end: { year: 250 } }, property: PROPERTY, shape: squareShape(SQUARE_A), placement: createPlacement() },
+          { id: 'A-a2', timeRange: { start: { year: 250 } }, property: PROPERTY, shape: squareShape(SQUARE_A), placement: createPlacement() },
+        ],
+      };
+      const errors = validateJsonWorld(exclusivityWorld([aTwoAnchors, leaf('B', SQUARE_B)]));
+      const overlapErrors = errors.filter((e) => e.includes('leaf exclusivity violated'));
+      expect(overlapErrors).toEqual([
+        'Leaf features "A" and "B" overlap spatially (leaf exclusivity violated)',
+      ]);
+    });
+
+    it('重なる末端地物を含む .gimoza は SerializationError で拒否される', async () => {
+      const { deserialize } = await import('@infrastructure/persistence/JSONSerializer');
+      const { SerializationError } = await import('@infrastructure/persistence/jsonSerializerErrors');
+      const payload = JSON.stringify(exclusivityWorld([leaf('A', SQUARE_A), leaf('B', SQUARE_B)]));
+      expect(() => deserialize(payload)).toThrow(SerializationError);
+      expect(() => deserialize(payload)).toThrow('leaf exclusivity violated');
+    });
   });
 });

@@ -4,6 +4,10 @@ import { Vertex } from '@domain/entities/Vertex';
 import { Ring, type RingType } from '@domain/value-objects/Ring';
 import { isSelfIntersecting, type RingCoords } from '@domain/services/GeometryService';
 import { validatePolygonRingHierarchy } from '@domain/services/RingEditService';
+import {
+  resolveOccupiedTerritories,
+  territorySetsOverlap,
+} from '@domain/services/ConflictDetectionService';
 import type {
   JsonFeature,
   JsonFeatureAnchor,
@@ -244,8 +248,9 @@ function validatePolygonRings(
  *   - `shape === undefined` ⟹ `featureType === 'Polygon'` かつ `placement.childIds.length > 0`（コンテナ）
  *   - `shape !== undefined` ⟹ `featureType` と `shape.type` が整合（Point↔Point / Line↔LineString / Polygon↔Polygon）
  * 子参照健全性（参照の存在・Polygon 型）は `validateHierarchyReferences`、
- * 親子相互整合・循環検出（時間スライス）は `validateHierarchyConsistency` が担う。
- * リーフ排他・親≡子の和は後続フェーズ（Phase 3-3 / 3-4）のスコープ。
+ * 親子相互整合・循環検出（時間スライス）は `validateHierarchyConsistency`、
+ * リーフ排他（地図全体）は `validateLeafExclusivity` が担う。
+ * 親 ≡ 子の和は後続フェーズ（Phase 3-4）のスコープ。
  */
 function validateShapePresence(json: JsonWorld): string[] {
   const errors: string[] = [];
@@ -315,8 +320,9 @@ function expectedShapeTypeFor(featureType: string): string | null {
  *   - `childIds` が非空のとき、当該地物自身が Polygon であること（集約地物は Polygon のみ）
  *
  * 親子相互整合（双方向の参照欠落・時間区間カバレッジ）と循環検出（時間スライス）は
- * `validateHierarchyConsistency`（Phase 3-2）が担う。
- * スコープ外（後続サブフェーズ）: リーフ排他（地図全体, Phase 3-3）、親 ≡ 子の和（Phase 3-4）。
+ * `validateHierarchyConsistency`（Phase 3-2）、リーフ排他（地図全体）は
+ * `validateLeafExclusivity`（Phase 3-3）が担う。
+ * スコープ外（後続サブフェーズ）: 親 ≡ 子の和（Phase 3-4）。
  */
 function validateHierarchyReferences(json: JsonWorld): string[] {
   const errors: string[] = [];
@@ -420,7 +426,8 @@ function validateHierarchyReferences(json: JsonWorld): string[] {
  *
  * 非存在地物・自己参照を指す参照は Phase 3-1 が報告するため、本関数は二重報告を避けて
  * スキップする（双方向チェックは `id !== feature.id`、循環チェックは自己親を guard でスキップ）。
- * スコープ外（後続サブフェーズ）: リーフ排他（地図全体, Phase 3-3）、親 ≡ 子の和（Phase 3-4）。
+ * リーフ排他（地図全体）は `validateLeafExclusivity`（Phase 3-3）が担う。
+ * スコープ外（後続サブフェーズ）: 親 ≡ 子の和（Phase 3-4）。
  */
 function validateHierarchyConsistency(json: JsonWorld): string[] {
   const errors: string[] = [];
@@ -486,6 +493,68 @@ function validateHierarchyConsistency(json: JsonWorld): string[] {
 
   // 同一論理違反が複数スライスで重複し得るため、メッセージ単位で重複排除する。
   return [...new Set(errors)];
+}
+
+/**
+ * 末端地物排他（地図全体）をロード時に検証する。
+ *
+ * 要件定義書 §2.5.2 line 938「末端地物排他の違反（地図全体での末端地物同士の空間重複）」/
+ * §2.1 line 145-153「末端地物の排他性は地図全体に適用する」「排他検証は末端地物同士のみ。
+ * 集約地物には直接の排他制約を課さない」。
+ *
+ * placement は錨ごとに時間依存のため（§6.2 / 現状.md §6.3）、排他は単一時刻ではなく
+ * 「全錨の境界時刻で区切られた各時間スライス」で評価する（`validateHierarchyConsistency` と同方式）。
+ * 各スライス T で各地物の有効錨を `getActiveJsonAnchor` で解決し、**末端ポリゴン錨**
+ * （`isJsonLeafPolygonAnchor`: shape が Polygon かつ childIds 空。開発ガイド §6.6.8）だけを
+ * 収集してペアワイズに重なりを判定する。集約地物・移行期間ノード（shape あり + childIds 非空）は
+ * 対象外（§6.6.8: 集約地物ペアに直接の非重複検証を実装してはいけない。集約地物同士の重なりは
+ * 子の末端地物排他から派生的に保証される）。
+ *
+ * 占有領域解決（`resolveOccupiedTerritories`: territory + 直下 hole 単位、§6.6.2）と
+ * 重なり判定（`territorySetsOverlap`: 境界接触は重なりに含めない）は `ConflictDetectionService`
+ * のランタイム排他検証と同じ実装を共有する（§6.6.1: 検証経路間のドリフト防止）。
+ */
+function validateLeafExclusivity(json: JsonWorld): string[] {
+  const errors: string[] = [];
+  const vertexById = new Map<string, { x: number; y: number }>(
+    json.vertices.map((vertex) => [vertex.id, { x: vertex.x, y: vertex.y }])
+  );
+  const resolveVertex = (vertexId: string): { x: number; y: number } | undefined =>
+    vertexById.get(vertexId);
+
+  for (const time of collectSliceTimes(json)) {
+    const leaves: { featureId: string; territories: RingCoords[][] }[] = [];
+    for (const feature of json.features) {
+      if (feature.featureType !== 'Polygon') continue;
+      const anchor = getActiveJsonAnchor(feature, time);
+      if (!anchor || !isJsonLeafPolygonAnchor(anchor)) continue;
+      const territories = resolveOccupiedTerritories(anchor.shape?.rings ?? [], resolveVertex);
+      if (territories.length === 0) continue;
+      leaves.push({ featureId: feature.id, territories });
+    }
+
+    for (let i = 0; i < leaves.length; i++) {
+      for (let j = i + 1; j < leaves.length; j++) {
+        if (territorySetsOverlap(leaves[i].territories, leaves[j].territories)) {
+          errors.push(
+            `Leaf features "${leaves[i].featureId}" and "${leaves[j].featureId}" overlap spatially (leaf exclusivity violated)`
+          );
+        }
+      }
+    }
+  }
+
+  // 同一ペアの重複は複数スライスで重複し得るため、メッセージ単位で重複排除する。
+  return [...new Set(errors)];
+}
+
+/**
+ * JSON 上の末端ポリゴン錨判定。domain `isLeafPolygonAnchor`（`FeatureAnchor`）と同一基準
+ * （shape が Polygon かつ childIds 空）。開発ガイド §6.6.8「リーフ判定をひとつに集約し
+ * 検証経路間のドリフトを防ぐ」に従い、判定条件を domain ヘルパーと一致させる。
+ */
+function isJsonLeafPolygonAnchor(anchor: JsonFeatureAnchor): boolean {
+  return anchor.shape?.type === 'Polygon' && anchor.placement.childIds.length === 0;
 }
 
 /** 全錨の境界時刻（start / end）を時間スライスの breakpoint として収集する（compareTo で重複排除）。 */
@@ -563,6 +632,7 @@ function validateJsonWorld(json: JsonWorld): string[] {
     ...validateHierarchyConsistency(json),
     ...validateSharedVertexGroups(json),
     ...validatePolygons(json),
+    ...validateLeafExclusivity(json),
   ];
 }
 
