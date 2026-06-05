@@ -1374,6 +1374,7 @@
           newParentId: detail.newParentId,
           effectiveTime: currentTime,
           transferType: detail.scope === 'children' ? 'annex' : 'cede',
+          ...(detail.createNewParent ? { createNewParent: detail.createNewParent } : {}),
         })
       );
     } catch (error) {

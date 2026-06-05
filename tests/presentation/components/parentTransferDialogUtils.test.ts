@@ -240,20 +240,22 @@ describe('parentTransferDialogUtils', () => {
   });
 });
 
-describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2)', () => {
+describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2 / 4-3a)', () => {
   const candidates = [
     { id: 'cand-a', name: 'A' },
     { id: 'cand-b', name: 'B' },
   ];
 
-  it("'root'（独立）は newParentId=null を返す", () => {
+  it("'root'（独立）は reassign / newParentId=null を返す", () => {
     expect(
       resolveParentTransferTarget({
         mode: 'root',
         selectedExistingParentId: '',
         parentCandidates: candidates,
+        newParentName: '',
+        newParentKind: '',
       })
-    ).toEqual({ newParentId: null });
+    ).toEqual({ type: 'reassign', newParentId: null });
   });
 
   it("'existing'（割譲・帰属・直轄化）は候補内の有効な選択のみ解決する", () => {
@@ -262,8 +264,10 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         mode: 'existing',
         selectedExistingParentId: 'cand-b',
         parentCandidates: candidates,
+        newParentName: '',
+        newParentKind: '',
       })
-    ).toEqual({ newParentId: 'cand-b' });
+    ).toEqual({ type: 'reassign', newParentId: 'cand-b' });
   });
 
   it("'existing' で未選択・候補外は null（確定不可）を返す", () => {
@@ -272,6 +276,8 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         mode: 'existing',
         selectedExistingParentId: '',
         parentCandidates: candidates,
+        newParentName: '',
+        newParentKind: '',
       })
     ).toBeNull();
     expect(
@@ -279,17 +285,65 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         mode: 'existing',
         selectedExistingParentId: 'unknown',
         parentCandidates: candidates,
+        newParentName: '',
+        newParentKind: '',
       })
     ).toBeNull();
   });
 
-  it("'new'（連邦化・自治化）は Phase 4-2 では入口表示のみで null（確定不可）を返す", () => {
-    // 名称入力は Phase 4-3 で別出し。本フェーズでは確定できない。
+  it("'new'（連邦化）は名称が非空のとき createNewParent を解決する", () => {
     expect(
       resolveParentTransferTarget({
         mode: 'new',
         selectedExistingParentId: '',
         parentCandidates: candidates,
+        newParentName: '合衆国',
+        newParentKind: '連邦',
+      })
+    ).toEqual({ type: 'createNewParent', spec: { name: '合衆国', kind: '連邦' } });
+  });
+
+  it("'new' は名称・種別の前後空白を除去する", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '  合衆国  ',
+        newParentKind: '  連邦  ',
+      })
+    ).toEqual({ type: 'createNewParent', spec: { name: '合衆国', kind: '連邦' } });
+  });
+
+  it("'new' は種別が空のとき kind を未設定にする", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '合衆国',
+        newParentKind: '   ',
+      })
+    ).toEqual({ type: 'createNewParent', spec: { name: '合衆国' } });
+  });
+
+  it("'new' は名称が空（または空白のみ）のとき null（確定不可）を返す", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '',
+        newParentKind: '連邦',
+      })
+    ).toBeNull();
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '   ',
+        newParentKind: '',
       })
     ).toBeNull();
   });

@@ -18,11 +18,33 @@ export interface ParentCandidateItem {
   readonly name: string;
 }
 
+/**
+ * 新規上位領域作成サブフロー（連邦化）の入力（要件定義書 §2.1 line 290-293）。
+ * UI で入力された名称・種別ラベルを `ReassignFeatureParentUseCase.createNewParent` へ橋渡しする。
+ * Application 層の `CreateNewParentSpec` と同形だが、層をまたぐ型依存を避けるため
+ * presentation 層で独立に宣言し、App.svelte が UseCase 型へマッピングする。
+ */
+export interface CreateNewParentInput {
+  readonly name: string;
+  readonly kind?: string;
+}
+
 export interface ParentTransferConfirmDetail {
   readonly scope: ParentTransferScope;
   readonly featureIds: readonly string[];
   readonly newParentId: string | null;
+  /** 指定時、新規最上位コンテナを作成して対象を帰属させる（連邦化）。`newParentId` は無視される。 */
+  readonly createNewParent?: CreateNewParentInput;
 }
+
+/**
+ * 所属変更ダイアログ「新しい親」の確定意図（要件定義書 §2.1 line 286-293）。
+ * - `'reassign'`: 既存の面情報 / 親なし（最上位）へ移す（割譲・帰属・直轄化・独立）。
+ * - `'createNewParent'`: 新規最上位コンテナを作成して帰属させる（連邦化）。
+ */
+export type ParentTransferResolution =
+  | { readonly type: 'reassign'; readonly newParentId: string | null }
+  | { readonly type: 'createNewParent'; readonly spec: CreateNewParentInput };
 
 interface TimeSlice {
   readonly start: TimePoint;
@@ -205,27 +227,36 @@ export function canParentCoverFeatureRanges(
 
 /**
  * 所属変更ダイアログの「新しい親」3 択（既存 / 親なし / 新規作成）から、
- * 確定時に渡す新親領域識別子を解決する（要件定義書 §2.1 line 286-289）。
+ * 確定意図を解決する（要件定義書 §2.1 line 286-293）。
  *
- * - `'root'`（独立）: 親なし（最上位領域へ）。`newParentId === null` を返す。
+ * - `'root'`（独立）: 親なし（最上位領域へ）。`{ type: 'reassign', newParentId: null }`。
  * - `'existing'`（割譲・帰属・直轄化）: 選択中の既存候補。候補一覧に含まれる有効な
  *   選択のときのみ解決し、未選択・候補外なら `null`（確定不可）を返す。
- * - `'new'`（連邦化・自治化）: 新規上位領域作成サブフロー。Phase 4-2 では入口表示のみで
- *   名称入力（Phase 4-3）が未実装のため `null`（確定不可）を返す。
+ * - `'new'`（連邦化）: 新規最上位コンテナを作成。名称が非空のときのみ解決し、
+ *   空名なら `null`（確定不可）を返す。種別ラベルは任意（空なら未設定）。
+ *   中間階層挿入（自治化）・再帰積み上げは後続サブフェーズ。
  */
 export function resolveParentTransferTarget(params: {
   readonly mode: ParentTransferMode;
   readonly selectedExistingParentId: string;
   readonly parentCandidates: readonly ParentCandidateItem[];
-}): { readonly newParentId: string | null } | null {
-  const { mode, selectedExistingParentId, parentCandidates } = params;
-  if (mode === 'root') return { newParentId: null };
+  readonly newParentName: string;
+  readonly newParentKind: string;
+}): ParentTransferResolution | null {
+  const { mode, selectedExistingParentId, parentCandidates, newParentName, newParentKind } = params;
+  if (mode === 'root') return { type: 'reassign', newParentId: null };
   if (mode === 'existing') {
     return parentCandidates.some((candidate) => candidate.id === selectedExistingParentId)
-      ? { newParentId: selectedExistingParentId }
+      ? { type: 'reassign', newParentId: selectedExistingParentId }
       : null;
   }
-  return null;
+  const name = newParentName.trim();
+  if (name === '') return null;
+  const kind = newParentKind.trim();
+  return {
+    type: 'createNewParent',
+    spec: { name, ...(kind !== '' ? { kind } : {}) },
+  };
 }
 
 export function resolveParentTransferSelection(params: {

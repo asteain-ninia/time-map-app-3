@@ -33,6 +33,8 @@
   let scope = $state<ParentTransferScope>('selected');
   let parentMode = $state<ParentTransferMode>('existing');
   let selectedExistingParentId = $state('');
+  let newParentName = $state('');
+  let newParentKind = $state('');
 
   let activeAnchor = $derived(getActivePolygonAnchor(feature, currentTime));
   let selectedEnabled = $derived(canTransferSelectedFeature(feature, currentTime));
@@ -48,12 +50,14 @@
   let currentParentId = $derived(
     scope === 'selected' ? activeAnchor?.placement.parentId ?? null : feature?.id ?? null
   );
-  // 3 択（既存 / 親なし / 新規作成）→ 確定時の新親領域識別子。
-  // 解決できないとき（既存モードで未選択、または新規作成モード = Phase 4-2 は入口表示のみ）は null。
+  // 3 択（既存 / 親なし / 新規作成）→ 確定意図（reassign / createNewParent）。
+  // 解決できないとき（既存モードで未選択、または新規作成モードで名称未入力）は null。
   let transferTarget = $derived(resolveParentTransferTarget({
     mode: parentMode,
     selectedExistingParentId,
     parentCandidates,
+    newParentName,
+    newParentKind,
   }));
   let targetNames = $derived(
     featureIds.map((featureId) => {
@@ -66,7 +70,7 @@
     (scope === 'selected' && !selectedEnabled) ||
     (scope === 'children' && !childrenEnabled) ||
     transferTarget === null ||
-    transferTarget.newParentId === currentParentId
+    (transferTarget.type === 'reassign' && transferTarget.newParentId === currentParentId)
   );
 
   $effect(() => {
@@ -74,6 +78,8 @@
     scope = selectedEnabled || !childrenEnabled ? 'selected' : 'children';
     parentMode = 'existing';
     selectedExistingParentId = '';
+    newParentName = '';
+    newParentKind = '';
   });
 
   $effect(() => {
@@ -101,6 +107,15 @@
 
   function confirm(): void {
     if (confirmDisabled || transferTarget === null) return;
+    if (transferTarget.type === 'createNewParent') {
+      onConfirm?.({
+        scope,
+        featureIds,
+        newParentId: null,
+        createNewParent: transferTarget.spec,
+      });
+      return;
+    }
     onConfirm?.({
       scope,
       featureIds,
@@ -201,6 +216,26 @@
           />
           新規上位領域を作成する
         </label>
+        {#if parentMode === 'new'}
+          <div class="new-parent-fields">
+            <label class="field-label" for="new-parent-name">名称</label>
+            <input
+              id="new-parent-name"
+              class="text-input"
+              type="text"
+              placeholder="新しい上位領域の名称"
+              bind:value={newParentName}
+            />
+            <label class="field-label" for="new-parent-kind">種別（任意）</label>
+            <input
+              id="new-parent-kind"
+              class="text-input"
+              type="text"
+              placeholder="連邦 / 帝国 など"
+              bind:value={newParentKind}
+            />
+          </div>
+        {/if}
       </div>
 
       {#if confirmDisabled}
@@ -213,11 +248,11 @@
             選択地物は下位領域を持つため、選択地物のみの所属変更はできません。
           {:else if scope === 'children' && !childrenEnabled}
             下位領域に末端でない地物が含まれるため、一括での所属変更はできません。
-          {:else if parentMode === 'new'}
-            新規上位領域の作成は次の手順（名称・種別の入力）で対応します。
+          {:else if parentMode === 'new' && transferTarget === null}
+            新規上位領域の名称を入力してください。
           {:else if parentMode === 'existing' && transferTarget === null}
             所属させる既存の面情報を選択してください。
-          {:else if transferTarget && transferTarget.newParentId === currentParentId}
+          {:else if transferTarget && transferTarget.type === 'reassign' && transferTarget.newParentId === currentParentId}
             現在と同じ所属先です。
           {:else}
             選択した範囲は所属変更できません。
@@ -357,6 +392,33 @@
   }
 
   .parent-select:focus {
+    outline: none;
+    border-color: #007acc;
+  }
+
+  .new-parent-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .field-label {
+    color: #aaa;
+    font-size: 11px;
+  }
+
+  .text-input {
+    width: 100%;
+    padding: 6px 8px;
+    background: #1e1e1e;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 13px;
+    box-sizing: border-box;
+  }
+
+  .text-input:focus {
     outline: none;
     border-color: #007acc;
   }
