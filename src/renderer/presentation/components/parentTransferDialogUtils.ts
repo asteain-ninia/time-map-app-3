@@ -5,6 +5,14 @@ import type { TimePoint } from '@domain/value-objects/TimePoint';
 
 export type ParentTransferScope = 'selected' | 'children';
 
+/**
+ * 所属変更ダイアログ「新しい親」の 3 択（要件定義書 §2.1 line 286-289）。
+ * - `'existing'`: 既存の面情報から選ぶ（割譲・帰属・直轄化）。
+ * - `'root'`: 親なし（最上位領域へ）（独立）。
+ * - `'new'`: 新規上位領域を作成する（連邦化・自治化）。
+ */
+export type ParentTransferMode = 'existing' | 'root' | 'new';
+
 export interface ParentCandidateItem {
   readonly id: string;
   readonly name: string;
@@ -193,6 +201,31 @@ export function canParentCoverFeatureRanges(
       featureCoversRange(parent, slice.start, slice.end)
     )
   );
+}
+
+/**
+ * 所属変更ダイアログの「新しい親」3 択（既存 / 親なし / 新規作成）から、
+ * 確定時に渡す新親領域識別子を解決する（要件定義書 §2.1 line 286-289）。
+ *
+ * - `'root'`（独立）: 親なし（最上位領域へ）。`newParentId === null` を返す。
+ * - `'existing'`（割譲・帰属・直轄化）: 選択中の既存候補。候補一覧に含まれる有効な
+ *   選択のときのみ解決し、未選択・候補外なら `null`（確定不可）を返す。
+ * - `'new'`（連邦化・自治化）: 新規上位領域作成サブフロー。Phase 4-2 では入口表示のみで
+ *   名称入力（Phase 4-3）が未実装のため `null`（確定不可）を返す。
+ */
+export function resolveParentTransferTarget(params: {
+  readonly mode: ParentTransferMode;
+  readonly selectedExistingParentId: string;
+  readonly parentCandidates: readonly ParentCandidateItem[];
+}): { readonly newParentId: string | null } | null {
+  const { mode, selectedExistingParentId, parentCandidates } = params;
+  if (mode === 'root') return { newParentId: null };
+  if (mode === 'existing') {
+    return parentCandidates.some((candidate) => candidate.id === selectedExistingParentId)
+      ? { newParentId: selectedExistingParentId }
+      : null;
+  }
+  return null;
 }
 
 export function resolveParentTransferSelection(params: {

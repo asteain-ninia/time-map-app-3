@@ -9,6 +9,7 @@ import {
   getTransferFeatureIds,
   isLeafFromTime,
   resolveParentTransferSelection,
+  resolveParentTransferTarget,
 } from '@presentation/components/parentTransferDialogUtils';
 import { Feature } from '@domain/entities/Feature';
 import {
@@ -236,6 +237,61 @@ describe('parentTransferDialogUtils', () => {
       movedFeatureIds: ['child'],
       newParentId: 'new-parent',
     })).toBe('new-parent');
+  });
+});
+
+describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2)', () => {
+  const candidates = [
+    { id: 'cand-a', name: 'A' },
+    { id: 'cand-b', name: 'B' },
+  ];
+
+  it("'root'（独立）は newParentId=null を返す", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'root',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+      })
+    ).toEqual({ newParentId: null });
+  });
+
+  it("'existing'（割譲・帰属・直轄化）は候補内の有効な選択のみ解決する", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'existing',
+        selectedExistingParentId: 'cand-b',
+        parentCandidates: candidates,
+      })
+    ).toEqual({ newParentId: 'cand-b' });
+  });
+
+  it("'existing' で未選択・候補外は null（確定不可）を返す", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'existing',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+      })
+    ).toBeNull();
+    expect(
+      resolveParentTransferTarget({
+        mode: 'existing',
+        selectedExistingParentId: 'unknown',
+        parentCandidates: candidates,
+      })
+    ).toBeNull();
+  });
+
+  it("'new'（連邦化・自治化）は Phase 4-2 では入口表示のみで null（確定不可）を返す", () => {
+    // 名称入力は Phase 4-3 で別出し。本フェーズでは確定できない。
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+      })
+    ).toBeNull();
   });
 });
 

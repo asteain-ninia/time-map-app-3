@@ -103,11 +103,16 @@ export class ReassignFeatureParentUseCase {
     let newParentId = params.newParentId;
     let createdParentId: string | null = null;
     if (params.createNewParent) {
+      // 名称の非空検証（要件定義書 §2.1 line 291）。UI の確定ボタン disabled と二重防御。
+      const name = params.createNewParent.name.trim();
+      if (name === '') {
+        throw new FeatureParentTransferError('新規上位領域の名称を入力してください');
+      }
       const container = this.featureUseCase.buildContainerFeature(
         params.effectiveTime,
         featureIds,
         {
-          name: params.createNewParent.name,
+          name,
           description: '',
           ...(params.createNewParent.kind !== undefined
             ? { kind: params.createNewParent.kind }

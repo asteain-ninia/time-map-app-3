@@ -822,4 +822,69 @@ describe('ReassignFeatureParentUseCase', () => {
       expect(addFeature.getFeatureById('f-1')!.getActiveAnchor(t1500)?.placement.childIds.sort()).toEqual(['n1', 'n2']);
     });
   });
+
+  // ── 親候補制約・名称検証の確定前検証 (Phase 4-2) ───────────────────
+  // ダイアログのリアルタイム判定（buildParentCandidateItems / UI 確定 disabled）と
+  // 対をなす UseCase 入口の確定前検証（§6.6.3 line 586 二重防御 / §6.6.1）。
+  describe('確定前検証（親候補制約・名称）', () => {
+    it('自分自身を新しい親に指定すると拒否する（§6.6.3 循環参照防止の二重防御）', () => {
+      const f = makeFeature('f', [makeAnchor('f-a1', t1000, placement(null, []))]);
+      addFeature.restore(new Map([[f.id, f]]), new Map());
+
+      expect(() => transfer.reassignFeatureParent({
+        featureIds: ['f'],
+        newParentId: 'f',
+        effectiveTime: t1500,
+      })).toThrow(FeatureParentTransferError);
+    });
+
+    it('対象の上位領域（祖先）への所属変更は許可する（直轄化 / 祖先選択許可）', () => {
+      // G(最上位) → P(子: C, C2) → C/C2(末端)。C を中間 P を抜かして祖先 G へ移す（直轄化）。
+      const g = makeFeature('g', [makeAnchor('g-a1', t1000, placement(null, ['p']))]);
+      const p = makeFeature('p', [makeAnchor('p-a1', t1000, placement('g', ['c', 'c2']))]);
+      const c = makeFeature('c', [makeAnchor('c-a1', t1000, placement('p'))]);
+      const c2 = makeFeature('c2', [makeAnchor('c2-a1', t1000, placement('p'))]);
+      addFeature.restore(new Map([[g.id, g], [p.id, p], [c.id, c], [c2.id, c2]]), new Map());
+
+      expect(() => transfer.reassignFeatureParent({
+        featureIds: ['c'],
+        newParentId: 'g',
+        effectiveTime: t1500,
+      })).not.toThrow();
+
+      // C の親は G（直轄化成立）、旧親 P は残る子 C2 を保持し存続
+      expect(addFeature.getFeatureById('c')!.getActiveAnchor(t1500)?.placement.parentId).toBe('g');
+      expect(addFeature.getFeatureById('g')!.getActiveAnchor(t1500)?.placement.childIds.sort()).toEqual(['c', 'p']);
+      expect(addFeature.getFeatureById('p')!.getActiveAnchor(t1500)?.placement.childIds).toEqual(['c2']);
+    });
+
+    it('新規上位領域作成サブフローで名称が空（空白のみ含む）なら拒否する（§2.1 line 291 二重防御）', () => {
+      const n1 = makeFeature('n1', [makeAnchor('n1-a1', t1000, placement(null, []))]);
+      const n2 = makeFeature('n2', [makeAnchor('n2-a1', t1000, placement(null, []))]);
+      addFeature.restore(new Map([[n1.id, n1], [n2.id, n2]]), new Map());
+
+      expect(() => transfer.reassignFeatureParent({
+        featureIds: ['n1', 'n2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '' },
+      })).toThrow(FeatureParentTransferError);
+
+      expect(() => transfer.reassignFeatureParent({
+        featureIds: ['n1', 'n2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '   ' },
+      })).toThrow(FeatureParentTransferError);
+
+      // 名称の前後空白は除去して登録する
+      transfer.reassignFeatureParent({
+        featureIds: ['n1', 'n2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '  合衆国  ' },
+      });
+      expect(addFeature.getFeatureById('f-1')!.getActiveAnchor(t1500)?.property.name).toBe('合衆国');
+    });
+  });
 });

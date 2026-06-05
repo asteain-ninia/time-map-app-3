@@ -8,7 +8,9 @@
     getActivePolygonAnchor,
     getFeatureDisplayName,
     getTransferFeatureIds,
+    resolveParentTransferTarget,
     type ParentTransferConfirmDetail,
+    type ParentTransferMode,
     type ParentTransferScope,
   } from './parentTransferDialogUtils';
 
@@ -29,7 +31,8 @@
   } = $props();
 
   let scope = $state<ParentTransferScope>('selected');
-  let selectedParentValue = $state('__root__');
+  let parentMode = $state<ParentTransferMode>('existing');
+  let selectedExistingParentId = $state('');
 
   let activeAnchor = $derived(getActivePolygonAnchor(feature, currentTime));
   let selectedEnabled = $derived(canTransferSelectedFeature(feature, currentTime));
@@ -45,13 +48,13 @@
   let currentParentId = $derived(
     scope === 'selected' ? activeAnchor?.placement.parentId ?? null : feature?.id ?? null
   );
-  let newParentId = $derived(
-    selectedParentValue === '__root__' ? null : selectedParentValue
-  );
-  let parentSelectionEnabled = $derived(
-    newParentId === null ||
-    parentCandidates.some((candidate) => candidate.id === newParentId)
-  );
+  // 3 択（既存 / 親なし / 新規作成）→ 確定時の新親領域識別子。
+  // 解決できないとき（既存モードで未選択、または新規作成モード = Phase 4-2 は入口表示のみ）は null。
+  let transferTarget = $derived(resolveParentTransferTarget({
+    mode: parentMode,
+    selectedExistingParentId,
+    parentCandidates,
+  }));
   let targetNames = $derived(
     featureIds.map((featureId) => {
       const target = features.find((candidate) => candidate.id === featureId);
@@ -62,14 +65,15 @@
     featureIds.length === 0 ||
     (scope === 'selected' && !selectedEnabled) ||
     (scope === 'children' && !childrenEnabled) ||
-    !parentSelectionEnabled ||
-    newParentId === currentParentId
+    transferTarget === null ||
+    transferTarget.newParentId === currentParentId
   );
 
   $effect(() => {
     if (!isOpen) return;
     scope = selectedEnabled || !childrenEnabled ? 'selected' : 'children';
-    selectedParentValue = '__root__';
+    parentMode = 'existing';
+    selectedExistingParentId = '';
   });
 
   $effect(() => {
@@ -81,18 +85,26 @@
     }
   });
 
+  // 既存候補が無いときは「既存の面情報から選ぶ」を選べないため「親なし」へ退避する。
   $effect(() => {
-    if (selectedParentValue === '__root__') return;
-    if (parentCandidates.some((candidate) => candidate.id === selectedParentValue)) return;
-    selectedParentValue = '__root__';
+    if (parentMode === 'existing' && parentCandidates.length === 0) {
+      parentMode = 'root';
+    }
+  });
+
+  // 既存選択が候補から外れたら未選択へ戻す（scope 切替で候補が変わるケース）。
+  $effect(() => {
+    if (selectedExistingParentId === '') return;
+    if (parentCandidates.some((candidate) => candidate.id === selectedExistingParentId)) return;
+    selectedExistingParentId = '';
   });
 
   function confirm(): void {
-    if (confirmDisabled) return;
+    if (confirmDisabled || transferTarget === null) return;
     onConfirm?.({
       scope,
       featureIds,
-      newParentId,
+      newParentId: transferTarget.newParentId,
     });
   }
 </script>
@@ -147,26 +159,65 @@
       </div>
 
       <div class="form-group">
-        <label class="group-label" for="parent-transfer-parent">新しい親</label>
-        <select
-          id="parent-transfer-parent"
-          class="parent-select"
-          bind:value={selectedParentValue}
-        >
-          <option value="__root__">親なし（最上位）</option>
-          {#each parentCandidates as candidate}
-            <option value={candidate.id}>{candidate.name} ({candidate.id})</option>
-          {/each}
-        </select>
+        <span class="group-label">新しい親</span>
+        <label class:disabled={parentCandidates.length === 0}>
+          <input
+            type="radio"
+            name="parent-transfer-mode"
+            value="existing"
+            bind:group={parentMode}
+            disabled={parentCandidates.length === 0}
+          />
+          既存の面情報から選ぶ
+        </label>
+        {#if parentMode === 'existing'}
+          <select
+            id="parent-transfer-parent"
+            class="parent-select"
+            aria-label="既存の親地物を選択"
+            bind:value={selectedExistingParentId}
+          >
+            <option value="">選択してください</option>
+            {#each parentCandidates as candidate (candidate.id)}
+              <option value={candidate.id}>{candidate.name} ({candidate.id})</option>
+            {/each}
+          </select>
+        {/if}
+        <label>
+          <input
+            type="radio"
+            name="parent-transfer-mode"
+            value="root"
+            bind:group={parentMode}
+          />
+          親なし（最上位領域へ）
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="parent-transfer-mode"
+            value="new"
+            bind:group={parentMode}
+          />
+          新規上位領域を作成する
+        </label>
       </div>
 
       {#if confirmDisabled}
         <div class="modal-hint">
+          <!-- 無効理由は実際の disable 要因の優先順で評価する（§6.2.5: メッセージと条件分岐を一対一に）。
+               範囲（scope）無効を新しい親モードのヒントより先に出し、真の理由をマスクしない。 -->
           {#if featureIds.length === 0}
             所属変更できる対象がありません。
-          {:else if !parentSelectionEnabled}
-            選択した親地物は対象地物の存在期間を覆っていません。
-          {:else if newParentId === currentParentId}
+          {:else if scope === 'selected' && !selectedEnabled}
+            選択地物は下位領域を持つため、選択地物のみの所属変更はできません。
+          {:else if scope === 'children' && !childrenEnabled}
+            下位領域に末端でない地物が含まれるため、一括での所属変更はできません。
+          {:else if parentMode === 'new'}
+            新規上位領域の作成は次の手順（名称・種別の入力）で対応します。
+          {:else if parentMode === 'existing' && transferTarget === null}
+            所属させる既存の面情報を選択してください。
+          {:else if transferTarget && transferTarget.newParentId === currentParentId}
             現在と同じ所属先です。
           {:else}
             選択した範囲は所属変更できません。
