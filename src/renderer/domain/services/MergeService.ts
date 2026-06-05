@@ -7,8 +7,11 @@
  * 面情報の結合（ブーリアン和）と親子関係の変更を提供する。
  */
 
+import type { Feature } from '@domain/entities/Feature';
+import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { RingCoords } from './GeometryService';
 import { polygonUnionAll } from './BooleanOperationService';
+import { getAncestors } from './HierarchyService';
 
 // ── 結合（合体） ──
 
@@ -31,32 +34,56 @@ export interface MergeValidation {
 }
 
 /**
- * 結合バリデーション
+ * 結合バリデーション（確定前の事前条件検証）
  *
- * §2.1 制約:
- * - 同じレイヤーに属する面情報のみ結合可能
- * - 結合対象が操作対象の時間において下位領域を持たないこと
+ * 要件定義書 §2.1「合体（結合）機能」の制約 / 開発ガイド §6.6.3:
+ * - 結合対象は2つ以上であること。
+ * - 選択集合内の地物が互いに上位・下位関係にないこと（集約地物とその下位領域を
+ *   同時選択できない。重複 child 参照・不正なツリー更新を防ぐ。§2.1 line 351-354）。
+ *   循環検出は所属変更の `validateTransfer` と同じ祖先連鎖（`getAncestors`）で判定する。
+ * - 現行の結合は末端地物のみ対応する（集約地物の平坦化・混在結合は Phase 4-7）。
  *
- * @param features 結合対象の地物情報
+ * 旧「同じレイヤーに属する面情報のみ結合できる」前提は新階層モデルで撤廃した
+ * （グローバルレイヤー序列は廃止。現状.md §6 / 開発ガイド §6.6.3 補足）。
+ *
+ * @param features 結合対象の地物情報（id と下位領域保持フラグ）
+ * @param getAncestors 指定地物IDの祖先地物ID群を返す関数（上位・下位関係の判定用）
  */
 export function validateMerge(
   features: readonly {
     id: string;
-    layerId: string;
     hasChildren: boolean;
-  }[]
+  }[],
+  getAncestors: (featureId: string) => readonly string[]
 ): MergeValidation {
   if (features.length < 2) {
     return { valid: false, error: '結合には2つ以上の面情報が必要です' };
   }
 
-  // 同一レイヤーチェック
-  const layerIds = new Set(features.map(f => f.layerId));
-  if (layerIds.size > 1) {
-    return { valid: false, error: '同じレイヤーに属する面情報のみ結合できます' };
+  // 同一地物の重複指定チェック（開発ガイド §6.6.3 line 584「対象が同一地物ではないこと」）。
+  // UI（トグル選択）と Command（dedupe）は重複を作らないが、共有バリデータ単体でも堅くする。
+  const uniqueIds = new Set(features.map(f => f.id));
+  if (uniqueIds.size !== features.length) {
+    return { valid: false, error: '同一の地物を重複して結合対象に指定することはできません' };
   }
 
-  // 下位領域チェック
+  // 上位・下位関係チェック（要件定義書 §2.1 line 351-354 / 開発ガイド §6.6.3 line 585）。
+  // 選択集合内に互いに上位・下位関係にある地物（集約地物とその下位領域）があってはならない。
+  const selectedIds = new Set(features.map(f => f.id));
+  for (const feature of features) {
+    for (const ancestorId of getAncestors(feature.id)) {
+      if (selectedIds.has(ancestorId)) {
+        // 要件定義書 §2.1 line 354: 「上位地物とその下位領域は同時に結合対象にできない」旨を
+        // 通知する（ID は要求されておらず、pure な本関数は feature 名も持たないため固定文言）。
+        return {
+          valid: false,
+          error: '上位地物とその下位領域は同時に結合対象にできません',
+        };
+      }
+    }
+  }
+
+  // 下位領域チェック（現行の結合は末端地物のみ対応。集約地物の結合は Phase 4-7）。
   const withChildren = features.find(f => f.hasChildren);
   if (withChildren) {
     return {
@@ -66,6 +93,59 @@ export function validateMerge(
   }
 
   return { valid: true };
+}
+
+/**
+ * Feature ベースの結合バリデーション（選択時・確定前で共有）
+ *
+ * 選択時のリアルタイム判定（UI の `addMergeTarget`）と確定前検証
+ * （`MergeFeatureCommand`）の双方から呼び出し、判定経路を単一化してドリフトを防ぐ
+ * （開発ガイド §6.6.1 / §6.6.3 line 584「操作開始前と確定前の両方で検証」）。
+ * pure な `validateMerge` に対し、Feature から判定入力（下位領域フラグ・祖先連鎖）を
+ * 解決して与える薄いラッパ。祖先連鎖は所属変更と同じ `HierarchyService.getAncestors`。
+ *
+ * @param targetIds 結合対象の地物ID群
+ * @param allFeatures 全地物（祖先連鎖の解決に使用）
+ * @param time 判定時刻
+ */
+export function validateMergeFeatures(
+  targetIds: readonly string[],
+  allFeatures: readonly Feature[],
+  time: TimePoint
+): MergeValidation {
+  const featureMap = new Map(allFeatures.map((feature) => [feature.id, feature]));
+
+  // 共通の事前条件（開発ガイド §6.6.3 line 584）: 対象が存在し・面情報であり・指定時刻に
+  // 有効であることを、操作開始前と確定前の両方で検証する。missing / inactive / 非 Polygon を
+  // 明示的に invalid 化する（時刻変更で古い選択が無効化したケースを通さない）。
+  const targets: { id: string; hasChildren: boolean }[] = [];
+  for (const id of targetIds) {
+    const feature = featureMap.get(id);
+    if (!feature) {
+      return { valid: false, error: `結合対象の地物が見つかりません: ${id}` };
+    }
+    if (feature.featureType !== 'Polygon') {
+      return { valid: false, error: '結合できるのは面情報のみです' };
+    }
+    const anchor = feature.getActiveAnchor(time);
+    if (!anchor) {
+      return { valid: false, error: `地物「${id}」は指定時刻に存在しません` };
+    }
+    // §6.6.8 line 611: childIds のみでリーフ判定する経路（下記 hasChildren）への防御的
+    // shape 存在確認。「shape なし・childIds 空」の不正不変条件 Polygon（有効世界では
+    // ロード時 validateShapePresence で拒否され存在しないが、シリアライズ層を通らない
+    // 経路への保険）を弾き、Command 側の shape 型チェックと対称化する（§6.6.1）。
+    // コンテナ（shape なし・childIds 非空）は下の hasChildren チェックで弾く。
+    if (!anchor.shape && anchor.placement.childIds.length === 0) {
+      return { valid: false, error: `地物「${id}」は結合可能な形状を持ちません` };
+    }
+    targets.push({ id, hasChildren: anchor.placement.childIds.length > 0 });
+  }
+
+  return validateMerge(targets, (id) => {
+    const feature = featureMap.get(id);
+    return feature ? getAncestors(feature, allFeatures, time).map((ancestor) => ancestor.id) : [];
+  });
 }
 
 /**

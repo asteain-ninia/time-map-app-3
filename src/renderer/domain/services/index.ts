@@ -130,6 +130,7 @@ export type { PolygonRingDraft } from './PolygonShapeService';
 
 export {
   validateMerge,
+  validateMergeFeatures,
   mergePolygons,
   validateTransfer,
   buildAnnexation,

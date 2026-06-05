@@ -113,6 +113,7 @@
     validatePolygonOrThrow,
   } from '@application/polygonValidation';
   import { resolvePolygonShapePolygons } from '@domain/services/PolygonShapeService';
+  import { validateMergeFeatures } from '@domain/services/MergeService';
   import { createDefaultPolygonStyle } from '@infrastructure/StyleResolver';
   import {
     wrapLongitudeNearReference,
@@ -1287,14 +1288,35 @@
   function addMergeTarget(featureId: string): void {
     if (mergeTargetIds.includes(featureId)) {
       mergeTargetIds = mergeTargetIds.filter(id => id !== featureId);
-    } else {
-      mergeTargetIds = [...mergeTargetIds, featureId];
+      validationMessage = '';
+      return;
     }
+    const prospective = [...mergeTargetIds, featureId];
+    // 選択時のリアルタイム判定（開発ガイド §6.6.3 line 584 の「操作開始前」検証）。
+    // 確定前（MergeFeatureCommand）と同一の validateMergeFeatures を共有し、判定経路の
+    // ドリフトを防ぐ（§6.6.1）。集約地物の選択や上位・下位関係の同時選択を拒否する。
+    if (currentTime && prospective.length >= 2) {
+      const validation = validateMergeFeatures(prospective, features, currentTime);
+      if (!validation.valid) {
+        validationMessage = validation.error ?? '結合対象に追加できません';
+        return;
+      }
+    }
+    validationMessage = '';
+    mergeTargetIds = prospective;
   }
 
   /** 結合モーダルを表示 */
   function onStartMerge(): void {
-    if (mergeTargetIds.length < 2) return;
+    if (mergeTargetIds.length < 2 || !currentTime) return;
+    // 操作開始前の検証（開発ガイド §6.6.3 line 584）。時刻変更などで選択中の対象が
+    // 無効化（非有効・非 Polygon・消失）したケースを、確定前（Command）と同一サービスで弾く。
+    const validation = validateMergeFeatures(mergeTargetIds, features, currentTime);
+    if (!validation.valid) {
+      validationMessage = validation.error ?? '結合対象が不正です';
+      return;
+    }
+    validationMessage = '';
     showMergeModal = true;
   }
 
@@ -1330,6 +1352,9 @@
 
   function clearMergeTargets(): void {
     mergeTargetIds = [];
+    // 結合選択のリセットは「明示的な閉じる/置換操作」（§6.2.21）に該当するため、
+    // addMergeTarget が出した結合拒否メッセージもここで消す。
+    validationMessage = '';
   }
 
   // --- 所属変更 ---

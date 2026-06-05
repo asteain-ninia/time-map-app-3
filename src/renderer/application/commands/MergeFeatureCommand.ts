@@ -16,7 +16,7 @@ import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { RingCoords } from '@domain/services/GeometryService';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { Ring } from '@domain/value-objects/Ring';
-import { mergePolygons, validateMerge } from '@domain/services/MergeService';
+import { mergePolygons, validateMergeFeatures } from '@domain/services/MergeService';
 import {
   buildPolygonRingDrafts,
   rebuildTerritoryHierarchy,
@@ -79,7 +79,6 @@ export class MergeFeatureCommand implements UndoableCommand {
 
     // ポリゴンの座標を収集
     const polygonRingsList: RingCoords[][] = [];
-    const validationTargets: Array<{ id: string; layerId: string; hasChildren: boolean }> = [];
     for (const fid of uniqueFeatureIds) {
       const feature = features.get(fid);
       if (!feature) {
@@ -89,16 +88,13 @@ export class MergeFeatureCommand implements UndoableCommand {
       if (!anchor || !anchor.shape || anchor.shape.type !== 'Polygon') {
         throw new Error('結合できるのは現在時刻で有効な面情報のみです');
       }
-      validationTargets.push({
-        id: feature.id,
-        layerId: 'default',
-        hasChildren: anchor.placement.childIds.length > 0,
-      });
 
       polygonRingsList.push(...resolvePolygonShapePolygons(anchor.shape, vertices));
     }
 
-    const validation = validateMerge(validationTargets);
+    // 結合事前条件の検証（件数・上位下位関係・末端地物のみ）。
+    // 選択時の addMergeTarget と同一サービスを共有して判定経路のドリフトを防ぐ（§6.6.1）。
+    const validation = validateMergeFeatures(uniqueFeatureIds, [...features.values()], currentTime);
     if (!validation.valid) {
       throw new Error(validation.error ?? '結合対象が不正です');
     }

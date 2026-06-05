@@ -93,23 +93,45 @@ export function getRootFeatures(
 
 /**
  * 地物の全子孫を再帰的に取得する（深さ優先）
+ *
+ * §6.4.14: 親子グラフを辿る再帰サービスは visited セットで cycle guard を入れる。
+ * 壊れたデータ（循環親子参照）でもスタックオーバーフローせず有限結果を返す
+ * （`validateJsonWorld` の循環検出を通らない手作りフィクスチャ等への二重防御）。
  */
 export function getDescendants(
   feature: Feature,
   allFeatures: readonly Feature[],
   time: TimePoint
 ): Feature[] {
+  return getDescendantsInternal(feature, allFeatures, time, new Set([feature.id]));
+}
+
+/**
+ * `getDescendants` の内部実装。visited セットで子方向連鎖の循環を遮断する（§6.4.14）。
+ */
+function getDescendantsInternal(
+  feature: Feature,
+  allFeatures: readonly Feature[],
+  time: TimePoint,
+  visited: ReadonlySet<string>
+): Feature[] {
   const result: Feature[] = [];
-  const children = getChildFeatures(feature, allFeatures, time);
-  for (const child of children) {
+  for (const child of getChildFeatures(feature, allFeatures, time)) {
+    if (visited.has(child.id)) continue;
     result.push(child);
-    result.push(...getDescendants(child, allFeatures, time));
+    result.push(
+      ...getDescendantsInternal(child, allFeatures, time, new Set(visited).add(child.id))
+    );
   }
   return result;
 }
 
 /**
  * 地物の全祖先を取得する（直接の親から順に上位へ）
+ *
+ * §6.4.14: 親子グラフを辿るので visited セットで cycle guard を入れる。
+ * 壊れたデータ（循環親子参照）でも無限ループせず有限結果を返す
+ * （`validateJsonWorld` の循環検出を通らない手作りフィクスチャ等への二重防御）。
  */
 export function getAncestors(
   feature: Feature,
@@ -117,10 +139,12 @@ export function getAncestors(
   time: TimePoint
 ): Feature[] {
   const result: Feature[] = [];
+  const visited = new Set<string>([feature.id]);
   let current: Feature | undefined = feature;
   while (current) {
     const parent = getParentFeature(current, allFeatures, time);
-    if (!parent) break;
+    if (!parent || visited.has(parent.id)) break;
+    visited.add(parent.id);
     result.push(parent);
     current = parent;
   }

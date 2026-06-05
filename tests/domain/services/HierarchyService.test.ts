@@ -175,6 +175,36 @@ describe('HierarchyService', () => {
     });
   });
 
+  describe('cycle guard（§6.4.14）', () => {
+    // 壊れたデータ（循環親子参照）でも無限ループ／スタックオーバーフローせず
+    // 有限結果を返すことを確認する（手作りフィクスチャへの二重防御）。
+    it('getAncestors: 2 要素の循環 parentId（A→B→A）でも有限結果', () => {
+      const a = makePolygonFeature('A', 'B', []);
+      const b = makePolygonFeature('B', 'A', []);
+      const ancestors = getAncestors(a, [a, b], time);
+      // B を 1 度辿った後、A は visited 済みで break。無限ループしない。
+      expect(ancestors.map((f) => f.id)).toEqual(['B']);
+    });
+
+    it('getAncestors: 自己親（A→A）でも有限結果（空）', () => {
+      const a = makePolygonFeature('A', 'A', []);
+      expect(getAncestors(a, [a], time)).toHaveLength(0);
+    });
+
+    it('getDescendants: 2 要素の循環 childIds（A→B→A）でも有限結果', () => {
+      const a = makePolygonFeature('A', null, ['B']);
+      const b = makePolygonFeature('B', 'A', ['A']);
+      const descendants = getDescendants(a, [a, b], time);
+      // B を辿った先で A は visited 済みのため skip。無限ループしない。
+      expect(descendants.map((f) => f.id)).toEqual(['B']);
+    });
+
+    it('getDescendants: 自己子（A→A）でも有限結果（空）', () => {
+      const a = makePolygonFeature('A', null, ['A']);
+      expect(getDescendants(a, [a], time)).toHaveLength(0);
+    });
+  });
+
   describe('deriveParentShape', () => {
     const vertices = makeVertices([
       ['v1', 0, 0], ['v2', 10, 0], ['v3', 10, 10],

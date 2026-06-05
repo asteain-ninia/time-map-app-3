@@ -5,8 +5,10 @@ import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
 import { VertexEditUseCase } from '@application/VertexEditUseCase';
 import { Vertex } from '@domain/entities/Vertex';
+import { Feature } from '@domain/entities/Feature';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { Ring } from '@domain/value-objects/Ring';
+import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { validatePolygonRingHierarchy } from '@domain/services/RingEditService';
 
@@ -317,11 +319,49 @@ describe('MergeFeatureCommand', () => {
   });
 
   // Phase 2-D-5 でレイヤー編集 UI 撤去 / Phase 2-D-6-3b で AnchorPlacement.layerId 撤去済み。
-  // 「結合対象の事前条件」は Phase 4（操作 UseCase / Command 再設計）で
-  // 「結合対象が互いに上位下位関係にないこと」（要件定義書 §2.1 / 現状.md §6.4 line 146）へ
-  // 改訂予定。それまでは MergeFeatureCommand 内で validationTargets に固定値 'default' を渡し、
-  // validateMerge の同一レイヤーチェックを実質無効化している。
-  // 旧「異なるレイヤーのポリゴン結合は拒否」テストは仕様廃止に合わせて撤去。
+  // Phase 4-5 で MergeService.validateMerge から旧「同一レイヤー」前提を撤廃し、
+  // 「結合対象が互いに上位下位関係にないこと」（要件定義書 §2.1 line 351-354 / 現状.md §6.4 line 146）の
+  // ancestor-descendant 検査へ移行した。判定は validateMergeFeatures が選択時（App.svelte
+  // addMergeTarget）と確定前（本コマンド）で共有する（開発ガイド §6.6.1 / §6.6.3 line 584）。
+  // 旧「異なるレイヤーのポリゴン結合は拒否」テストは仕様廃止に合わせて撤去済み。
+
+  it('上位・下位関係にある地物の同時選択を拒否する（要件定義書 §2.1 line 351-354）', () => {
+    // 移行期間ノード（shape あり + childIds 非空）の parent と、その子 child。
+    // 双方 Polygon shape を持つため形状チェックは通過し、上位・下位関係で拒否される。
+    const vertices = new Map<string, Vertex>([
+      ['p1', new Vertex('p1', new Coordinate(0, 0))],
+      ['p2', new Vertex('p2', new Coordinate(10, 0))],
+      ['p3', new Vertex('p3', new Coordinate(10, 10))],
+      ['c1', new Vertex('c1', new Coordinate(0, 0))],
+      ['c2', new Vertex('c2', new Coordinate(5, 0))],
+      ['c3', new Vertex('c3', new Coordinate(5, 5))],
+    ]);
+    const parent = new Feature('parent', 'Polygon', [
+      new FeatureAnchor(
+        'parent-a',
+        { start: time },
+        { name: 'parent', description: '' },
+        { type: 'Polygon', rings: [new Ring('parent-r', ['p1', 'p2', 'p3'], 'territory', null)] },
+        createAnchorPlacement(null, ['child'])
+      ),
+    ]);
+    const child = new Feature('child', 'Polygon', [
+      new FeatureAnchor(
+        'child-a',
+        { start: time },
+        { name: 'child', description: '' },
+        { type: 'Polygon', rings: [new Ring('child-r', ['c1', 'c2', 'c3'], 'territory', null)] },
+        createAnchorPlacement('parent', [])
+      ),
+    ]);
+    addFeature.restore(new Map([['parent', parent], ['child', child]]), vertices);
+
+    const cmd = new MergeFeatureCommand(addFeature, {
+      featureIds: ['parent', 'child'],
+      currentTime: time,
+    });
+    expect(() => cmd.execute()).toThrow('同時に結合対象にできません');
+  });
 
   function getPolygonVertexIds(featureId: string): readonly string[] {
     const shape = addFeature.getFeatureById(featureId)?.getActiveAnchor(time)?.shape;

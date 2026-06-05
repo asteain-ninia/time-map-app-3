@@ -1,12 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateMerge,
+  validateMergeFeatures,
   mergePolygons,
   validateTransfer,
   buildAnnexation,
   buildCession,
 } from '@domain/services/MergeService';
 import type { RingCoords } from '@domain/services/GeometryService';
+import { Feature } from '@domain/entities/Feature';
+import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
+import type { AnchorPlacement } from '@domain/value-objects/FeatureAnchor';
+import { Ring } from '@domain/value-objects/Ring';
+import { TimePoint } from '@domain/value-objects/TimePoint';
+
+const noAncestors = () => [] as string[];
 
 /** 正方形ポリゴン */
 function makeSquare(x: number, y: number, size: number): RingCoords[] {
@@ -18,49 +26,207 @@ function makeSquare(x: number, y: number, size: number): RingCoords[] {
   ]];
 }
 
+const mergeTime = new TimePoint(2000);
+
+/** 末端地物（shape あり / 下位領域なし） */
+function makeLeaf(id: string, parentId: string | null = null): Feature {
+  const placement: AnchorPlacement = createAnchorPlacement(parentId, []);
+  return new Feature(id, 'Polygon', [
+    new FeatureAnchor(
+      `${id}-a1`,
+      { start: mergeTime },
+      { name: id, description: '' },
+      { type: 'Polygon', rings: [new Ring(`${id}-ring`, ['v1', 'v2', 'v3'], 'territory', null)] },
+      placement
+    ),
+  ]);
+}
+
+/** 集約地物（shape なし / 下位領域あり） */
+function makeContainer(id: string, childIds: readonly string[], parentId: string | null = null): Feature {
+  return new Feature(id, 'Polygon', [
+    new FeatureAnchor(
+      `${id}-a1`,
+      { start: mergeTime },
+      { name: id, description: '' },
+      undefined,
+      createAnchorPlacement(parentId, childIds)
+    ),
+  ]);
+}
+
 describe('MergeService', () => {
   describe('validateMerge', () => {
     it('2つ以上の地物で有効', () => {
       const result = validateMerge([
-        { id: 'f1', layerId: 'l1', hasChildren: false },
-        { id: 'f2', layerId: 'l1', hasChildren: false },
-      ]);
+        { id: 'f1', hasChildren: false },
+        { id: 'f2', hasChildren: false },
+      ], noAncestors);
       expect(result.valid).toBe(true);
     });
 
     it('1つの地物は無効', () => {
       const result = validateMerge([
-        { id: 'f1', layerId: 'l1', hasChildren: false },
-      ]);
+        { id: 'f1', hasChildren: false },
+      ], noAncestors);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('2つ以上');
     });
 
-    it('異なるレイヤーの地物は無効', () => {
-      const result = validateMerge([
-        { id: 'f1', layerId: 'l1', hasChildren: false },
-        { id: 'f2', layerId: 'l2', hasChildren: false },
-      ]);
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('同じレイヤー');
-    });
-
     it('下位領域を持つ地物は無効', () => {
       const result = validateMerge([
-        { id: 'f1', layerId: 'l1', hasChildren: false },
-        { id: 'f2', layerId: 'l1', hasChildren: true },
-      ]);
+        { id: 'f1', hasChildren: false },
+        { id: 'f2', hasChildren: true },
+      ], noAncestors);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('下位領域');
     });
 
     it('3つ以上の地物でも有効', () => {
       const result = validateMerge([
-        { id: 'f1', layerId: 'l1', hasChildren: false },
-        { id: 'f2', layerId: 'l1', hasChildren: false },
-        { id: 'f3', layerId: 'l1', hasChildren: false },
-      ]);
+        { id: 'f1', hasChildren: false },
+        { id: 'f2', hasChildren: false },
+        { id: 'f3', hasChildren: false },
+      ], noAncestors);
       expect(result.valid).toBe(true);
+    });
+
+    it('同一地物の重複指定は無効（§6.6.3 line 584「対象が同一地物ではないこと」）', () => {
+      const result = validateMerge([
+        { id: 'a', hasChildren: false },
+        { id: 'a', hasChildren: false },
+      ], noAncestors);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('重複');
+    });
+
+    it('上位・下位関係にある地物の同時選択は無効（要件定義書 §2.1 line 351-354）', () => {
+      // child の祖先連鎖に parent が含まれる → 同時選択を拒否
+      const getAncestors = (id: string) => (id === 'child' ? ['parent', 'root'] : []);
+      const result = validateMerge([
+        { id: 'parent', hasChildren: true },
+        { id: 'child', hasChildren: false },
+      ], getAncestors);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('同時に結合対象にできません');
+    });
+
+    it('間接的な上位・下位関係（祖父-孫）でも無効', () => {
+      const getAncestors = (id: string) => (id === 'grandchild' ? ['parent', 'grandparent'] : []);
+      const result = validateMerge([
+        { id: 'grandparent', hasChildren: true },
+        { id: 'grandchild', hasChildren: false },
+      ], getAncestors);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('同時に結合対象にできません');
+    });
+
+    it('上位・下位関係にない兄弟同士は有効', () => {
+      // 双方に共通の親 root がいるが、root は選択集合に含まれない
+      const getAncestors = () => ['root'];
+      const result = validateMerge([
+        { id: 'siblingA', hasChildren: false },
+        { id: 'siblingB', hasChildren: false },
+      ], getAncestors);
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('validateMergeFeatures（Feature ベースの共有検証）', () => {
+    it('独立した2つの末端地物は有効', () => {
+      const a = makeLeaf('a');
+      const b = makeLeaf('b');
+      const result = validateMergeFeatures(['a', 'b'], [a, b], mergeTime);
+      expect(result.valid).toBe(true);
+    });
+
+    it('集約地物とその下位領域の同時選択は無効（上位・下位関係）', () => {
+      const child = makeLeaf('child', 'container');
+      const container = makeContainer('container', ['child']);
+      const result = validateMergeFeatures(['container', 'child'], [container, child], mergeTime);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('同時に結合対象にできません');
+    });
+
+    it('無関係な集約地物の選択は下位領域チェックで無効', () => {
+      const leaf = makeLeaf('leaf');
+      const grandchild = makeLeaf('grandchild', 'container');
+      const container = makeContainer('container', ['grandchild']);
+      // leaf と container（grandchild の親）は上位・下位関係にない → 下位領域チェックで拒否
+      const result = validateMergeFeatures(['leaf', 'container'], [leaf, container, grandchild], mergeTime);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('下位領域');
+    });
+
+    it('1つだけの選択は件数チェックで無効', () => {
+      const a = makeLeaf('a');
+      const result = validateMergeFeatures(['a'], [a], mergeTime);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('2つ以上');
+    });
+
+    it('存在しない地物IDは無効（§6.6.3 line 584 共通事前条件）', () => {
+      const a = makeLeaf('a');
+      const result = validateMergeFeatures(['a', 'ghost'], [a], mergeTime);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('見つかりません');
+    });
+
+    it('指定時刻に有効錨がない地物は無効（時間上有効であること / 時刻変更で古い選択が残るケース）', () => {
+      const a = makeLeaf('a');
+      // b は mergeTime(2000) より後にしか存在しない → 2000 では非有効
+      const b = new Feature('b', 'Polygon', [
+        new FeatureAnchor(
+          'b-a1',
+          { start: new TimePoint(5000) },
+          { name: 'b', description: '' },
+          { type: 'Polygon', rings: [new Ring('b-ring', ['v1', 'v2', 'v3'], 'territory', null)] },
+          createAnchorPlacement(null, [])
+        ),
+      ]);
+      const result = validateMergeFeatures(['a', 'b'], [a, b], mergeTime);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('指定時刻');
+    });
+
+    it('面情報以外（点情報）は無効（面地物であること）', () => {
+      const a = makeLeaf('a');
+      const point = new Feature('p', 'Point', [
+        new FeatureAnchor(
+          'p-a1',
+          { start: mergeTime },
+          { name: 'p', description: '' },
+          { type: 'Point', vertexId: 'v1' },
+          createAnchorPlacement(null, [])
+        ),
+      ]);
+      const result = validateMergeFeatures(['a', 'p'], [a, point], mergeTime);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('面情報');
+    });
+
+    it('同一地物の重複指定は無効（対象が同一地物ではないこと）', () => {
+      const a = makeLeaf('a');
+      const result = validateMergeFeatures(['a', 'a'], [a], mergeTime);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('重複');
+    });
+
+    it('「shape なし・childIds 空」の不正不変条件 Polygon は無効（§6.6.8 line 611 防御的 shape 確認 / Command と対称）', () => {
+      const a = makeLeaf('a');
+      // 不正不変条件: featureType は Polygon だが shape なし・childIds 空（コンテナでも末端でもない）
+      const malformed = new Feature('m', 'Polygon', [
+        new FeatureAnchor(
+          'm-a1',
+          { start: mergeTime },
+          { name: 'm', description: '' },
+          undefined,
+          createAnchorPlacement(null, [])
+        ),
+      ]);
+      const result = validateMergeFeatures(['a', 'm'], [a, malformed], mergeTime);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('形状');
     });
   });
 
