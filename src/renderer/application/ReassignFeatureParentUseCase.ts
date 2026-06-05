@@ -35,15 +35,34 @@ export class FeatureParentTransferError extends Error {
   }
 }
 
+/**
+ * 新規上位領域作成サブフローの指定（要件定義書 §2.1 line 290-293）。
+ * 指定時は in-memory で集約地物（shape なしコンテナ）を新規生成し、
+ * 対象地物をその下位領域として一括帰属させる（連邦化）。
+ * Phase 4-1 では新規最上位コンテナ（`parentId === null` / `isTopLevel === true`）のみ対応。
+ * 中間階層挿入（自治化: 新規親が既存親を持つ）は後続サブフェーズ。
+ */
+export interface CreateNewParentSpec {
+  readonly name: string;
+  readonly kind?: string;
+}
+
 export interface ReassignFeatureParentParams {
   readonly featureIds: readonly string[];
   readonly newParentId: string | null;
   readonly effectiveTime: TimePoint;
   readonly transferType?: TransferType;
+  /**
+   * 指定時、新規上位領域（集約地物）を作成して対象地物をその下位領域へ帰属させる。
+   * このとき `newParentId` は無視され、生成されたコンテナの ID が新親になる。
+   */
+  readonly createNewParent?: CreateNewParentSpec;
 }
 
 export interface ReassignFeatureParentResult {
   readonly changedFeatureIds: readonly string[];
+  /** 新規上位領域作成サブフローで生成したコンテナの ID（未生成なら null） */
+  readonly createdParentId: string | null;
 }
 
 export class ReassignFeatureParentUseCase {
@@ -74,12 +93,36 @@ export class ReassignFeatureParentUseCase {
     const transferType = params.transferType ?? 'reassign';
     const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
     const staged = new Map(features);
-    const allFeatures = [...staged.values()];
     const changedFeatureIds = new Set<string>();
     const usedAnchorIds = collectUsedAnchorIds(staged);
     const prunedParentQueue: CascadingParentSync[] = [];
 
-    this.validateRequest(featureIds, params.newParentId, params.effectiveTime, allFeatures, transferType);
+    // 新規上位領域作成サブフロー（連邦化）: 対象地物を下位領域に持つ集約地物を
+    // in-memory に生成して staged へ挿入し、その ID を新親とする（要件定義書 §2.1 line 290-302）。
+    // childIds を生成時点で対象地物に充足することで「shape なし ⟹ childIds 非空」不変条件を満たす。
+    let newParentId = params.newParentId;
+    let createdParentId: string | null = null;
+    if (params.createNewParent) {
+      const container = this.featureUseCase.buildContainerFeature(
+        params.effectiveTime,
+        featureIds,
+        {
+          name: params.createNewParent.name,
+          description: '',
+          ...(params.createNewParent.kind !== undefined
+            ? { kind: params.createNewParent.kind }
+            : {}),
+        }
+      );
+      staged.set(container.id, container);
+      changedFeatureIds.add(container.id);
+      newParentId = container.id;
+      createdParentId = container.id;
+    }
+
+    const allFeatures = [...staged.values()];
+
+    this.validateRequest(featureIds, newParentId, params.effectiveTime, allFeatures, transferType);
 
     const oldParentIds = new Set<string>();
     for (const featureId of featureIds) {
@@ -96,7 +139,7 @@ export class ReassignFeatureParentUseCase {
         params.effectiveTime,
         usedAnchorIds,
         (placement) => createAnchorPlacement(
-          params.newParentId,
+          newParentId,
           placement.childIds
         )
       );
@@ -104,7 +147,7 @@ export class ReassignFeatureParentUseCase {
     }
 
     for (const oldParentId of oldParentIds) {
-      if (oldParentId === params.newParentId) continue;
+      if (oldParentId === newParentId) continue;
       const oldParent = staged.get(oldParentId);
       if (!oldParent) {
         throw new FeatureParentTransferError(`元の親地物 "${oldParentId}" が見つかりません`);
@@ -135,8 +178,8 @@ export class ReassignFeatureParentUseCase {
       }
     }
 
-    if (params.newParentId !== null) {
-      const newParent = staged.get(params.newParentId)!;
+    if (newParentId !== null) {
+      const newParent = staged.get(newParentId)!;
       const movedFeatures = featureIds.map((featureId) => staged.get(featureId)!);
       const updated = this.updateParentChildIdsFromTime(
         newParent,
@@ -145,6 +188,23 @@ export class ReassignFeatureParentUseCase {
         movedFeatures
       );
       this.stageFeature(staged, changedFeatureIds, newParent, updated);
+    }
+
+    // 新規コンテナ（shape なし）は子の存在終了で childIds が空化する区間を持ち得る
+    // （`updateParentChildIdsFromTime` の錨分割で末尾区間に発生）。これは不変条件
+    // 「shape なし ⟹ childIds 非空」を破る（開発ガイド §6.6.8 / Phase 2.5-E 申し送り:
+    // 生成だけでなく変異の各ステップで保証する）。空 childIds の shape なし錨を剪定し、
+    // 全錨が消えるなら下位領域全喪失としてコンテナを消滅させる（要件定義書 §2.1）。
+    if (createdParentId !== null) {
+      const container = staged.get(createdParentId);
+      if (container) {
+        const pruned = pruneEmptyContainerAnchors(container);
+        if (pruned === null) {
+          this.stageFeatureDeletion(staged, changedFeatureIds, container);
+        } else {
+          this.stageFeature(staged, changedFeatureIds, container, pruned);
+        }
+      }
     }
 
     this.cascadeParentCleanup(
@@ -173,7 +233,7 @@ export class ReassignFeatureParentUseCase {
     }
     this.cleanupDeletedFeatureArtifacts(deletedFeatures);
 
-    return { changedFeatureIds: [...changedFeatureIds] };
+    return { changedFeatureIds: [...changedFeatureIds], createdParentId };
   }
 
   private validateRequest(
@@ -564,6 +624,28 @@ function appendUnique(baseIds: readonly string[], idsToAdd: readonly string[]): 
     }
   }
   return result;
+}
+
+/**
+ * 集約地物（shape を持たない錨）で childIds が空になった区間を剪定する。
+ *
+ * 不変条件「shape なし ⟹ childIds 非空」（要件定義書 §4.1 / 開発ガイド §6.6.8）を
+ * 変異後に再保証する。新規コンテナは `{ start: effectiveTime }` の開区間として生成され、
+ * `updateParentChildIdsFromTime` の錨分割で「子を持たない区間」が「shape なし + childIds 空」
+ * になり得るため、その区間を落とす。落とす対象は末尾区間に限らない: 子が時間ギャップを持つ
+ * （いったん存在を終了し後で再開する）場合は中間の空区間も生じ、本関数は位置を問わず
+ * 全ての空 shape なし錨を剪定する（filter は anchor の位置に依存しない）。
+ *
+ * 全錨が消える場合は下位領域全喪失としてコンテナ消滅を表す null を返す
+ * （要件定義書 §2.1「集約地物が全ての下位領域を失った場合、自動的に消滅する」）。
+ */
+function pruneEmptyContainerAnchors(feature: Feature): Feature | null {
+  const anchors = feature.anchors.filter(
+    (anchor) => !(anchor.shape === undefined && anchor.placement.childIds.length === 0)
+  );
+  if (anchors.length === feature.anchors.length) return feature;
+  if (anchors.length === 0) return null;
+  return feature.withAnchors(anchors);
 }
 
 function samePlacement(a: AnchorPlacement, b: AnchorPlacement): boolean {

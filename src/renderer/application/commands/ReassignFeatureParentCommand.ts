@@ -10,7 +10,10 @@ import type { Vertex } from '@domain/entities/Vertex';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { TransferType } from '@domain/services/MergeService';
 import type { AddFeatureUseCase } from '../AddFeatureUseCase';
-import type { ReassignFeatureParentUseCase } from '../ReassignFeatureParentUseCase';
+import type {
+  CreateNewParentSpec,
+  ReassignFeatureParentUseCase,
+} from '../ReassignFeatureParentUseCase';
 import type { UndoableCommand } from '../UndoRedoManager';
 import { eventBus } from '../EventBus';
 
@@ -19,6 +22,11 @@ export interface ReassignFeatureParentCommandParams {
   readonly newParentId: string | null;
   readonly effectiveTime: TimePoint;
   readonly transferType?: TransferType;
+  /**
+   * 指定時、新規上位領域（集約地物）を作成して対象地物を一括帰属させる（連邦化）。
+   * 生成したコンテナの除去は beforeState スナップショット復元で自動的に取り消される。
+   */
+  readonly createNewParent?: CreateNewParentSpec;
 }
 
 export class ReassignFeatureParentCommand implements UndoableCommand {
@@ -33,9 +41,11 @@ export class ReassignFeatureParentCommand implements UndoableCommand {
     private readonly featureUseCase: AddFeatureUseCase,
     private readonly params: ReassignFeatureParentCommandParams
   ) {
-    this.description = params.transferType === 'annex'
-      ? '下位領域を一括所属変更'
-      : '地物の所属を変更';
+    this.description = params.createNewParent
+      ? '新規上位領域を作成して所属変更'
+      : params.transferType === 'annex'
+        ? '下位領域を一括所属変更'
+        : '地物の所属を変更';
   }
 
   execute(): void {
@@ -51,6 +61,7 @@ export class ReassignFeatureParentCommand implements UndoableCommand {
       newParentId: this.params.newParentId,
       effectiveTime: this.params.effectiveTime,
       transferType: this.params.transferType,
+      createNewParent: this.params.createNewParent,
     });
 
     this.changedFeatureIds = new Set(result.changedFeatureIds);

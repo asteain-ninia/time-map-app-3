@@ -185,6 +185,41 @@ export class AddFeatureUseCase {
     return this.createFeature('Polygon', shape, currentTime, name, style ? { style } : undefined);
   }
 
+  /**
+   * 集約地物（コンテナ: shape なし Polygon）を構築する。
+   *
+   * 要件定義書 §2.1 line 298「新規作成された上位領域は、直下の下位領域から
+   * 導出される形状を持つ集約地物として記録される」（= shape を保持しない）。
+   * 新規上位領域作成サブフロー（連邦化・自治化）で in-memory にコンテナを生成する。
+   *
+   * 不変条件「shape なし ⟹ childIds 非空」（現状.md §6.10 Phase 4-1 申し送り /
+   * 開発ガイド §6.6.8）を満たすため、`childIds` が空のときは構築を拒否する。
+   *
+   * 登録（`this.features` への set / イベント発行）はしない。呼び出し側が
+   * staging を介して整合性検証後に commit することで、検証失敗時の
+   * リーク（未参照コンテナの残置）を防ぐ（atomic 性の確保）。ID 採番のみ進める。
+   */
+  buildContainerFeature(
+    currentTime: TimePoint,
+    childIds: readonly string[],
+    property: AnchorProperty
+  ): Feature {
+    if (childIds.length === 0) {
+      throw new Error('集約地物（コンテナ）は下位領域を持たずに構築できません');
+    }
+    const featureId = `f-${this.nextFeatureNum++}`;
+    const anchorId = `a-${this.nextAnchorNum++}`;
+    const placement: AnchorPlacement = createAnchorPlacement(null, [...childIds]);
+    const anchor = new FeatureAnchor(
+      anchorId,
+      { start: currentTime },
+      property,
+      undefined,
+      placement
+    );
+    return new Feature(featureId, 'Polygon', [anchor]);
+  }
+
   /** 頂点を生成して登録する */
   private createVertex(coord: Coordinate): Vertex {
     const id = `v-${this.nextVertexNum++}`;

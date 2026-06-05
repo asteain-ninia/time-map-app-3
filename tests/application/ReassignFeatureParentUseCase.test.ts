@@ -21,8 +21,11 @@ import { Ring } from '@domain/value-objects/Ring';
 const t1000 = new TimePoint(1000);
 const t1400 = new TimePoint(1400);
 const t1500 = new TimePoint(1500);
+const t1600 = new TimePoint(1600);
 const t2000 = new TimePoint(2000);
+const t2200 = new TimePoint(2200);
 const t2500 = new TimePoint(2500);
+const t2600 = new TimePoint(2600);
 
 function makeAnchor(
   id: string,
@@ -579,5 +582,244 @@ describe('ReassignFeatureParentUseCase', () => {
     expect(addFeature.getFeatureById('old-parent')).toBeUndefined();
     expect(addFeature.getVertices().has('op-1')).toBe(false);
     expect(addFeature.getSharedVertexGroups().has('sg-1')).toBe(false);
+  });
+
+  // ── 新規上位領域作成サブフロー（連邦化） ──────────────────────────
+  // 要件定義書 §2.1 line 290-302 / 現状.md §6.5 アメリカ合衆国爆誕シナリオ
+  describe('新規上位領域作成サブフロー（連邦化）', () => {
+    function makeTopLevelLeaf(id: string): Feature {
+      return makeFeature(id, [makeAnchor(`${id}-a1`, t1000, placement(null, []))]);
+    }
+
+    function makeTopLevelLeafWithEnd(id: string, end: TimePoint): Feature {
+      return makeFeature(id, [makeAnchor(`${id}-a1`, t1000, placement(null, []), end)]);
+    }
+
+    /** 集約地物（shape なし）の全錨が「childIds 非空」であることを確認する不変条件アサーション */
+    function expectContainerInvariant(container: Feature): void {
+      for (const anchor of container.anchors) {
+        if (anchor.shape === undefined) {
+          expect(anchor.placement.childIds.length).toBeGreaterThan(0);
+        }
+      }
+    }
+
+    it('全対象が同一終了時刻でも、コンテナに shape なし・childIds 空の錨を残さない（変異後の不変条件保証）', () => {
+      // 回帰: 子の存在終了で錨分割の末尾区間が childIds 空になり、shape なしと併せて
+      // 「shape なし ⟹ childIds 非空」を破る失敗モード（§6.6.8 / Phase 2.5-E 申し送り）。
+      const n1 = makeTopLevelLeafWithEnd('n1', t2000);
+      const n2 = makeTopLevelLeafWithEnd('n2', t2000);
+      addFeature.restore(new Map([[n1.id, n1], [n2.id, n2]]), new Map());
+
+      transfer.reassignFeatureParent({
+        featureIds: ['n1', 'n2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '合衆国' },
+      });
+
+      const container = addFeature.getFeatureById('f-1')!;
+      expectContainerInvariant(container);
+      // 有効区間は childIds 充足、子の存在終了後はコンテナ自体が消滅
+      expect(container.getActiveAnchor(t1600)?.placement.childIds.sort()).toEqual(['n1', 'n2']);
+      expect(container.getActiveAnchor(t2500)).toBeUndefined();
+    });
+
+    it('単一対象＋終了時刻ありでも childIds 空区間を残さない', () => {
+      const n1 = makeTopLevelLeafWithEnd('n1', t2000);
+      addFeature.restore(new Map([[n1.id, n1]]), new Map());
+
+      transfer.reassignFeatureParent({
+        featureIds: ['n1'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '保護領' },
+      });
+
+      const container = addFeature.getFeatureById('f-1')!;
+      expectContainerInvariant(container);
+      expect(container.getActiveAnchor(t1600)?.placement.childIds).toEqual(['n1']);
+      expect(container.getActiveAnchor(t2500)).toBeUndefined();
+    });
+
+    it('対象の終了時刻が異なる場合、中間区間は活性な子のみ残し、末尾の空区間のみ剪定する', () => {
+      const n1 = makeTopLevelLeafWithEnd('n1', t2000);
+      const n2 = makeTopLevelLeafWithEnd('n2', t2500);
+      addFeature.restore(new Map([[n1.id, n1], [n2.id, n2]]), new Map());
+
+      transfer.reassignFeatureParent({
+        featureIds: ['n1', 'n2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '合衆国' },
+      });
+
+      const container = addFeature.getFeatureById('f-1')!;
+      expectContainerInvariant(container);
+      expect(container.getActiveAnchor(t1600)?.placement.childIds.sort()).toEqual(['n1', 'n2']);
+      expect(container.getActiveAnchor(t2200)?.placement.childIds).toEqual(['n2']); // n1 終了済
+      expect(container.getActiveAnchor(t2600)).toBeUndefined(); // 両方終了
+    });
+
+    it('既存親（shape なしコンテナ）を持つ有限終了リーフの連邦化で、旧親 prune と新コンテナ prune が両立する', () => {
+      // 旧親 prune（removeEmptyParentRangesFromTime）と新コンテナ prune（pruneEmptyContainerAnchors）が
+      // 同時に走る最高リスクの組合せの回帰（Workflow 敵対的検証の test-gap 指摘）。
+      // 旧親 oldc は shape なしコンテナ [t1000,∞) childIds=[child]、child は有限終了リーフ [t1000,t2000)。
+      const oldc = makeFeature('oldc', [
+        new FeatureAnchor('oldc-a1', { start: t1000 }, { name: 'oldc', description: '' }, undefined, placement(null, ['child'])),
+      ]);
+      const child = makeFeature('child', [makeAnchor('child-a1', t1000, placement('oldc'), t2000)]);
+      addFeature.restore(new Map([[oldc.id, oldc], [child.id, child]]), new Map());
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['child'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '連邦' },
+      });
+
+      // child は t1500 未満は旧親、t1500 以降は新コンテナへ
+      const childFeature = addFeature.getFeatureById('child')!;
+      expect(childFeature.getActiveAnchor(t1400)?.placement.parentId).toBe('oldc');
+      expect(childFeature.getActiveAnchor(t1600)?.placement.parentId).toBe(result.createdParentId);
+
+      // 旧親コンテナは唯一の子を t1500 で失い、[t1500,∞) は剪定 → [t1000,t1500) のみ存続（不変条件維持）
+      const oldcFeature = addFeature.getFeatureById('oldc')!;
+      expect(oldcFeature.getActiveAnchor(t1400)?.placement.childIds).toEqual(['child']);
+      expect(oldcFeature.getActiveAnchor(t1600)).toBeUndefined();
+      expectContainerInvariant(oldcFeature);
+
+      // 新コンテナは [t1500,t2000) childIds=[child] のみ、shape なし空錨なし、子終了後は消滅
+      const container = addFeature.getFeatureById(result.createdParentId!)!;
+      expectContainerInvariant(container);
+      expect(container.getActiveAnchor(t1600)?.placement.childIds).toEqual(['child']);
+      expect(container.getActiveAnchor(t2500)).toBeUndefined();
+    });
+
+    it('複数の最上位末端地物を新規最上位コンテナの下位領域へ一括帰属させる', () => {
+      const n1 = makeTopLevelLeaf('n1');
+      const n2 = makeTopLevelLeaf('n2');
+      const n3 = makeTopLevelLeaf('n3');
+      addFeature.restore(new Map([
+        [n1.id, n1],
+        [n2.id, n2],
+        [n3.id, n3],
+      ]), new Map());
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['n1', 'n2', 'n3'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '合衆国', kind: '連邦' },
+      });
+
+      // 新規コンテナが生成される
+      expect(result.createdParentId).toBe('f-1');
+      const container = addFeature.getFeatureById('f-1')!;
+      expect(container).toBeDefined();
+
+      // コンテナは最上位（isTopLevel=true / parentId=null）かつ shape を持たない
+      const containerAnchor = container.getActiveAnchor(t1500)!;
+      expect(containerAnchor.placement.parentId).toBeNull();
+      expect(containerAnchor.placement.isTopLevel).toBe(true);
+      expect(containerAnchor.shape).toBeUndefined();
+      expect(containerAnchor.property.name).toBe('合衆国');
+      expect(containerAnchor.property.kind).toBe('連邦');
+
+      // childIds は対象3国を充足（不変条件: shape なし ⟹ childIds 非空）
+      expect(containerAnchor.placement.childIds.sort()).toEqual(['n1', 'n2', 'n3']);
+
+      // 13国（ここでは3国）は同一性を保ったまま位相のみ変化
+      for (const id of ['n1', 'n2', 'n3']) {
+        const anchor = addFeature.getFeatureById(id)!.getActiveAnchor(t1500)!;
+        expect(anchor.placement.parentId).toBe('f-1');
+        expect(anchor.placement.isTopLevel).toBe(false);
+      }
+      expect(result.changedFeatureIds).toContain('f-1');
+    });
+
+    it('効力時刻未満の錨は最上位のまま継続し、効力時刻で錨が分割される', () => {
+      // n1 は t1000 開始の最上位。t1500 で連邦化 → t1000-1500 は最上位、t1500- は子。
+      const n1 = makeTopLevelLeaf('n1');
+      const n2 = makeTopLevelLeaf('n2');
+      addFeature.restore(new Map([[n1.id, n1], [n2.id, n2]]), new Map());
+
+      transfer.reassignFeatureParent({
+        featureIds: ['n1', 'n2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '合衆国' },
+      });
+
+      const n1Feature = addFeature.getFeatureById('n1')!;
+      expect(n1Feature.getActiveAnchor(t1400)?.placement.parentId).toBeNull();
+      expect(n1Feature.getActiveAnchor(t1400)?.placement.isTopLevel).toBe(true);
+      expect(n1Feature.getActiveAnchor(t1500)?.placement.parentId).toBe('f-1');
+      expect(n1Feature.getActiveAnchor(t2000)?.placement.parentId).toBe('f-1');
+
+      // 効力時刻未満ではコンテナは未存在
+      expect(addFeature.getFeatureById('f-1')!.getActiveAnchor(t1400)).toBeUndefined();
+    });
+
+    it('kind 未指定なら property.kind は付与されない', () => {
+      const n1 = makeTopLevelLeaf('n1');
+      const n2 = makeTopLevelLeaf('n2');
+      addFeature.restore(new Map([[n1.id, n1], [n2.id, n2]]), new Map());
+
+      transfer.reassignFeatureParent({
+        featureIds: ['n1', 'n2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '連合' },
+      });
+
+      expect(addFeature.getFeatureById('f-1')!.getActiveAnchor(t1500)!.property.kind).toBeUndefined();
+    });
+
+    it('集約地物（下位領域を持つ）は連邦化対象に選べない（§2.1 line 313 末端地物限定）', () => {
+      const container = makeFeature('container', [
+        makeAnchor('container-a1', t1000, placement(null, ['leaf'])),
+      ]);
+      const leaf = makeFeature('leaf', [makeAnchor('leaf-a1', t1000, placement('container'))]);
+      addFeature.restore(new Map([
+        [container.id, container],
+        [leaf.id, leaf],
+      ]), new Map());
+
+      expect(() => transfer.reassignFeatureParent({
+        featureIds: ['container'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '帝国' },
+      })).toThrow(FeatureParentTransferError);
+    });
+
+    it('Undo で新規コンテナが消滅し対象地物が最上位へ戻り、Redo で再生成される', () => {
+      const n1 = makeTopLevelLeaf('n1');
+      const n2 = makeTopLevelLeaf('n2');
+      addFeature.restore(new Map([[n1.id, n1], [n2.id, n2]]), new Map());
+      const undoRedo = new UndoRedoManager();
+
+      undoRedo.execute(new ReassignFeatureParentCommand(transfer, addFeature, {
+        featureIds: ['n1', 'n2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '合衆国', kind: '連邦' },
+      }));
+      expect(addFeature.getFeatureById('f-1')).toBeDefined();
+      expect(addFeature.getFeatureById('n1')!.getActiveAnchor(t1500)?.placement.parentId).toBe('f-1');
+
+      undoRedo.undo();
+      // 新規コンテナは消滅し、対象地物は最上位へ復元される
+      expect(addFeature.getFeatureById('f-1')).toBeUndefined();
+      expect(addFeature.getFeatureById('n1')!.getActiveAnchor(t1500)?.placement.parentId).toBeNull();
+      expect(addFeature.getFeatureById('n1')!.getActiveAnchor(t1500)?.placement.isTopLevel).toBe(true);
+      expect(addFeature.getFeatureById('n2')!.getActiveAnchor(t1500)?.placement.isTopLevel).toBe(true);
+
+      undoRedo.redo();
+      expect(addFeature.getFeatureById('f-1')).toBeDefined();
+      expect(addFeature.getFeatureById('n1')!.getActiveAnchor(t1500)?.placement.parentId).toBe('f-1');
+      expect(addFeature.getFeatureById('f-1')!.getActiveAnchor(t1500)?.placement.childIds.sort()).toEqual(['n1', 'n2']);
+    });
   });
 });

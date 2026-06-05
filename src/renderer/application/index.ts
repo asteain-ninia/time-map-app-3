@@ -28,6 +28,7 @@ export {
   FeatureParentTransferError,
   type ReassignFeatureParentParams,
   type ReassignFeatureParentResult,
+  type CreateNewParentSpec,
 } from './ReassignFeatureParentUseCase';
 export type {
   EditMode,

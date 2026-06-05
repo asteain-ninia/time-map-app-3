@@ -345,4 +345,33 @@ describe('AddFeatureUseCase', () => {
       expect(vertex.y).toBe(90);
     });
   });
+
+  describe('buildContainerFeature', () => {
+    it('shape なし・最上位・childIds 充足の集約地物を構築する', () => {
+      useCase = new AddFeatureUseCase();
+      const container = useCase.buildContainerFeature(
+        time,
+        ['c1', 'c2'],
+        { name: '合衆国', description: '', kind: '連邦' }
+      );
+      expect(container.featureType).toBe('Polygon');
+      const anchor = container.anchors[0];
+      expect(anchor.shape).toBeUndefined();
+      expect(anchor.placement.parentId).toBeNull();
+      expect(anchor.placement.isTopLevel).toBe(true);
+      expect(anchor.placement.childIds).toEqual(['c1', 'c2']);
+      expect(anchor.property.kind).toBe('連邦');
+    });
+
+    it('構築しただけでは features マップへ登録しない（atomic 性）', () => {
+      useCase = new AddFeatureUseCase();
+      const container = useCase.buildContainerFeature(time, ['c1'], { name: 'X', description: '' });
+      expect(useCase.getFeatureById(container.id)).toBeUndefined();
+    });
+
+    it('childIds が空なら不変条件違反として拒否する（shape なし ⟹ childIds 非空）', () => {
+      useCase = new AddFeatureUseCase();
+      expect(() => useCase.buildContainerFeature(time, [], { name: 'X', description: '' })).toThrow();
+    });
+  });
 });
