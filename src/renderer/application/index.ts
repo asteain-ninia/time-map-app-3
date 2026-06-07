@@ -29,6 +29,7 @@ export {
   type ReassignFeatureParentParams,
   type ReassignFeatureParentResult,
   type CreateNewParentSpec,
+  type NewParentContainerSpec,
 } from './ReassignFeatureParentUseCase';
 export type {
   EditMode,

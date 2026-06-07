@@ -34,9 +34,10 @@
   let scope = $state<ParentTransferScope>('selected');
   let parentMode = $state<ParentTransferMode>('existing');
   let selectedExistingParentId = $state('');
-  let newParentName = $state('');
-  let newParentKind = $state('');
-  // 新規上位領域作成サブフローにおける、新規コンテナ自身の所属（連邦化 = root / 自治化 = existing）。
+  // 新規上位領域作成サブフローの各階層（innermost → outermost、length ≥ 1。要件定義書 §2.1 line 293
+  // の再帰積み上げ）。index 0 = 対象地物の直接の新親、末尾 = チェーン最外コンテナ。
+  let newParentLevels = $state<{ name: string; kind: string }[]>([{ name: '', kind: '' }]);
+  // 新規上位領域作成サブフローにおける、チェーン最外コンテナ自身の所属（連邦化 = root / 自治化 = existing）。
   let newParentPlacementMode = $state<NewParentPlacementMode>('root');
   let selectedNewParentParentId = $state('');
 
@@ -75,12 +76,17 @@
     mode: parentMode,
     selectedExistingParentId,
     parentCandidates,
-    newParentName,
-    newParentKind,
+    newParentName: newParentLevels[0]?.name ?? '',
+    newParentKind: newParentLevels[0]?.kind ?? '',
+    newParentAncestors: newParentLevels.slice(1),
     newParentPlacementMode,
     selectedNewParentParentId,
     newParentParentCandidates,
   }));
+  // 新規作成モードでいずれかの階層名称が空（前後空白のみ含む）か。確定無効ヒントの判定に使う。
+  let hasEmptyNewParentLevelName = $derived(
+    newParentLevels.some((level) => level.name.trim() === '')
+  );
   let targetNames = $derived(
     featureIds.map((featureId) => {
       const target = features.find((candidate) => candidate.id === featureId);
@@ -100,8 +106,7 @@
     scope = selectedEnabled || !childrenEnabled ? 'selected' : 'children';
     parentMode = 'existing';
     selectedExistingParentId = '';
-    newParentName = '';
-    newParentKind = '';
+    newParentLevels = [{ name: '', kind: '' }];
     newParentPlacementMode = 'root';
     selectedNewParentParentId = '';
   });
@@ -143,6 +148,17 @@
     if (newParentParentCandidates.some((candidate) => candidate.id === selectedNewParentParentId)) return;
     selectedNewParentParentId = '';
   });
+
+  // 再帰積み上げ（要件定義書 §2.1 line 293）: 最外のさらに上位へ新規コンテナを 1 段追加する。
+  function addNewParentLevel(): void {
+    newParentLevels = [...newParentLevels, { name: '', kind: '' }];
+  }
+
+  // 最外の階層を 1 段取り消す（最低 1 段は残す）。
+  function removeNewParentLevel(): void {
+    if (newParentLevels.length <= 1) return;
+    newParentLevels = newParentLevels.slice(0, -1);
+  }
 
   function confirm(): void {
     if (confirmDisabled || transferTarget === null) return;
@@ -257,23 +273,64 @@
         </label>
         {#if parentMode === 'new'}
           <div class="new-parent-fields">
-            <label class="field-label" for="new-parent-name">名称</label>
-            <input
-              id="new-parent-name"
-              class="text-input"
-              type="text"
-              placeholder="新しい上位領域の名称"
-              bind:value={newParentName}
-            />
-            <label class="field-label" for="new-parent-kind">種別（任意）</label>
-            <input
-              id="new-parent-kind"
-              class="text-input"
-              type="text"
-              placeholder="連邦 / 帝国 など"
-              bind:value={newParentKind}
-            />
-            <span class="field-label">この上位領域の所属</span>
+            <!-- index キーで安全なのは追加・削除を末尾（最外）のみに限定しているため
+                 （addNewParentLevel / removeNewParentLevel）。要素 identity が崩れない。
+                 将来「中間階層の挿入・削除」を入れる場合は index キーが破綻するので、
+                 各 level へ安定 ID を持たせてキーを ID へ切り替えること。 -->
+            {#each newParentLevels as _level, i (i)}
+              <div class="new-parent-level">
+                <div class="level-header">
+                  <span class="field-label">
+                    {#if newParentLevels.length === 1}
+                      新しい上位領域
+                    {:else if i === 0}
+                      階層 {i + 1}（対象地物の直接の上位領域）
+                    {:else if i === newParentLevels.length - 1}
+                      階層 {i + 1}（最も外側）
+                    {:else}
+                      階層 {i + 1}
+                    {/if}
+                  </span>
+                  {#if i === newParentLevels.length - 1 && newParentLevels.length > 1}
+                    <button
+                      type="button"
+                      class="level-remove"
+                      onclick={removeNewParentLevel}
+                    >
+                      この階層を削除
+                    </button>
+                  {/if}
+                </div>
+                <label class="field-label" for={`new-parent-name-${i}`}>名称</label>
+                <input
+                  id={`new-parent-name-${i}`}
+                  class="text-input"
+                  type="text"
+                  placeholder="新しい上位領域の名称"
+                  bind:value={newParentLevels[i].name}
+                />
+                <label class="field-label" for={`new-parent-kind-${i}`}>種別（任意）</label>
+                <input
+                  id={`new-parent-kind-${i}`}
+                  class="text-input"
+                  type="text"
+                  placeholder="連邦 / 帝国 など"
+                  bind:value={newParentLevels[i].kind}
+                />
+              </div>
+            {/each}
+
+            <button
+              type="button"
+              class="level-add"
+              onclick={addNewParentLevel}
+            >
+              ＋ さらに上位領域を追加
+            </button>
+
+            <span class="field-label">
+              {newParentLevels.length > 1 ? '最も外側の上位領域の所属' : 'この上位領域の所属'}
+            </span>
             <label>
               <input
                 type="radio"
@@ -320,7 +377,7 @@
             選択地物は下位領域を持つため、選択地物のみの所属変更はできません。
           {:else if scope === 'children' && !childrenEnabled}
             下位領域に末端でない地物が含まれるため、一括での所属変更はできません。
-          {:else if parentMode === 'new' && newParentName.trim() === ''}
+          {:else if parentMode === 'new' && hasEmptyNewParentLevelName}
             新規上位領域の名称を入力してください。
           {:else if parentMode === 'new' && newParentPlacementMode === 'existing' && transferTarget === null}
             新規上位領域の所属先を選択してください。
@@ -474,6 +531,55 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+
+  .new-parent-level {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px;
+    margin-bottom: 4px;
+    border: 1px solid #444;
+    border-radius: 4px;
+    background: #262626;
+  }
+
+  .level-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .level-remove {
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid #614;
+    background: #3a2230;
+    color: #e0a0b8;
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  .level-remove:hover {
+    background: #4a2a3c;
+  }
+
+  .level-add {
+    align-self: flex-start;
+    padding: 4px 10px;
+    margin: 2px 0 6px;
+    border-radius: 4px;
+    border: 1px dashed #557;
+    background: #262b33;
+    color: #9ab;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .level-add:hover {
+    background: #2e353f;
+    border-color: #7799cc;
   }
 
   .field-label {

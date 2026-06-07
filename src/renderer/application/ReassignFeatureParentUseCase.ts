@@ -36,11 +36,24 @@ export class FeatureParentTransferError extends Error {
 }
 
 /**
+ * 新規上位領域作成サブフローで積み上げる 1 段分のコンテナ指定（名称・種別ラベル）。
+ * 再帰積み上げ（要件定義書 §2.1 line 293）で最内コンテナのさらに上位へ挿入する中間階層を表す。
+ */
+export interface NewParentContainerSpec {
+  readonly name: string;
+  readonly kind?: string;
+}
+
+/**
  * 新規上位領域作成サブフローの指定（要件定義書 §2.1 line 290-293）。
  * 指定時は in-memory で集約地物（shape なしコンテナ）を新規生成し、
  * 対象地物をその下位領域として一括帰属させる。
  *
- * `parentId` で新規コンテナ自身の所属を指定する（要件定義書 §2.1 line 292 / line 305）:
+ * `name` / `kind` は最内コンテナ（対象地物の直接の新親）の名称・種別。
+ * `ancestors` は最内コンテナのさらに上位へ積み上げる新規コンテナ列（外側ほど後ろ。
+ * 要件定義書 §2.1 line 293 の再帰積み上げ / 中間階層の後付け挿入）。空または未指定なら単一コンテナ。
+ *
+ * `parentId` でチェーン最外コンテナ自身の所属を指定する（要件定義書 §2.1 line 292 / line 305）:
  * - `null` または未指定: 新規最上位コンテナ（`parentId === null` / `isTopLevel === true`）— 連邦化。
  * - 非 null: 既存の上位領域に所属する新中間コンテナ — 自治化（既存子と既存親の間に挿入）。
  *
@@ -52,6 +65,7 @@ export interface CreateNewParentSpec {
   readonly name: string;
   readonly kind?: string;
   readonly parentId?: string | null;
+  readonly ancestors?: readonly NewParentContainerSpec[];
 }
 
 export interface ReassignFeatureParentParams {
@@ -104,42 +118,59 @@ export class ReassignFeatureParentUseCase {
     const usedAnchorIds = collectUsedAnchorIds(staged);
     const prunedParentQueue: CascadingParentSync[] = [];
 
-    // 新規上位領域作成サブフロー: 対象地物を下位領域に持つ集約地物を in-memory に生成して
-    // staged へ挿入し、その ID を新親とする（要件定義書 §2.1 line 290-302）。
-    // childIds を生成時点で対象地物に充足することで「shape なし ⟹ childIds 非空」不変条件を満たす。
-    // `createNewParent.parentId` 非 null のとき新規コンテナ自身も既存上位領域 Q に所属する（自治化）。
+    // 新規上位領域作成サブフロー: 対象地物を下位領域に持つ集約地物のチェーン（最内 → 最外）を
+    // in-memory に生成して staged へ挿入し、最内コンテナの ID を新親とする
+    // （要件定義書 §2.1 line 290-302 / 再帰積み上げ line 293）。
+    // childIds を生成時点で各段に充足することで「shape なし ⟹ childIds 非空」不変条件を満たす（§6.6.8）。
+    // `createNewParent.parentId` 非 null のとき最外コンテナ自身も既存上位領域 Q に所属する（自治化）。
     let newParentId = params.newParentId;
     let createdParentId: string | null = null;
-    let newContainerParentId: string | null = null;
+    const createdContainerIds: string[] = []; // innermost → outermost
+    let finalContainerParentId: string | null = null;
     if (params.createNewParent) {
-      // 名称の非空検証（要件定義書 §2.1 line 291）。UI の確定ボタン disabled と二重防御。
-      const name = params.createNewParent.name.trim();
-      if (name === '') {
+      // 各段の名称の非空検証（要件定義書 §2.1 line 291）。UI の確定ボタン disabled と二重防御。
+      const innermostName = params.createNewParent.name.trim();
+      if (innermostName === '') {
         throw new FeatureParentTransferError('新規上位領域の名称を入力してください');
       }
-      newContainerParentId = params.createNewParent.parentId ?? null;
-      if (newContainerParentId !== null) {
-        // 自治化: 新規コンテナの所属先 Q の妥当性（存在・面情報・期間カバレッジ）を確定前に検証する
-        // （§6.6.1 / §6.6.3 line 586 二重防御）。循環参照は staged に Q を親とする Y を入れた状態で
-        // 下流の validateTransfer（getAncestors(Y) ∌ 移動対象）が担う。
-        this.assertContainerParentValid(newContainerParentId, featureIds, params.effectiveTime, staged);
+      const ancestorSpecs = params.createNewParent.ancestors ?? [];
+      const levels: NewParentContainerSpec[] = [
+        {
+          name: innermostName,
+          ...(params.createNewParent.kind !== undefined ? { kind: params.createNewParent.kind } : {}),
+        },
+      ];
+      for (const ancestor of ancestorSpecs) {
+        const ancestorName = ancestor.name.trim();
+        if (ancestorName === '') {
+          throw new FeatureParentTransferError('新規上位領域の名称を入力してください');
+        }
+        levels.push({
+          name: ancestorName,
+          ...(ancestor.kind !== undefined ? { kind: ancestor.kind } : {}),
+        });
       }
-      const container = this.featureUseCase.buildContainerFeature(
+      finalContainerParentId = params.createNewParent.parentId ?? null;
+      if (finalContainerParentId !== null) {
+        // 自治化: 最外コンテナの所属先 Q の妥当性（存在・面情報・期間カバレッジ）を確定前に検証する
+        // （§6.6.1 / §6.6.3 line 586 二重防御）。最外 ≡ … ≡ 最内 ≡ 移動対象の和 のため、Q が各移動対象を
+        // 覆えば最外コンテナも覆う（featureIds で検証）。循環参照は staged にチェーンを入れた状態で
+        // 下流の validateTransfer（getAncestors(最内) ∌ 移動対象）が担う。
+        this.assertContainerParentValid(finalContainerParentId, featureIds, params.effectiveTime, staged);
+      }
+      const chain = this.buildCreatedContainerChain(
         params.effectiveTime,
         featureIds,
-        {
-          name,
-          description: '',
-          ...(params.createNewParent.kind !== undefined
-            ? { kind: params.createNewParent.kind }
-            : {}),
-        },
-        newContainerParentId
+        levels,
+        finalContainerParentId
       );
-      staged.set(container.id, container);
-      changedFeatureIds.add(container.id);
-      newParentId = container.id;
-      createdParentId = container.id;
+      for (const container of chain) {
+        staged.set(container.id, container);
+        changedFeatureIds.add(container.id);
+        createdContainerIds.push(container.id);
+      }
+      newParentId = chain[0].id; // 最内コンテナが移動対象の直接の新親
+      createdParentId = chain[0].id; // 後方互換: createdParentId は最内コンテナ
     }
 
     const allFeatures = [...staged.values()];
@@ -180,42 +211,20 @@ export class ReassignFeatureParentUseCase {
       this.stageFeature(staged, changedFeatureIds, newParent, updated);
     }
 
-    // 新規コンテナ（shape なし）は子の存在終了で childIds が空化する区間を持ち得る
-    // （`updateParentChildIdsFromTime` の錨分割で末尾区間に発生）。これは不変条件
-    // 「shape なし ⟹ childIds 非空」を破る（開発ガイド §6.6.8 / Phase 2.5-E 申し送り:
-    // 生成だけでなく変異の各ステップで保証する）。空 childIds の shape なし錨を剪定し、
-    // 全錨が消えるなら下位領域全喪失としてコンテナを消滅させる（要件定義書 §2.1）。
-    // 自治化で旧親 Q へ Y を同期する前にここで Y を剪定し、Y の実寿命（子の和の期間）で
-    // Q の childIds に追加できるようにする（順序: Y への子追加 → Y 剪定 → Q への Y 追加 → 旧親除去）。
-    if (createdParentId !== null) {
-      const container = staged.get(createdParentId);
-      if (container) {
-        const pruned = pruneEmptyContainerAnchors(container);
-        if (pruned === null) {
-          this.stageFeatureDeletion(staged, changedFeatureIds, container);
-        } else {
-          this.stageFeature(staged, changedFeatureIds, container, pruned);
-        }
-      }
-    }
-
-    // 自治化（要件定義書 §2.1 line 305）: 新規中間コンテナ Y を所属先 Q の下位領域へ同期する
-    // （親 ≡ 子の和の維持）。旧親除去ループより前に実行することで、Q が移動対象 X を失っても
-    // Y を保持し、「Q が唯一の子 X を失って誤って prune される」失敗モードを防ぐ（Q が X の旧親でも
-    // ある自治化挿入のケース）。剪定後の Y を渡すことで Q は Y の実寿命でのみ Y を子に持つ。
-    // 差分空で Y が消滅した場合（staged に無い）は同期不要。
-    if (createdParentId !== null && newContainerParentId !== null) {
-      const containerParent = staged.get(newContainerParentId);
-      const containerFeature = staged.get(createdParentId);
-      if (containerParent && containerFeature) {
-        const updated = this.updateParentChildIdsFromTime(
-          containerParent,
-          params.effectiveTime,
-          usedAnchorIds,
-          [containerFeature]
-        );
-        this.stageFeature(staged, changedFeatureIds, containerParent, updated);
-      }
+    // 新規コンテナチェーン（連邦化 / 自治化 / 再帰積み上げ）の childIds 同期 + 空区間剪定 +
+    // 最外コンテナの所属先 Q 同期。新規コンテナ（shape なし）は子の存在終了で childIds が空化する
+    // 区間を持ち得るため（`updateParentChildIdsFromTime` の錨分割で発生）、各段を剪定して不変条件
+    // 「shape なし ⟹ childIds 非空」を再保証する（§6.6.8 / Phase 2.5-E 申し送り: 生成だけでなく変異の
+    // 各ステップで保証）。旧親除去ループより前に実行する（順序: 子追加 → 剪定 → Q への追加 → 旧親除去）。
+    if (createdContainerIds.length > 0) {
+      this.syncCreatedContainerChain(
+        staged,
+        changedFeatureIds,
+        params.effectiveTime,
+        usedAnchorIds,
+        createdContainerIds,
+        finalContainerParentId
+      );
     }
 
     for (const oldParentId of oldParentIds) {
@@ -401,6 +410,114 @@ export class ReassignFeatureParentUseCase {
       .map((id) => staged.get(id))
       .filter((feature): feature is Feature => feature !== undefined);
     this.assertParentCoversTargetRanges(containerParent, targets, effectiveTime);
+  }
+
+  /**
+   * 新規上位領域作成サブフローのコンテナチェーンを構築する（要件定義書 §2.1 line 290-293 再帰積み上げ）。
+   *
+   * 返り値は innermost → outermost の順:
+   * - 最内（index 0）: childIds = featureIds（移動対象）、name/kind = levels[0]。
+   * - 中間/最外（index k≥1）: childIds = [直前コンテナ.id]、name/kind = levels[k]。
+   * - 最外: parentId = finalParentId（null = 連邦化 / 非 null = 自治化）。中間: parentId = 直上コンテナ.id。
+   *
+   * 親子の ID は相互依存（子は親の id、親は子の id を要する）のため、まず親 null で innermost →
+   * outermost に順次構築し（各段は直前段を子に持つので childIds は確定）、構築後に内側コンテナの
+   * parentId を直上コンテナへ付け替える 2 パスで解決する。各構築は childIds 非空のため
+   * 「shape なし ⟹ childIds 非空」不変条件を生成時に保証する（§6.6.8 / buildContainerFeature が拒否）。
+   */
+  private buildCreatedContainerChain(
+    effectiveTime: TimePoint,
+    featureIds: readonly string[],
+    levels: readonly NewParentContainerSpec[],
+    finalParentId: string | null
+  ): Feature[] {
+    const chain: Feature[] = [];
+    let childIdsForLevel: readonly string[] = featureIds;
+    for (let index = 0; index < levels.length; index++) {
+      const level = levels[index];
+      const isOutermost = index === levels.length - 1;
+      const container = this.featureUseCase.buildContainerFeature(
+        effectiveTime,
+        childIdsForLevel,
+        {
+          name: level.name,
+          description: '',
+          ...(level.kind !== undefined ? { kind: level.kind } : {}),
+        },
+        isOutermost ? finalParentId : null
+      );
+      chain.push(container);
+      childIdsForLevel = [container.id];
+    }
+    for (let index = 0; index < chain.length - 1; index++) {
+      chain[index] = withContainerParent(chain[index], chain[index + 1].id);
+    }
+    return chain;
+  }
+
+  /**
+   * 新規コンテナチェーンの childIds を「直前コンテナの実寿命」へ同期し、各段の空 childIds 区間を
+   * 剪定する。最後に最外コンテナを所属先 Q（自治化）へ同期する。
+   *
+   * 最内（index 0）は既に移動対象との同期済み（`updateParentChildIdsFromTime` で newParent として処理）
+   * のため剪定のみ。中間/最外（index k≥1）は剪定後の直前コンテナの実寿命へ childIds を絞ってから剪定する。
+   * この「子追加 → 剪定 → 次段同期」の順序により、各段が直前段の実寿命でのみ子に持ち、validateStagedHierarchy
+   * が「親が子を主張するが子非存在」の区間で誤拒否する失敗モードを防ぐ（単一コンテナ自治化と同じ順序保証）。
+   *
+   * 正常フロー（移動対象が effectiveTime に有効）では各段が effectiveTime に子を持つため消滅しないが、
+   * 直前コンテナが全子喪失で消滅した場合は当該段も唯一の子を失うため連鎖消滅させる（防御分岐）。
+   */
+  private syncCreatedContainerChain(
+    staged: Map<string, Feature>,
+    changedFeatureIds: Set<string>,
+    effectiveTime: TimePoint,
+    usedAnchorIds: Set<string>,
+    createdContainerIds: readonly string[],
+    finalParentId: string | null
+  ): void {
+    let previousPruned: Feature | null = null;
+    for (let index = 0; index < createdContainerIds.length; index++) {
+      const containerId = createdContainerIds[index];
+      const current = staged.get(containerId);
+      if (!current) {
+        previousPruned = null;
+        continue;
+      }
+      if (index > 0 && previousPruned === null) {
+        // 直前コンテナ消滅 → 唯一の子を失うため連鎖消滅（防御分岐: 正常フロー未到達）。
+        staged.delete(containerId);
+        changedFeatureIds.add(containerId);
+        continue;
+      }
+
+      const synced = index === 0
+        ? current
+        : this.updateParentChildIdsFromTime(current, effectiveTime, usedAnchorIds, [previousPruned!]);
+      const pruned = pruneEmptyContainerAnchors(synced);
+      changedFeatureIds.add(containerId);
+      if (pruned === null) {
+        staged.delete(containerId);
+        previousPruned = null;
+      } else {
+        staged.set(containerId, pruned);
+        previousPruned = pruned;
+      }
+    }
+
+    // 自治化（要件定義書 §2.1 line 305）: 最外コンテナを所属先 Q の下位領域へ同期する（親 ≡ 子の和の維持）。
+    // 剪定後の最外を渡すことで Q は最外の実寿命でのみ子に持つ（差分空で最外が消滅した場合は同期不要）。
+    if (finalParentId !== null && previousPruned !== null) {
+      const containerParent = staged.get(finalParentId);
+      if (containerParent) {
+        const updated = this.updateParentChildIdsFromTime(
+          containerParent,
+          effectiveTime,
+          usedAnchorIds,
+          [previousPruned]
+        );
+        this.stageFeature(staged, changedFeatureIds, containerParent, updated);
+      }
+    }
   }
 
   private updatePlacementFromTime(
@@ -712,6 +829,18 @@ function appendUnique(baseIds: readonly string[], idsToAdd: readonly string[]): 
  * 全錨が消える場合は下位領域全喪失としてコンテナ消滅を表す null を返す
  * （要件定義書 §2.1「集約地物が全ての下位領域を失った場合、自動的に消滅する」）。
  */
+/**
+ * 新規コンテナ（生成直後の単一開区間錨）の parentId を付け替える（チェーン内側 → 直上コンテナ）。
+ * `createAnchorPlacement` 経由で `isTopLevel === (parentId === null)` 同値不変条件を再構築する
+ * （現状.md §6.12 / 開発ガイド §6.6.8）。childIds は構築時のまま維持する。
+ */
+function withContainerParent(container: Feature, parentId: string): Feature {
+  const anchors = container.anchors.map((anchor) =>
+    anchor.withPlacement(createAnchorPlacement(parentId, anchor.placement.childIds))
+  );
+  return container.withAnchors(anchors);
+}
+
 function pruneEmptyContainerAnchors(feature: Feature): Feature | null {
   const anchors = feature.anchors.filter(
     (anchor) => !(anchor.shape === undefined && anchor.placement.childIds.length === 0)

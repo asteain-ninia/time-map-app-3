@@ -1095,6 +1095,243 @@ describe('ReassignFeatureParentUseCase', () => {
     });
   });
 
+  // ── 新規上位領域作成サブフロー（再帰積み上げ: 多段中間階層の一括挿入） ──
+  // 要件定義書 §2.1 line 293「再帰的に上位領域を積み上げ可能で、中間階層を後付けで挿入できる」。
+  // createNewParent.ancestors に最内コンテナのさらに上位へ積む中間階層（外側ほど後ろ）を渡す。
+  describe('新規上位領域作成サブフロー（再帰積み上げ）', () => {
+    function makeContainer(id: string, childIds: readonly string[], parentId: string | null = null): Feature {
+      return makeFeature(id, [
+        new FeatureAnchor(
+          `${id}-a1`,
+          { start: t1000 },
+          { name: id, description: '' },
+          undefined,
+          placement(parentId, childIds)
+        ),
+      ]);
+    }
+
+    function expectContainerInvariant(container: Feature): void {
+      for (const anchor of container.anchors) {
+        if (anchor.shape === undefined) {
+          expect(anchor.placement.childIds.length).toBeGreaterThan(0);
+        }
+      }
+    }
+
+    function expectTransferError(fn: () => void, reasonPattern: RegExp): void {
+      let caught: unknown;
+      try {
+        fn();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(FeatureParentTransferError);
+      expect((caught as Error).message).toMatch(reasonPattern);
+    }
+
+    it('最内 Y1 と最外 Y2 を一度に積み上げ、最外を最上位とする（連邦化 + 中間階層）', () => {
+      // 13 国合衆国化（§6.5）の簡略版 + さらに上位の大陸連合を後付け挿入。
+      const n1 = makeFeature('n1', [makeAnchor('n1-a1', t1000, placement(null, []))]);
+      const n2 = makeFeature('n2', [makeAnchor('n2-a1', t1000, placement(null, []))]);
+      addFeature.restore(new Map([[n1.id, n1], [n2.id, n2]]), new Map());
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['n1', 'n2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: {
+          name: '合衆国',
+          kind: '連邦',
+          ancestors: [{ name: '北米連合', kind: '大陸連合' }],
+        },
+      });
+
+      // createdParentId は最内コンテナ（移動対象の直接の新親）= 最初に採番された f-1
+      const y1Id = result.createdParentId!;
+      expect(y1Id).toBe('f-1');
+      const y1 = addFeature.getFeatureById(y1Id)!;
+      const y1Anchor = y1.getActiveAnchor(t1600)!;
+      expect(y1Anchor.property.name).toBe('合衆国');
+      expect(y1Anchor.property.kind).toBe('連邦');
+      expect(y1Anchor.shape).toBeUndefined();
+      expect(y1Anchor.placement.childIds.slice().sort()).toEqual(['n1', 'n2']);
+      expect(y1Anchor.placement.isTopLevel).toBe(false);
+
+      // 最外 Y2: 北米連合、childIds=[Y1]、最上位（parentId=null / isTopLevel）
+      const y2Id = y1Anchor.placement.parentId!;
+      expect(y2Id).toBe('f-2');
+      const y2 = addFeature.getFeatureById(y2Id)!;
+      const y2Anchor = y2.getActiveAnchor(t1600)!;
+      expect(y2Anchor.property.name).toBe('北米連合');
+      expect(y2Anchor.property.kind).toBe('大陸連合');
+      expect(y2Anchor.shape).toBeUndefined();
+      expect(y2Anchor.placement.childIds).toEqual([y1Id]);
+      expect(y2Anchor.placement.parentId).toBeNull();
+      expect(y2Anchor.placement.isTopLevel).toBe(true);
+
+      // n1/n2 の親は最内 Y1
+      expect(addFeature.getFeatureById('n1')!.getActiveAnchor(t1600)?.placement.parentId).toBe(y1Id);
+      expect(addFeature.getFeatureById('n2')!.getActiveAnchor(t1600)?.placement.parentId).toBe(y1Id);
+
+      expectContainerInvariant(y1);
+      expectContainerInvariant(y2);
+    });
+
+    it('既存子 X と既存親 P の間に 2 段（Y1 ← Y2）を挿入し、最外 Y2 を P 直下へ（自治化 + 中間階層）', () => {
+      // P → Y2 → Y1 → X。P の childIds は X → Y2（最外）へ差し替わる。
+      const p = makeContainer('p', ['x']);
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement('p'))]);
+      addFeature.restore(new Map([[p.id, p], [x.id, x]]), new Map());
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '州', ancestors: [{ name: '地方' }], parentId: 'p' },
+      });
+
+      const y1Id = result.createdParentId!;
+      const y1 = addFeature.getFeatureById(y1Id)!;
+      const y2Id = y1.getActiveAnchor(t1600)!.placement.parentId!;
+      const y2 = addFeature.getFeatureById(y2Id)!;
+
+      // チェーン: P → Y2 → Y1 → X
+      expect(addFeature.getFeatureById('x')!.getActiveAnchor(t1600)?.placement.parentId).toBe(y1Id);
+      expect(y1.getActiveAnchor(t1600)?.placement.childIds).toEqual(['x']);
+      expect(y1.getActiveAnchor(t1600)?.property.name).toBe('州');
+      expect(y2.getActiveAnchor(t1600)?.placement.childIds).toEqual([y1Id]);
+      expect(y2.getActiveAnchor(t1600)?.property.name).toBe('地方');
+      expect(y2.getActiveAnchor(t1600)?.placement.parentId).toBe('p');
+      expect(y2.getActiveAnchor(t1600)?.placement.isTopLevel).toBe(false);
+
+      // P: t1500 未満は [x]、t1500 以降は [Y2]（最外コンテナへ差替え、唯一子でも存続）
+      const pFeature = addFeature.getFeatureById('p')!;
+      expect(pFeature.getActiveAnchor(t1400)?.placement.childIds).toEqual(['x']);
+      expect(pFeature.getActiveAnchor(t1600)?.placement.childIds).toEqual([y2Id]);
+
+      expectContainerInvariant(pFeature);
+      expectContainerInvariant(y1);
+      expectContainerInvariant(y2);
+    });
+
+    it('有限終了の移動対象では、チェーン各段が子の実寿命でのみ存続する（剪定の連鎖）', () => {
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement(null, []), t2000)]);
+      addFeature.restore(new Map([[x.id, x]]), new Map());
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '州', ancestors: [{ name: '国' }] },
+      });
+      const y1Id = result.createdParentId!;
+      const y1 = addFeature.getFeatureById(y1Id)!;
+      const y2Id = y1.getActiveAnchor(t1600)!.placement.parentId!;
+      const y2 = addFeature.getFeatureById(y2Id)!;
+
+      // 各段とも [t1500,t2000) のみ存続。t2000 以降は子喪失で消滅
+      expect(y1.getActiveAnchor(t1600)?.placement.childIds).toEqual(['x']);
+      expect(y1.getActiveAnchor(t2000)).toBeUndefined();
+      expect(y2.getActiveAnchor(t1600)?.placement.childIds).toEqual([y1Id]);
+      expect(y2.getActiveAnchor(t2000)).toBeUndefined();
+
+      expectContainerInvariant(y1);
+      expectContainerInvariant(y2);
+    });
+
+    it('時間ギャップを持つ移動対象では、チェーン各段が中間の空区間も落とし子の実寿命に追従する', () => {
+      // X は [t1000,t2000) と [t2500,∞) の 2 錨（ギャップ [t2000,t2500)）。pruneEmptyContainerAnchors は
+      // 位置非依存（末尾に限らず中間の空 shape なし錨も落とす）のため、多段チェーンでも各段が
+      // X のギャップに合わせて分断される。
+      const x = makeFeature('x', [
+        makeAnchor('x-a1', t1000, placement(null, []), t2000),
+        makeAnchor('x-a2', t2500, placement(null, [])),
+      ]);
+      addFeature.restore(new Map([[x.id, x]]), new Map());
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '州', ancestors: [{ name: '国' }] },
+      });
+      const y1Id = result.createdParentId!;
+      const y1 = addFeature.getFeatureById(y1Id)!;
+      const y2Id = y1.getActiveAnchor(t1600)!.placement.parentId!;
+      const y2 = addFeature.getFeatureById(y2Id)!;
+
+      // 各段とも [t1500,t2000) と [t2500,∞) のみ存続し、中間 [t2000,t2500) は空区間として落ちる
+      expect(y1.getActiveAnchor(t1600)?.placement.childIds).toEqual(['x']);
+      expect(y1.getActiveAnchor(t2200)).toBeUndefined();
+      expect(y1.getActiveAnchor(t2600)?.placement.childIds).toEqual(['x']);
+      expect(y2.getActiveAnchor(t1600)?.placement.childIds).toEqual([y1Id]);
+      expect(y2.getActiveAnchor(t2200)).toBeUndefined();
+      expect(y2.getActiveAnchor(t2600)?.placement.childIds).toEqual([y1Id]);
+
+      // X の親はギャップ前後とも Y1
+      expect(addFeature.getFeatureById('x')!.getActiveAnchor(t1600)?.placement.parentId).toBe(y1Id);
+      expect(addFeature.getFeatureById('x')!.getActiveAnchor(t2600)?.placement.parentId).toBe(y1Id);
+
+      expectContainerInvariant(y1);
+      expectContainerInvariant(y2);
+    });
+
+    it('再帰積み上げで最外の所属先を移動対象自身に指定すると循環参照として拒否する', () => {
+      // assertContainerParentValid は X が X をカバーするため通過し、staged にチェーン
+      // （Y1.parent=Y2 / Y2.parent=X）を入れた状態で validateTransfer が getAncestors(Y1) ∋ X を検出。
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement(null, []))]);
+      addFeature.restore(new Map([[x.id, x]]), new Map());
+
+      expectTransferError(() => transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '州', ancestors: [{ name: '国' }], parentId: 'x' },
+      }), /循環参照/);
+    });
+
+    it('積み上げる中間階層の名称が空（空白のみ含む）なら拒否する（各段の名称非空 二重防御）', () => {
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement(null, []))]);
+      addFeature.restore(new Map([[x.id, x]]), new Map());
+
+      expectTransferError(() => transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '州', ancestors: [{ name: '  ' }] },
+      }), /名称を入力/);
+    });
+
+    it('Undo でチェーン全体（Y1・Y2）が消滅し、Redo で同一 ID で再挿入される（単一アンドゥ単位）', () => {
+      const n1 = makeFeature('n1', [makeAnchor('n1-a1', t1000, placement(null, []))]);
+      const n2 = makeFeature('n2', [makeAnchor('n2-a1', t1000, placement(null, []))]);
+      addFeature.restore(new Map([[n1.id, n1], [n2.id, n2]]), new Map());
+      const undoRedo = new UndoRedoManager();
+
+      undoRedo.execute(new ReassignFeatureParentCommand(transfer, addFeature, {
+        featureIds: ['n1', 'n2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '合衆国', ancestors: [{ name: '北米連合' }] },
+      }));
+      expect(addFeature.getFeatureById('f-1')).toBeDefined();
+      expect(addFeature.getFeatureById('f-2')).toBeDefined();
+      expect(addFeature.getFeatureById('n1')!.getActiveAnchor(t1500)?.placement.parentId).toBe('f-1');
+
+      undoRedo.undo();
+      expect(addFeature.getFeatureById('f-1')).toBeUndefined();
+      expect(addFeature.getFeatureById('f-2')).toBeUndefined();
+      expect(addFeature.getFeatureById('n1')!.getActiveAnchor(t1500)?.placement.parentId).toBeNull();
+
+      undoRedo.redo();
+      expect(addFeature.getFeatureById('f-1')).toBeDefined();
+      expect(addFeature.getFeatureById('f-2')).toBeDefined();
+      expect(addFeature.getFeatureById('n1')!.getActiveAnchor(t1500)?.placement.parentId).toBe('f-1');
+      expect(addFeature.getFeatureById('f-2')!.getActiveAnchor(t1500)?.placement.childIds).toEqual(['f-1']);
+    });
+  });
+
   // ── 親候補制約・名称検証の確定前検証 (Phase 4-2) ───────────────────
   // ダイアログのリアルタイム判定（buildParentCandidateItems / UI 確定 disabled）と
   // 対をなす UseCase 入口の確定前検証（§6.6.3 line 586 二重防御 / §6.6.1）。

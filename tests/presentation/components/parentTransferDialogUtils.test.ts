@@ -442,6 +442,82 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
       })
     ).toEqual({ type: 'createNewParent', spec: { name: '州', parentId: 'parent-p' } });
   });
+
+  // ── 再帰積み上げ（newParentAncestors: 最内のさらに上位へ積む中間階層） Phase 4-3b ──
+  // 要件定義書 §2.1 line 293。空・未指定なら従来の単一コンテナ（後方互換）。
+  it("'new' は newParentAncestors 未指定/空配列なら ancestors を設定しない（後方互換）", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '合衆国',
+        newParentKind: '連邦',
+        newParentAncestors: [],
+        ...rootPlacement,
+      })
+    ).toEqual({ type: 'createNewParent', spec: { name: '合衆国', kind: '連邦' } });
+  });
+
+  it("'new'（再帰積み上げ）は ancestors を最内→最外の順で spec へ載せ、各段の前後空白を除去する", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '  合衆国  ',
+        newParentKind: '連邦',
+        newParentAncestors: [
+          { name: '  北米連合  ', kind: '  大陸連合  ' },
+          { name: '地球連邦', kind: '' },
+        ],
+        ...rootPlacement,
+      })
+    ).toEqual({
+      type: 'createNewParent',
+      spec: {
+        name: '合衆国',
+        kind: '連邦',
+        ancestors: [
+          { name: '北米連合', kind: '大陸連合' },
+          { name: '地球連邦' }, // 種別が空の段は kind を未設定
+        ],
+      },
+    });
+  });
+
+  it("'new'（再帰積み上げ + 自治化）は ancestors と最外の所属先 parentId を併せて解決する", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '州',
+        newParentKind: '',
+        newParentAncestors: [{ name: '地方', kind: '' }],
+        newParentPlacementMode: 'existing',
+        selectedNewParentParentId: 'cand-a',
+        newParentParentCandidates: candidates,
+      })
+    ).toEqual({
+      type: 'createNewParent',
+      spec: { name: '州', ancestors: [{ name: '地方' }], parentId: 'cand-a' },
+    });
+  });
+
+  it("'new' は積み上げる中間階層のいずれかの名称が空（空白のみ）なら null（確定不可）", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '合衆国',
+        newParentKind: '',
+        newParentAncestors: [{ name: '  ', kind: '大陸連合' }],
+        ...rootPlacement,
+      })
+    ).toBeNull();
+  });
 });
 
 describe('parentTransferDialogUtils 集約地物（コンテナ）の受容 (Phase 2.5-E)', () => {
