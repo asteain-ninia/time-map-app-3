@@ -240,11 +240,19 @@ describe('parentTransferDialogUtils', () => {
   });
 });
 
-describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2 / 4-3a)', () => {
+describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2 / 4-3a / 4-3 自治化)', () => {
   const candidates = [
     { id: 'cand-a', name: 'A' },
     { id: 'cand-b', name: 'B' },
   ];
+
+  // 連邦化（新規最上位コンテナ）= 新規コンテナの所属は root。既定の 4-3a 経路。
+  // newParentParentCandidates（自治化の所属先候補）は root では参照されないが、署名上必須。
+  const rootPlacement = {
+    newParentPlacementMode: 'root' as const,
+    selectedNewParentParentId: '',
+    newParentParentCandidates: candidates,
+  };
 
   it("'root'（独立）は reassign / newParentId=null を返す", () => {
     expect(
@@ -254,6 +262,7 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         parentCandidates: candidates,
         newParentName: '',
         newParentKind: '',
+        ...rootPlacement,
       })
     ).toEqual({ type: 'reassign', newParentId: null });
   });
@@ -266,6 +275,7 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         parentCandidates: candidates,
         newParentName: '',
         newParentKind: '',
+        ...rootPlacement,
       })
     ).toEqual({ type: 'reassign', newParentId: 'cand-b' });
   });
@@ -278,6 +288,7 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         parentCandidates: candidates,
         newParentName: '',
         newParentKind: '',
+        ...rootPlacement,
       })
     ).toBeNull();
     expect(
@@ -287,11 +298,12 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         parentCandidates: candidates,
         newParentName: '',
         newParentKind: '',
+        ...rootPlacement,
       })
     ).toBeNull();
   });
 
-  it("'new'（連邦化）は名称が非空のとき createNewParent を解決する", () => {
+  it("'new'（連邦化）は名称が非空のとき createNewParent を解決する（所属 root では parentId 未設定）", () => {
     expect(
       resolveParentTransferTarget({
         mode: 'new',
@@ -299,6 +311,7 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         parentCandidates: candidates,
         newParentName: '合衆国',
         newParentKind: '連邦',
+        ...rootPlacement,
       })
     ).toEqual({ type: 'createNewParent', spec: { name: '合衆国', kind: '連邦' } });
   });
@@ -311,6 +324,7 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         parentCandidates: candidates,
         newParentName: '  合衆国  ',
         newParentKind: '  連邦  ',
+        ...rootPlacement,
       })
     ).toEqual({ type: 'createNewParent', spec: { name: '合衆国', kind: '連邦' } });
   });
@@ -323,6 +337,7 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         parentCandidates: candidates,
         newParentName: '合衆国',
         newParentKind: '   ',
+        ...rootPlacement,
       })
     ).toEqual({ type: 'createNewParent', spec: { name: '合衆国' } });
   });
@@ -335,6 +350,7 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         parentCandidates: candidates,
         newParentName: '',
         newParentKind: '連邦',
+        ...rootPlacement,
       })
     ).toBeNull();
     expect(
@@ -344,8 +360,87 @@ describe('resolveParentTransferTarget — 新しい親の 3 択解決 (Phase 4-2
         parentCandidates: candidates,
         newParentName: '   ',
         newParentKind: '',
+        ...rootPlacement,
       })
     ).toBeNull();
+  });
+
+  // 自治化（新規中間コンテナ）: newParentPlacementMode === 'existing' で新規コンテナ自身の
+  // 所属先 parentId を解決する（要件定義書 §2.1 line 292 / line 305）。所属先は
+  // newParentParentCandidates（既存再割当の parentCandidates とは別の除外規則）で検証する。
+  it("'new'（自治化）は所属先が候補内の有効な選択のとき spec.parentId を設定する", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '自治州',
+        newParentKind: '州',
+        newParentPlacementMode: 'existing',
+        selectedNewParentParentId: 'cand-a',
+        newParentParentCandidates: candidates,
+      })
+    ).toEqual({ type: 'createNewParent', spec: { name: '自治州', kind: '州', parentId: 'cand-a' } });
+  });
+
+  it("'new'（自治化）で所属先が未選択・候補外なら null（確定不可）を返す", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '自治州',
+        newParentKind: '',
+        newParentPlacementMode: 'existing',
+        selectedNewParentParentId: '',
+        newParentParentCandidates: candidates,
+      })
+    ).toBeNull();
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '自治州',
+        newParentKind: '',
+        newParentPlacementMode: 'existing',
+        selectedNewParentParentId: 'unknown',
+        newParentParentCandidates: candidates,
+      })
+    ).toBeNull();
+  });
+
+  it("'new'（自治化）でも名称が空なら null（所属先選択より名称検証が優先）", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: candidates,
+        newParentName: '   ',
+        newParentKind: '',
+        newParentPlacementMode: 'existing',
+        selectedNewParentParentId: 'cand-a',
+        newParentParentCandidates: candidates,
+      })
+    ).toBeNull();
+  });
+
+  // 除外規則の差: scope='children' では現在の親 P は再割当候補（parentCandidates）から除外されるが、
+  // 自治化の所属先候補（newParentParentCandidates）には含まれる（P → 新中間コンテナ → 子）。
+  // 自治化は所属先候補を newParentParentCandidates で検証するため、P を所属先に選べる。
+  it("'new'（自治化）は parentCandidates に無くても newParentParentCandidates にある所属先を解決する", () => {
+    expect(
+      resolveParentTransferTarget({
+        mode: 'new',
+        selectedExistingParentId: '',
+        parentCandidates: [], // scope='children' で親 P が再割当候補から除外された状況
+        newParentName: '州',
+        newParentKind: '',
+        newParentPlacementMode: 'existing',
+        selectedNewParentParentId: 'parent-p',
+        newParentParentCandidates: [{ id: 'parent-p', name: 'P' }],
+      })
+    ).toEqual({ type: 'createNewParent', spec: { name: '州', parentId: 'parent-p' } });
   });
 });
 

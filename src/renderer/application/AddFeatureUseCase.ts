@@ -195,6 +195,12 @@ export class AddFeatureUseCase {
    * 不変条件「shape なし ⟹ childIds 非空」（現状.md §6.10 Phase 4-1 申し送り /
    * 開発ガイド §6.6.8）を満たすため、`childIds` が空のときは構築を拒否する。
    *
+   * `parentId` で新規コンテナ自身の所属を指定する（要件定義書 §2.1 line 292）:
+   * - `null`（既定）: 新規最上位コンテナ（`isTopLevel === true`）— 連邦化。
+   * - 非 null: 既存の上位領域に所属する新中間コンテナ — 自治化。
+   * 最上位フラグは `createAnchorPlacement` 経由で `parentId === null` から派生し、
+   * 不変条件「同一錨内で `isTopLevel === (parentId === null)`」を生成側で満たす。
+   *
    * 登録（`this.features` への set / イベント発行）はしない。呼び出し側が
    * staging を介して整合性検証後に commit することで、検証失敗時の
    * リーク（未参照コンテナの残置）を防ぐ（atomic 性の確保）。ID 採番のみ進める。
@@ -202,14 +208,15 @@ export class AddFeatureUseCase {
   buildContainerFeature(
     currentTime: TimePoint,
     childIds: readonly string[],
-    property: AnchorProperty
+    property: AnchorProperty,
+    parentId: string | null = null
   ): Feature {
     if (childIds.length === 0) {
       throw new Error('集約地物（コンテナ）は下位領域を持たずに構築できません');
     }
     const featureId = `f-${this.nextFeatureNum++}`;
     const anchorId = `a-${this.nextAnchorNum++}`;
-    const placement: AnchorPlacement = createAnchorPlacement(null, [...childIds]);
+    const placement: AnchorPlacement = createAnchorPlacement(parentId, [...childIds]);
     const anchor = new FeatureAnchor(
       anchorId,
       { start: currentTime },

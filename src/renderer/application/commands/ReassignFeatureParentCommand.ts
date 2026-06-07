@@ -23,7 +23,9 @@ export interface ReassignFeatureParentCommandParams {
   readonly effectiveTime: TimePoint;
   readonly transferType?: TransferType;
   /**
-   * 指定時、新規上位領域（集約地物）を作成して対象地物を一括帰属させる（連邦化）。
+   * 指定時、新規上位領域（集約地物）を作成して対象地物を一括帰属させる。
+   * `createNewParent.parentId` 未設定なら新規最上位コンテナ（連邦化）、非 null なら
+   * 既存の上位領域に所属する新中間コンテナ（自治化）。
    * 生成したコンテナの除去は beforeState スナップショット復元で自動的に取り消される。
    */
   readonly createNewParent?: CreateNewParentSpec;

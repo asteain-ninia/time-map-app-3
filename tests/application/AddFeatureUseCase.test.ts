@@ -373,5 +373,20 @@ describe('AddFeatureUseCase', () => {
       useCase = new AddFeatureUseCase();
       expect(() => useCase.buildContainerFeature(time, [], { name: 'X', description: '' })).toThrow();
     });
+
+    it('parentId 指定で既存上位領域に所属する新中間コンテナを構築する（自治化）', () => {
+      useCase = new AddFeatureUseCase();
+      const container = useCase.buildContainerFeature(
+        time,
+        ['c1'],
+        { name: '自治州', description: '', kind: '州' },
+        'p1'
+      );
+      const anchor = container.anchors[0];
+      expect(anchor.shape).toBeUndefined();
+      expect(anchor.placement.parentId).toBe('p1');
+      expect(anchor.placement.isTopLevel).toBe(false);
+      expect(anchor.placement.childIds).toEqual(['c1']);
+    });
   });
 });

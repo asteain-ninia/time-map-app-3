@@ -38,13 +38,20 @@ export class FeatureParentTransferError extends Error {
 /**
  * 新規上位領域作成サブフローの指定（要件定義書 §2.1 line 290-293）。
  * 指定時は in-memory で集約地物（shape なしコンテナ）を新規生成し、
- * 対象地物をその下位領域として一括帰属させる（連邦化）。
- * Phase 4-1 では新規最上位コンテナ（`parentId === null` / `isTopLevel === true`）のみ対応。
- * 中間階層挿入（自治化: 新規親が既存親を持つ）は後続サブフェーズ。
+ * 対象地物をその下位領域として一括帰属させる。
+ *
+ * `parentId` で新規コンテナ自身の所属を指定する（要件定義書 §2.1 line 292 / line 305）:
+ * - `null` または未指定: 新規最上位コンテナ（`parentId === null` / `isTopLevel === true`）— 連邦化。
+ * - 非 null: 既存の上位領域に所属する新中間コンテナ — 自治化（既存子と既存親の間に挿入）。
+ *
+ * 注意（§6.0.1 検出観点2 / 現状.md Phase 4-3 自治化部分「型同期の注意」）:
+ * presentation 層 `CreateNewParentInput`（`parentTransferDialogUtils.ts`）と同形の独立宣言。
+ * フィールド追加時は両型をセットで見直す（App.svelte のスプレッド橋渡しは構造的型一致に依存）。
  */
 export interface CreateNewParentSpec {
   readonly name: string;
   readonly kind?: string;
+  readonly parentId?: string | null;
 }
 
 export interface ReassignFeatureParentParams {
@@ -97,16 +104,25 @@ export class ReassignFeatureParentUseCase {
     const usedAnchorIds = collectUsedAnchorIds(staged);
     const prunedParentQueue: CascadingParentSync[] = [];
 
-    // 新規上位領域作成サブフロー（連邦化）: 対象地物を下位領域に持つ集約地物を
-    // in-memory に生成して staged へ挿入し、その ID を新親とする（要件定義書 §2.1 line 290-302）。
+    // 新規上位領域作成サブフロー: 対象地物を下位領域に持つ集約地物を in-memory に生成して
+    // staged へ挿入し、その ID を新親とする（要件定義書 §2.1 line 290-302）。
     // childIds を生成時点で対象地物に充足することで「shape なし ⟹ childIds 非空」不変条件を満たす。
+    // `createNewParent.parentId` 非 null のとき新規コンテナ自身も既存上位領域 Q に所属する（自治化）。
     let newParentId = params.newParentId;
     let createdParentId: string | null = null;
+    let newContainerParentId: string | null = null;
     if (params.createNewParent) {
       // 名称の非空検証（要件定義書 §2.1 line 291）。UI の確定ボタン disabled と二重防御。
       const name = params.createNewParent.name.trim();
       if (name === '') {
         throw new FeatureParentTransferError('新規上位領域の名称を入力してください');
+      }
+      newContainerParentId = params.createNewParent.parentId ?? null;
+      if (newContainerParentId !== null) {
+        // 自治化: 新規コンテナの所属先 Q の妥当性（存在・面情報・期間カバレッジ）を確定前に検証する
+        // （§6.6.1 / §6.6.3 line 586 二重防御）。循環参照は staged に Q を親とする Y を入れた状態で
+        // 下流の validateTransfer（getAncestors(Y) ∌ 移動対象）が担う。
+        this.assertContainerParentValid(newContainerParentId, featureIds, params.effectiveTime, staged);
       }
       const container = this.featureUseCase.buildContainerFeature(
         params.effectiveTime,
@@ -117,7 +133,8 @@ export class ReassignFeatureParentUseCase {
           ...(params.createNewParent.kind !== undefined
             ? { kind: params.createNewParent.kind }
             : {}),
-        }
+        },
+        newContainerParentId
       );
       staged.set(container.id, container);
       changedFeatureIds.add(container.id);
@@ -151,6 +168,56 @@ export class ReassignFeatureParentUseCase {
       this.stageFeature(staged, changedFeatureIds, feature, updated);
     }
 
+    if (newParentId !== null) {
+      const newParent = staged.get(newParentId)!;
+      const movedFeatures = featureIds.map((featureId) => staged.get(featureId)!);
+      const updated = this.updateParentChildIdsFromTime(
+        newParent,
+        params.effectiveTime,
+        usedAnchorIds,
+        movedFeatures
+      );
+      this.stageFeature(staged, changedFeatureIds, newParent, updated);
+    }
+
+    // 新規コンテナ（shape なし）は子の存在終了で childIds が空化する区間を持ち得る
+    // （`updateParentChildIdsFromTime` の錨分割で末尾区間に発生）。これは不変条件
+    // 「shape なし ⟹ childIds 非空」を破る（開発ガイド §6.6.8 / Phase 2.5-E 申し送り:
+    // 生成だけでなく変異の各ステップで保証する）。空 childIds の shape なし錨を剪定し、
+    // 全錨が消えるなら下位領域全喪失としてコンテナを消滅させる（要件定義書 §2.1）。
+    // 自治化で旧親 Q へ Y を同期する前にここで Y を剪定し、Y の実寿命（子の和の期間）で
+    // Q の childIds に追加できるようにする（順序: Y への子追加 → Y 剪定 → Q への Y 追加 → 旧親除去）。
+    if (createdParentId !== null) {
+      const container = staged.get(createdParentId);
+      if (container) {
+        const pruned = pruneEmptyContainerAnchors(container);
+        if (pruned === null) {
+          this.stageFeatureDeletion(staged, changedFeatureIds, container);
+        } else {
+          this.stageFeature(staged, changedFeatureIds, container, pruned);
+        }
+      }
+    }
+
+    // 自治化（要件定義書 §2.1 line 305）: 新規中間コンテナ Y を所属先 Q の下位領域へ同期する
+    // （親 ≡ 子の和の維持）。旧親除去ループより前に実行することで、Q が移動対象 X を失っても
+    // Y を保持し、「Q が唯一の子 X を失って誤って prune される」失敗モードを防ぐ（Q が X の旧親でも
+    // ある自治化挿入のケース）。剪定後の Y を渡すことで Q は Y の実寿命でのみ Y を子に持つ。
+    // 差分空で Y が消滅した場合（staged に無い）は同期不要。
+    if (createdParentId !== null && newContainerParentId !== null) {
+      const containerParent = staged.get(newContainerParentId);
+      const containerFeature = staged.get(createdParentId);
+      if (containerParent && containerFeature) {
+        const updated = this.updateParentChildIdsFromTime(
+          containerParent,
+          params.effectiveTime,
+          usedAnchorIds,
+          [containerFeature]
+        );
+        this.stageFeature(staged, changedFeatureIds, containerParent, updated);
+      }
+    }
+
     for (const oldParentId of oldParentIds) {
       if (oldParentId === newParentId) continue;
       const oldParent = staged.get(oldParentId);
@@ -180,35 +247,6 @@ export class ReassignFeatureParentUseCase {
       } else {
         this.stageFeatureDeletion(staged, changedFeatureIds, oldParent);
         prunedParentQueue.push({ original: oldParent });
-      }
-    }
-
-    if (newParentId !== null) {
-      const newParent = staged.get(newParentId)!;
-      const movedFeatures = featureIds.map((featureId) => staged.get(featureId)!);
-      const updated = this.updateParentChildIdsFromTime(
-        newParent,
-        params.effectiveTime,
-        usedAnchorIds,
-        movedFeatures
-      );
-      this.stageFeature(staged, changedFeatureIds, newParent, updated);
-    }
-
-    // 新規コンテナ（shape なし）は子の存在終了で childIds が空化する区間を持ち得る
-    // （`updateParentChildIdsFromTime` の錨分割で末尾区間に発生）。これは不変条件
-    // 「shape なし ⟹ childIds 非空」を破る（開発ガイド §6.6.8 / Phase 2.5-E 申し送り:
-    // 生成だけでなく変異の各ステップで保証する）。空 childIds の shape なし錨を剪定し、
-    // 全錨が消えるなら下位領域全喪失としてコンテナを消滅させる（要件定義書 §2.1）。
-    if (createdParentId !== null) {
-      const container = staged.get(createdParentId);
-      if (container) {
-        const pruned = pruneEmptyContainerAnchors(container);
-        if (pruned === null) {
-          this.stageFeatureDeletion(staged, changedFeatureIds, container);
-        } else {
-          this.stageFeature(staged, changedFeatureIds, container, pruned);
-        }
       }
     }
 
@@ -333,6 +371,36 @@ export class ReassignFeatureParentUseCase {
         }
       }
     }
+  }
+
+  /**
+   * 自治化（要件定義書 §2.1 line 305）における新規コンテナの所属先 Q を確定前に検証する。
+   *
+   * 新規コンテナ Y は移動対象の和を子に持つため、Y の所属先 Q は移動対象の存在期間を覆う
+   * 面情報でなければならない（Q が Y を覆う ⟸ Q が各移動対象を覆う、∵ Y ≡ 移動対象の和）。
+   * 循環参照（Q が移動対象自身またはその下位領域）は staged に Y(parentId=Q) を入れた状態で
+   * `validateRequest` 内の `validateTransfer`（`getAncestors(Y)` ∌ 移動対象）が担うため、ここでは
+   * 存在・面情報・期間カバレッジのみを検証する（§6.6.1 / §6.6.3 line 586 二重防御）。
+   */
+  private assertContainerParentValid(
+    containerParentId: string,
+    featureIds: readonly string[],
+    effectiveTime: TimePoint,
+    staged: ReadonlyMap<string, Feature>
+  ): void {
+    const containerParent = staged.get(containerParentId);
+    if (!containerParent || !containerParent.existsAt(effectiveTime)) {
+      throw new FeatureParentTransferError(
+        `新規上位領域の所属先 "${containerParentId}" が指定時刻に存在しません`
+      );
+    }
+    if (containerParent.featureType !== 'Polygon') {
+      throw new FeatureParentTransferError('新規上位領域の所属先には面情報のみ指定できます');
+    }
+    const targets = featureIds
+      .map((id) => staged.get(id))
+      .filter((feature): feature is Feature => feature !== undefined);
+    this.assertParentCoversTargetRanges(containerParent, targets, effectiveTime);
   }
 
   private updatePlacementFromTime(

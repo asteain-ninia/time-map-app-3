@@ -823,6 +823,278 @@ describe('ReassignFeatureParentUseCase', () => {
     });
   });
 
+  // ── 新規上位領域作成サブフロー（自治化: 既存子と既存親の間に新中間コンテナを挿入） ──
+  // 要件定義書 §2.1 line 292 / line 305。createNewParent.parentId 非 null で新規コンテナ自身が
+  // 既存上位領域 Q に所属する。新規コンテナ Y を Q の childIds へ同期して親 ≡ 子の和を維持する。
+  describe('新規上位領域作成サブフロー（自治化）', () => {
+    /** 集約地物（shape なしコンテナ）を作る */
+    function makeContainer(id: string, childIds: readonly string[], parentId: string | null = null, end?: TimePoint): Feature {
+      return makeFeature(id, [
+        new FeatureAnchor(
+          `${id}-a1`,
+          end ? { start: t1000, end } : { start: t1000 },
+          { name: id, description: '' },
+          undefined,
+          placement(parentId, childIds)
+        ),
+      ]);
+    }
+
+    function expectContainerInvariant(container: Feature): void {
+      for (const anchor of container.anchors) {
+        if (anchor.shape === undefined) {
+          expect(anchor.placement.childIds.length).toBeGreaterThan(0);
+        }
+      }
+    }
+
+    /**
+     * 拒否を例外型だけでなくメッセージ（拒否理由）でも pin する。全拒否経路が同一例外型
+     * `FeatureParentTransferError` のため、型一致だけでは意図したガード以外（先行する別検証）が
+     * 弾いても緑になる。reason をメッセージ部分一致で固定して経路を特定する。
+     */
+    function expectTransferError(fn: () => void, reasonPattern: RegExp): void {
+      let caught: unknown;
+      try {
+        fn();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(FeatureParentTransferError);
+      expect((caught as Error).message).toMatch(reasonPattern);
+    }
+
+    it('既存子 X と既存親 P の間に新中間コンテナ Y を挿入する（P の childIds は X→Y へ差替え）', () => {
+      const p = makeContainer('p', ['x']);
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement('p'))]);
+      addFeature.restore(new Map([[p.id, p], [x.id, x]]), new Map());
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '自治州', kind: '州', parentId: 'p' },
+      });
+
+      const yId = result.createdParentId!;
+      expect(yId).toBe('f-1');
+
+      // 新中間コンテナ Y: parentId=p（非最上位）、shape なし、childIds=[x]
+      const y = addFeature.getFeatureById(yId)!;
+      const yAnchor = y.getActiveAnchor(t1500)!;
+      expect(yAnchor.placement.parentId).toBe('p');
+      expect(yAnchor.placement.isTopLevel).toBe(false);
+      expect(yAnchor.shape).toBeUndefined();
+      expect(yAnchor.placement.childIds).toEqual(['x']);
+      expect(yAnchor.property.name).toBe('自治州');
+      expect(yAnchor.property.kind).toBe('州');
+      expectContainerInvariant(y);
+
+      // X: t1500 未満は P 直属、t1500 以降は Y 直属
+      const xFeature = addFeature.getFeatureById('x')!;
+      expect(xFeature.getActiveAnchor(t1400)?.placement.parentId).toBe('p');
+      expect(xFeature.getActiveAnchor(t1600)?.placement.parentId).toBe(yId);
+
+      // P: t1500 未満は [x]、t1500 以降は [Y]（唯一子でも prune されず存続）
+      const pFeature = addFeature.getFeatureById('p')!;
+      expect(pFeature.getActiveAnchor(t1400)?.placement.childIds).toEqual(['x']);
+      expect(pFeature.getActiveAnchor(t1600)?.placement.childIds).toEqual([yId]);
+      expectContainerInvariant(pFeature);
+    });
+
+    it('所属先 Q が X の既存親でない無関係コンテナでも、Y ごと Q へ配置し旧親は子喪失で剪定する（自治化+再配置の合成）', () => {
+      // 仕様 §2.1「単一フローでの統合表現」+ 親候補制約（非循環 + カバレッジのみ）の帰結。
+      // newParentParentCandidates は「X の上位領域」に限定しないため、Q = 無関係コンテナでも成立する。
+      // X(唯一子, 親P) を新中間コンテナ Y へ束ね、Y を無関係な Q 直下へ配置: P → ∅, Q → Y → X。
+      const p = makeContainer('p', ['x']);
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement('p'))]);
+      const q = makeContainer('q', ['qchild']);
+      const qchild = makeFeature('qchild', [makeAnchor('qchild-a1', t1000, placement('q'))]);
+      addFeature.restore(new Map([[p.id, p], [x.id, x], [q.id, q], [qchild.id, qchild]]), new Map());
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '自治州', parentId: 'q' },
+      });
+      const yId = result.createdParentId!;
+
+      // Y は無関係 Q の下位領域、X は Y の下位領域
+      const y = addFeature.getFeatureById(yId)!;
+      expect(y.getActiveAnchor(t1600)?.placement.parentId).toBe('q');
+      expect(y.getActiveAnchor(t1600)?.placement.childIds).toEqual(['x']);
+      expect(addFeature.getFeatureById('x')!.getActiveAnchor(t1600)?.placement.parentId).toBe(yId);
+
+      // Q は既存子 qchild を保ったまま Y を獲得
+      const qFeature = addFeature.getFeatureById('q')!;
+      expect(qFeature.getActiveAnchor(t1600)?.placement.childIds.slice().sort()).toEqual([yId, 'qchild'].sort());
+      expectContainerInvariant(qFeature);
+
+      // 旧親 P は唯一子 X を t1500 で失い [t1500,∞) を剪定 → [t1000,t1500) のみ存続
+      const pFeature = addFeature.getFeatureById('p')!;
+      expect(pFeature.getActiveAnchor(t1400)?.placement.childIds).toEqual(['x']);
+      expect(pFeature.getActiveAnchor(t1600)).toBeUndefined();
+      expectContainerInvariant(pFeature);
+    });
+
+    it('多子 P + 有限終了子の自治化で、Y は子の実寿命でのみ P の子になる（剪定後同期）', () => {
+      // 回帰: Y を開区間のまま P へ追加すると、Y 剪定後に「P が Y を主張するが Y 非存在」の
+      // 時間区間が生じ validateStagedHierarchy が誤って拒否する失敗モード。剪定→同期の順序で防ぐ。
+      const p = makeContainer('p', ['x', 'sib']);
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement('p'), t2000)]);
+      const sib = makeFeature('sib', [makeAnchor('sib-a1', t1000, placement('p'))]);
+      addFeature.restore(new Map([[p.id, p], [x.id, x], [sib.id, sib]]), new Map());
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '自治州', parentId: 'p' },
+      });
+      const yId = result.createdParentId!;
+
+      // Y は [t1500,t2000) のみ存続（X の寿命）。t2000 以降は子喪失で消滅
+      const y = addFeature.getFeatureById(yId)!;
+      expect(y.getActiveAnchor(t1600)?.placement.childIds).toEqual(['x']);
+      expect(y.getActiveAnchor(t2000)).toBeUndefined();
+      expectContainerInvariant(y);
+
+      // P の childIds: [t1000,t1500)=[sib,x] / [t1500,t2000)=[sib,Y] / [t2000,∞)=[sib]
+      const pFeature = addFeature.getFeatureById('p')!;
+      expect(pFeature.getActiveAnchor(t1400)?.placement.childIds.slice().sort()).toEqual(['sib', 'x']);
+      expect(pFeature.getActiveAnchor(t1600)?.placement.childIds.slice().sort()).toEqual([yId, 'sib'].sort());
+      expect(pFeature.getActiveAnchor(t2200)?.placement.childIds).toEqual(['sib']);
+      expectContainerInvariant(pFeature);
+    });
+
+    it('集約地物 P の下位領域すべてを新中間コンテナ Y へ束ね、Y を P 直下へ挿入する（§2.1 line 305+313）', () => {
+      // scope='children'（下位領域すべて）× 自治化（新規コンテナの所属先 = P 自身）の組合せ。
+      // featureIds = P の全子、createNewParent.parentId = P → P → Y → {a,b}（P は唯一子 Y で存続）。
+      const p = makeContainer('p', ['a', 'b']);
+      const a = makeFeature('a', [makeAnchor('a-a1', t1000, placement('p'))]);
+      const b = makeFeature('b', [makeAnchor('b-a1', t1000, placement('p'))]);
+      addFeature.restore(new Map([[p.id, p], [a.id, a], [b.id, b]]), new Map());
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['a', 'b'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '州', parentId: 'p' },
+      });
+      const yId = result.createdParentId!;
+
+      // Y: parentId=p（非最上位）、childIds=[a,b]
+      const y = addFeature.getFeatureById(yId)!;
+      const yAnchor = y.getActiveAnchor(t1600)!;
+      expect(yAnchor.placement.parentId).toBe('p');
+      expect(yAnchor.placement.isTopLevel).toBe(false);
+      expect(yAnchor.placement.childIds.slice().sort()).toEqual(['a', 'b']);
+      expectContainerInvariant(y);
+
+      // a / b の親は Y
+      expect(addFeature.getFeatureById('a')!.getActiveAnchor(t1600)?.placement.parentId).toBe(yId);
+      expect(addFeature.getFeatureById('b')!.getActiveAnchor(t1600)?.placement.parentId).toBe(yId);
+
+      // P は全子を Y へ譲り、唯一子 Y で存続（誤 prune されない）
+      const pFeature = addFeature.getFeatureById('p')!;
+      expect(pFeature.getActiveAnchor(t1400)?.placement.childIds.slice().sort()).toEqual(['a', 'b']);
+      expect(pFeature.getActiveAnchor(t1600)?.placement.childIds).toEqual([yId]);
+      expectContainerInvariant(pFeature);
+    });
+
+    it('所属先が指定時刻に存在しないと拒否する（assertContainerParentValid 存在検証）', () => {
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement(null, []))]);
+      addFeature.restore(new Map([[x.id, x]]), new Map());
+
+      // reason を pin: 存在検証分岐（buildContainerFeature 前の確定前ガード）が弾く
+      expectTransferError(() => transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '自治州', parentId: 'ghost' },
+      }), /存在しません/);
+    });
+
+    it('所属先が面情報でない（点情報）と拒否する（assertContainerParentValid 面情報検証）', () => {
+      // Q が点情報。新規コンテナの所属先には面情報のみ指定できる（自治化の確定前検証）。
+      const q = new Feature('q', 'Point', [
+        new FeatureAnchor(
+          'q-a1',
+          { start: t1000 },
+          { name: 'q', description: '' },
+          { type: 'Point', vertexId: 'qv' },
+          placement(null, [])
+        ),
+      ]);
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement(null, []))]);
+      addFeature.restore(new Map([[q.id, q], [x.id, x]]), new Map());
+
+      expectTransferError(() => transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '自治州', parentId: 'q' },
+      }), /面情報のみ/);
+    });
+
+    it('所属先 Q が対象の存在期間を覆わないと拒否する（assertContainerParentValid 期間カバレッジ検証）', () => {
+      // Q は [t1000,t2000) で終了する集約地物。X は開区間 [t1000,∞)。t1500 で Q は存在するが
+      // X の存在期間（t1500 以降の開区間）を覆えないため、Q カバレッジ分岐が弾く。
+      const q = makeContainer('q', ['other'], null, t2000);
+      const other = makeFeature('other', [makeAnchor('other-a1', t1000, placement('q'), t2000)]);
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement(null, []))]);
+      addFeature.restore(new Map([[q.id, q], [other.id, other], [x.id, x]]), new Map());
+
+      expectTransferError(() => transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '自治州', parentId: 'q' },
+      }), /覆っていません/);
+    });
+
+    it('所属先を移動対象自身に指定すると循環参照として拒否する（§6.6.3 validateTransfer の循環検出）', () => {
+      // X が自身をカバーするため assertContainerParentValid は通過し、staged に Y(parentId=x) を
+      // 入れた状態で validateTransfer が getAncestors(Y) ∋ x を検出して弾く（reason で経路を pin）。
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement(null, []))]);
+      addFeature.restore(new Map([[x.id, x]]), new Map());
+
+      expectTransferError(() => transfer.reassignFeatureParent({
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '自治州', parentId: 'x' },
+      }), /循環参照/);
+    });
+
+    it('Undo で新中間コンテナが消滅し X が旧親直属へ戻り、Redo で再挿入される', () => {
+      const p = makeContainer('p', ['x']);
+      const x = makeFeature('x', [makeAnchor('x-a1', t1000, placement('p'))]);
+      addFeature.restore(new Map([[p.id, p], [x.id, x]]), new Map());
+      const undoRedo = new UndoRedoManager();
+
+      undoRedo.execute(new ReassignFeatureParentCommand(transfer, addFeature, {
+        featureIds: ['x'],
+        newParentId: null,
+        effectiveTime: t1500,
+        createNewParent: { name: '自治州', parentId: 'p' },
+      }));
+      expect(addFeature.getFeatureById('f-1')).toBeDefined();
+      expect(addFeature.getFeatureById('x')!.getActiveAnchor(t1500)?.placement.parentId).toBe('f-1');
+
+      undoRedo.undo();
+      expect(addFeature.getFeatureById('f-1')).toBeUndefined();
+      expect(addFeature.getFeatureById('x')!.getActiveAnchor(t1500)?.placement.parentId).toBe('p');
+      expect(addFeature.getFeatureById('p')!.getActiveAnchor(t1500)?.placement.childIds).toEqual(['x']);
+
+      undoRedo.redo();
+      expect(addFeature.getFeatureById('f-1')).toBeDefined();
+      expect(addFeature.getFeatureById('x')!.getActiveAnchor(t1500)?.placement.parentId).toBe('f-1');
+      expect(addFeature.getFeatureById('p')!.getActiveAnchor(t1500)?.placement.childIds).toEqual(['f-1']);
+    });
+  });
+
   // ── 親候補制約・名称検証の確定前検証 (Phase 4-2) ───────────────────
   // ダイアログのリアルタイム判定（buildParentCandidateItems / UI 確定 disabled）と
   // 対をなす UseCase 入口の確定前検証（§6.6.3 line 586 二重防御 / §6.6.1）。

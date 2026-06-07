@@ -19,28 +19,40 @@ export interface ParentCandidateItem {
 }
 
 /**
- * 新規上位領域作成サブフロー（連邦化）の入力（要件定義書 §2.1 line 290-293）。
- * UI で入力された名称・種別ラベルを `ReassignFeatureParentUseCase.createNewParent` へ橋渡しする。
+ * 新規上位領域作成サブフロー（連邦化・自治化）の入力（要件定義書 §2.1 line 290-293）。
+ * UI で入力された名称・種別ラベル・新規コンテナ自身の所属先を
+ * `ReassignFeatureParentUseCase.createNewParent` へ橋渡しする。
  * Application 層の `CreateNewParentSpec` と同形だが、層をまたぐ型依存を避けるため
- * presentation 層で独立に宣言し、App.svelte が UseCase 型へマッピングする。
+ * presentation 層で独立に宣言し、App.svelte が UseCase 型へマッピングする
+ * （§6.0.1 検出観点2: フィールド追加時は両型をセットで見直す）。
+ *
+ * `parentId` で新規コンテナ自身の所属を指定する（要件定義書 §2.1 line 292 / line 305）:
+ * - `null` または未指定: 新規最上位コンテナ（最上位フラグ真）— 連邦化。
+ * - 非 null: 既存の上位領域に所属する新中間コンテナ — 自治化。
  */
 export interface CreateNewParentInput {
   readonly name: string;
   readonly kind?: string;
+  readonly parentId?: string | null;
 }
 
 export interface ParentTransferConfirmDetail {
   readonly scope: ParentTransferScope;
   readonly featureIds: readonly string[];
   readonly newParentId: string | null;
-  /** 指定時、新規最上位コンテナを作成して対象を帰属させる（連邦化）。`newParentId` は無視される。 */
+  /**
+   * 指定時、新規上位領域コンテナを作成して対象を帰属させる。`newParentId` は無視される。
+   * `createNewParent.parentId` 未設定なら新規最上位コンテナ（連邦化）、非 null なら
+   * 既存の上位領域に所属する新中間コンテナ（自治化）。
+   */
   readonly createNewParent?: CreateNewParentInput;
 }
 
 /**
  * 所属変更ダイアログ「新しい親」の確定意図（要件定義書 §2.1 line 286-293）。
  * - `'reassign'`: 既存の面情報 / 親なし（最上位）へ移す（割譲・帰属・直轄化・独立）。
- * - `'createNewParent'`: 新規最上位コンテナを作成して帰属させる（連邦化）。
+ * - `'createNewParent'`: 新規上位領域コンテナを作成して帰属させる。`spec.parentId` 未設定なら
+ *   新規最上位コンテナ（連邦化）、非 null なら既存の上位領域に所属する新中間コンテナ（自治化）。
  */
 export type ParentTransferResolution =
   | { readonly type: 'reassign'; readonly newParentId: string | null }
@@ -226,15 +238,30 @@ export function canParentCoverFeatureRanges(
 }
 
 /**
+ * 新規上位領域作成サブフローにおける、新規コンテナ自身の所属（要件定義書 §2.1 line 292）。
+ * - `'root'`: 新規最上位領域として作成する（最上位フラグ真）— 連邦化。
+ * - `'existing'`: 既存の上位領域に所属させる（自治化: 既存子と既存親の間に挿入）。
+ */
+export type NewParentPlacementMode = 'root' | 'existing';
+
+/**
  * 所属変更ダイアログの「新しい親」3 択（既存 / 親なし / 新規作成）から、
  * 確定意図を解決する（要件定義書 §2.1 line 286-293）。
  *
  * - `'root'`（独立）: 親なし（最上位領域へ）。`{ type: 'reassign', newParentId: null }`。
  * - `'existing'`（割譲・帰属・直轄化）: 選択中の既存候補。候補一覧に含まれる有効な
  *   選択のときのみ解決し、未選択・候補外なら `null`（確定不可）を返す。
- * - `'new'`（連邦化）: 新規最上位コンテナを作成。名称が非空のときのみ解決し、
+ * - `'new'`（連邦化・自治化）: 新規上位領域コンテナを作成。名称が非空のときのみ解決し、
  *   空名なら `null`（確定不可）を返す。種別ラベルは任意（空なら未設定）。
- *   中間階層挿入（自治化）・再帰積み上げは後続サブフェーズ。
+ *   新規コンテナ自身の所属は `newParentPlacementMode` で分岐する:
+ *   - `'root'`: 新規最上位コンテナ（`parentId` 未設定）。
+ *   - `'existing'`（自治化）: `selectedNewParentParentId` が `newParentParentCandidates`
+ *     一覧に含まれる有効な選択のときのみ解決し、未選択・候補外なら `null`（確定不可）を返す。
+ *   再帰積み上げ（多段中間階層挿入）は後続サブフェーズ。
+ *
+ * 既存再割当の候補（`parentCandidates`）と自治化の所属先候補（`newParentParentCandidates`）は
+ * 除外規則が異なるため別引数で受け取る（後者は scope='children' でも現在の親を除外しない。
+ * 自治化は既存子と既存親の間への挿入だから。呼び出し側の ParentTransferDialog で別導出する）。
  */
 export function resolveParentTransferTarget(params: {
   readonly mode: ParentTransferMode;
@@ -242,8 +269,20 @@ export function resolveParentTransferTarget(params: {
   readonly parentCandidates: readonly ParentCandidateItem[];
   readonly newParentName: string;
   readonly newParentKind: string;
+  readonly newParentPlacementMode: NewParentPlacementMode;
+  readonly selectedNewParentParentId: string;
+  readonly newParentParentCandidates: readonly ParentCandidateItem[];
 }): ParentTransferResolution | null {
-  const { mode, selectedExistingParentId, parentCandidates, newParentName, newParentKind } = params;
+  const {
+    mode,
+    selectedExistingParentId,
+    parentCandidates,
+    newParentName,
+    newParentKind,
+    newParentPlacementMode,
+    selectedNewParentParentId,
+    newParentParentCandidates,
+  } = params;
   if (mode === 'root') return { type: 'reassign', newParentId: null };
   if (mode === 'existing') {
     return parentCandidates.some((candidate) => candidate.id === selectedExistingParentId)
@@ -253,9 +292,23 @@ export function resolveParentTransferTarget(params: {
   const name = newParentName.trim();
   if (name === '') return null;
   const kind = newParentKind.trim();
+  // 自治化: 新規コンテナの所属先は所属先候補一覧に含まれる有効な選択のときのみ確定する
+  // （新規コンテナ自身の循環参照防止・期間カバレッジは候補一覧の絞り込みで担保。
+  //  UseCase 入口の assertContainerParentValid / validateTransfer と二重防御）。
+  let containerParentId: string | null = null;
+  if (newParentPlacementMode === 'existing') {
+    if (!newParentParentCandidates.some((candidate) => candidate.id === selectedNewParentParentId)) {
+      return null;
+    }
+    containerParentId = selectedNewParentParentId;
+  }
   return {
     type: 'createNewParent',
-    spec: { name, ...(kind !== '' ? { kind } : {}) },
+    spec: {
+      name,
+      ...(kind !== '' ? { kind } : {}),
+      ...(containerParentId !== null ? { parentId: containerParentId } : {}),
+    },
   };
 }
 

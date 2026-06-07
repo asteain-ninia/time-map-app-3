@@ -9,6 +9,7 @@
     getFeatureDisplayName,
     getTransferFeatureIds,
     resolveParentTransferTarget,
+    type NewParentPlacementMode,
     type ParentTransferConfirmDetail,
     type ParentTransferMode,
     type ParentTransferScope,
@@ -35,11 +36,16 @@
   let selectedExistingParentId = $state('');
   let newParentName = $state('');
   let newParentKind = $state('');
+  // 新規上位領域作成サブフローにおける、新規コンテナ自身の所属（連邦化 = root / 自治化 = existing）。
+  let newParentPlacementMode = $state<NewParentPlacementMode>('root');
+  let selectedNewParentParentId = $state('');
 
   let activeAnchor = $derived(getActivePolygonAnchor(feature, currentTime));
   let selectedEnabled = $derived(canTransferSelectedFeature(feature, currentTime));
   let childrenEnabled = $derived(canTransferChildren(feature, currentTime, features));
   let featureIds = $derived(getTransferFeatureIds(feature, currentTime, scope));
+  // 既存の面情報への「再割当」候補（割譲・帰属・直轄化）。scope='children'（下位領域すべて）
+  // のときは現在の親（feature.id）を除外する: 子を現在の親へ再割当するのは no-op のため。
   let excludedIds = $derived(scope === 'children' && feature ? [feature.id] : []);
   let parentCandidates = $derived(buildParentCandidateItems({
     features,
@@ -47,17 +53,33 @@
     movingFeatureIds: featureIds,
     excludedFeatureIds: excludedIds,
   }));
+  // 自治化（新規中間コンテナの所属先）候補。再割当候補と除外規則が異なる:
+  // scope='children' でも現在の親（feature.id）を除外しない。自治化は「既存子と既存親の間に
+  // 新規中間コンテナを挿入する」操作（要件定義書 §2.1 line 305）であり、現在の親 P こそが
+  // 新規コンテナ Y の所属先候補だから（P → Y → 子）。循環防止の移動対象自身 + 全子孫の除外のみ
+  // が共通制約（`buildParentCandidateItems` の movingFeatureIds 経由）。
+  let newParentParentCandidates = $derived(buildParentCandidateItems({
+    features,
+    time: currentTime,
+    movingFeatureIds: featureIds,
+    excludedFeatureIds: [],
+  }));
   let currentParentId = $derived(
     scope === 'selected' ? activeAnchor?.placement.parentId ?? null : feature?.id ?? null
   );
   // 3 択（既存 / 親なし / 新規作成）→ 確定意図（reassign / createNewParent）。
-  // 解決できないとき（既存モードで未選択、または新規作成モードで名称未入力）は null。
+  // 解決できないとき（既存モードで未選択、新規作成モードで名称未入力、
+  // または自治化モードで所属先未選択）は null。既存再割当は parentCandidates、
+  // 自治化の所属先は newParentParentCandidates で別々に検証する（除外規則が異なるため）。
   let transferTarget = $derived(resolveParentTransferTarget({
     mode: parentMode,
     selectedExistingParentId,
     parentCandidates,
     newParentName,
     newParentKind,
+    newParentPlacementMode,
+    selectedNewParentParentId,
+    newParentParentCandidates,
   }));
   let targetNames = $derived(
     featureIds.map((featureId) => {
@@ -80,6 +102,8 @@
     selectedExistingParentId = '';
     newParentName = '';
     newParentKind = '';
+    newParentPlacementMode = 'root';
+    selectedNewParentParentId = '';
   });
 
   $effect(() => {
@@ -103,6 +127,21 @@
     if (selectedExistingParentId === '') return;
     if (parentCandidates.some((candidate) => candidate.id === selectedExistingParentId)) return;
     selectedExistingParentId = '';
+  });
+
+  // 自治化の所属先候補が無いときは「既存の上位領域に所属させる」を選べないため
+  // 新規コンテナの所属を「新規最上位として作成」へ退避する。
+  $effect(() => {
+    if (newParentPlacementMode === 'existing' && newParentParentCandidates.length === 0) {
+      newParentPlacementMode = 'root';
+    }
+  });
+
+  // 自治化の所属先選択が候補から外れたら未選択へ戻す（scope 切替で候補が変わるケース）。
+  $effect(() => {
+    if (selectedNewParentParentId === '') return;
+    if (newParentParentCandidates.some((candidate) => candidate.id === selectedNewParentParentId)) return;
+    selectedNewParentParentId = '';
   });
 
   function confirm(): void {
@@ -234,6 +273,39 @@
               placeholder="連邦 / 帝国 など"
               bind:value={newParentKind}
             />
+            <span class="field-label">この上位領域の所属</span>
+            <label>
+              <input
+                type="radio"
+                name="new-parent-placement-mode"
+                value="root"
+                bind:group={newParentPlacementMode}
+              />
+              新規最上位領域として作成（最上位フラグ）
+            </label>
+            <label class:disabled={newParentParentCandidates.length === 0}>
+              <input
+                type="radio"
+                name="new-parent-placement-mode"
+                value="existing"
+                bind:group={newParentPlacementMode}
+                disabled={newParentParentCandidates.length === 0}
+              />
+              既存の上位領域に所属させる（自治化）
+            </label>
+            {#if newParentPlacementMode === 'existing'}
+              <select
+                id="new-parent-parent"
+                class="parent-select"
+                aria-label="新規上位領域の所属先を選択"
+                bind:value={selectedNewParentParentId}
+              >
+                <option value="">選択してください</option>
+                {#each newParentParentCandidates as candidate (candidate.id)}
+                  <option value={candidate.id}>{candidate.name} ({candidate.id})</option>
+                {/each}
+              </select>
+            {/if}
           </div>
         {/if}
       </div>
@@ -248,8 +320,10 @@
             選択地物は下位領域を持つため、選択地物のみの所属変更はできません。
           {:else if scope === 'children' && !childrenEnabled}
             下位領域に末端でない地物が含まれるため、一括での所属変更はできません。
-          {:else if parentMode === 'new' && transferTarget === null}
+          {:else if parentMode === 'new' && newParentName.trim() === ''}
             新規上位領域の名称を入力してください。
+          {:else if parentMode === 'new' && newParentPlacementMode === 'existing' && transferTarget === null}
+            新規上位領域の所属先を選択してください。
           {:else if parentMode === 'existing' && transferTarget === null}
             所属させる既存の面情報を選択してください。
           {:else if transferTarget && transferTarget.type === 'reassign' && transferTarget.newParentId === currentParentId}
