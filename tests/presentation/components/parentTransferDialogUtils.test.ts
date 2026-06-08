@@ -74,11 +74,11 @@ describe('parentTransferDialogUtils', () => {
     const parent = makeFeature('parent', null, ['leaf']);
 
     expect(canTransferSelectedFeature(leaf, time)).toBe(true);
-    expect(canTransferChildren(leaf, time, [leaf, parent])).toBe(false);
+    expect(canTransferChildren(leaf, time)).toBe(false);
     expect(getTransferFeatureIds(leaf, time, 'selected')).toEqual(['leaf']);
 
     expect(canTransferSelectedFeature(parent, time)).toBe(false);
-    expect(canTransferChildren(parent, time, [leaf, parent])).toBe(true);
+    expect(canTransferChildren(parent, time)).toBe(true);
     expect(getTransferFeatureIds(parent, time, 'children')).toEqual(['leaf']);
   });
 
@@ -104,12 +104,14 @@ describe('parentTransferDialogUtils', () => {
     expect(canTransferSelectedFeature(feature, time)).toBe(false);
   });
 
-  it('下位領域すべての対象子が指定時刻以降リーフでなければ一括所属変更を無効にする', () => {
-    const parent = makeFeature('parent', null, ['child']);
-    const child = makeFeature('child', 'parent', ['grandchild']);
-    const grandchild = makeFeature('grandchild', 'child');
+  it('下位領域すべては直接の子の末端/集約を問わず許容する（Phase 4-4 多層コンテナ）', () => {
+    // 旧実装は「直接の子がすべて末端」を要求し、子に集約地物を含む多層コンテナを操作不能にしていた。
+    // Phase 4-4: canTransferChildren は対象が直接の下位領域を 1 つ以上持つことのみを要件とする
+    // （子が集約地物でも移動可。多層の所属変更そのものは ReassignFeatureParentUseCase のテストで固定）。
+    const parent = makeFeature('parent', null, ['mid', 'leaf']);
 
-    expect(canTransferChildren(parent, time, [parent, child, grandchild])).toBe(false);
+    expect(canTransferChildren(parent, time)).toBe(true);
+    expect(getTransferFeatureIds(parent, time, 'children')).toEqual(['mid', 'leaf']);
   });
 
   it('親候補から移動対象・子孫・非ポリゴンを除外する', () => {
@@ -541,16 +543,17 @@ describe('parentTransferDialogUtils 集約地物（コンテナ）の受容 (Pha
     const leafA = makeFeature('leaf-a', 'container');
     const leafB = makeFeature('leaf-b', 'container');
 
-    expect(canTransferChildren(container, time, [container, leafA, leafB])).toBe(true);
+    expect(canTransferChildren(container, time)).toBe(true);
     expect(getTransferFeatureIds(container, time, 'children')).toEqual(['leaf-a', 'leaf-b']);
   });
 
-  it('子に非リーフ（移行期間ノード）が混ざるコンテナは一括所属変更を無効にする', () => {
+  it('子に集約地物が混ざるコンテナでも下位領域すべてを許容する（Phase 4-4 多層コンテナ）', () => {
+    // 旧実装は子が末端でないと無効化していた。Phase 4-4 では多層コンテナを操作可能にする
+    // （直接の下位領域を as-is で移動し、移動対象の集約地物は subtree を保持。現状.md §6.10 Phase 4-4）。
     const container = makeContainer('container', null, ['mid']);
-    const mid = makeFeature('mid', 'container', ['grandchild']);
-    const grandchild = makeFeature('grandchild', 'mid');
 
-    expect(canTransferChildren(container, time, [container, mid, grandchild])).toBe(false);
+    expect(canTransferChildren(container, time)).toBe(true);
+    expect(getTransferFeatureIds(container, time, 'children')).toEqual(['mid']);
   });
 
   it('コンテナを所属変更の親候補として提示する', () => {

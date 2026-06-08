@@ -313,7 +313,16 @@ export class ReassignFeatureParentUseCase {
       if (feature.featureType !== 'Polygon') {
         throw new FeatureParentTransferError('所属変更できるのは面情報のみです');
       }
-      this.assertLeafFromTime(feature, effectiveTime);
+      // 集約展開分岐（Phase 4-4 / 要件定義書 §2.1 line 313）:
+      // scope='children'（transferType='annex'）は集約地物の「下位領域すべて」を一括移動する経路で、
+      // 直接の下位領域には集約地物（多層コンテナ）が含まれ得る。移動対象の集約地物は自身の下位領域
+      // （subtree）を保持したまま位相のみ変わるため、リーフ制約を課さない（childIds は移動時も保持し
+      // 「shape なし ⟹ childIds 非空」不変条件を維持。開発ガイド §6.6.8）。
+      // scope='selected'（cede / reassign）は対象自身を直接移動するため末端地物に限る（line 313 の
+      // ドメイン側強制。UI の canTransferSelectedFeature と対をなす二重防御。開発ガイド §6.6.1 / §6.0.1 検出観点2）。
+      if (transferType !== 'annex') {
+        this.assertLeafFromTime(feature, effectiveTime);
+      }
     }
 
     if (newParentId !== null) {

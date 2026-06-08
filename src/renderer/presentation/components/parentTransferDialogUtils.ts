@@ -141,18 +141,24 @@ export function canTransferSelectedFeature(
   return isLeafFromTime(feature, time);
 }
 
+/**
+ * 集約地物（コンテナ）の「下位領域すべて」一括所属変更（解体・連邦編入等）が可能か。
+ *
+ * 対象が指定時刻に有効な面情報で、直接の下位領域を 1 つ以上持つとき真。
+ *
+ * Phase 4-4（現状.md §6.10「直接の下位領域を一括展開」）: 直接の下位領域には集約地物（多層コンテナ）が
+ * 含まれてもよい。移動対象の集約地物は自身の下位領域（subtree）を保持したまま位相のみ変わるため、
+ * 旧実装の「子がすべて末端でなければ無効」という制約は課さない。リーフ制約を課すと、子に集約地物を含む
+ * 多層コンテナが「選択地物のみ」（コンテナ不可）・「下位領域すべて」（子に非末端あり不可）の双方で
+ * 操作不能（dead-end）になるため。直接の所属変更が末端地物に限られる制約（要件定義書 §2.1 line 313）は
+ * `canTransferSelectedFeature`（scope='selected'）側で維持する（対概念の同期。開発ガイド §6.0.1 検出観点2）。
+ */
 export function canTransferChildren(
   feature: Feature | null,
-  time: TimePoint | undefined,
-  features: readonly Feature[]
+  time: TimePoint | undefined
 ): boolean {
   const anchor = getActivePolygonAnchor(feature, time);
-  if (!anchor || anchor.placement.childIds.length === 0) return false;
-
-  const featureMap = new Map(features.map((candidate) => [candidate.id, candidate]));
-  return anchor.placement.childIds.every((childId) =>
-    isLeafFromTime(featureMap.get(childId) ?? null, time)
-  );
+  return anchor !== null && anchor.placement.childIds.length > 0;
 }
 
 export function collectDescendantIds(

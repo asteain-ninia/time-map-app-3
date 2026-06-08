@@ -43,7 +43,7 @@
 
   let activeAnchor = $derived(getActivePolygonAnchor(feature, currentTime));
   let selectedEnabled = $derived(canTransferSelectedFeature(feature, currentTime));
-  let childrenEnabled = $derived(canTransferChildren(feature, currentTime, features));
+  let childrenEnabled = $derived(canTransferChildren(feature, currentTime));
   let featureIds = $derived(getTransferFeatureIds(feature, currentTime, scope));
   // 既存の面情報への「再割当」候補（割譲・帰属・直轄化）。scope='children'（下位領域すべて）
   // のときは現在の親（feature.id）を除外する: 子を現在の親へ再割当するのは no-op のため。
@@ -93,10 +93,12 @@
       return target ? getFeatureDisplayName(target, currentTime) : featureId;
     })
   );
+  // scope='children' で childrenEnabled=false（下位領域なし）は featureIds.length===0 と等価
+  // （getTransferFeatureIds('children') = childIds、canTransferChildren = childIds 非空）のため、
+  // 確定無効条件としては featureIds.length===0 に集約する（重複判定を持たない）。
   let confirmDisabled = $derived(
     featureIds.length === 0 ||
     (scope === 'selected' && !selectedEnabled) ||
-    (scope === 'children' && !childrenEnabled) ||
     transferTarget === null ||
     (transferTarget.type === 'reassign' && transferTarget.newParentId === currentParentId)
   );
@@ -375,8 +377,6 @@
             所属変更できる対象がありません。
           {:else if scope === 'selected' && !selectedEnabled}
             選択地物は下位領域を持つため、選択地物のみの所属変更はできません。
-          {:else if scope === 'children' && !childrenEnabled}
-            下位領域に末端でない地物が含まれるため、一括での所属変更はできません。
           {:else if parentMode === 'new' && hasEmptyNewParentLevelName}
             新規上位領域の名称を入力してください。
           {:else if parentMode === 'new' && newParentPlacementMode === 'existing' && transferTarget === null}

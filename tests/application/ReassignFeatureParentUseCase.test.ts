@@ -1396,4 +1396,161 @@ describe('ReassignFeatureParentUseCase', () => {
       expect(addFeature.getFeatureById('f-1')!.getActiveAnchor(t1500)?.property.name).toBe('合衆国');
     });
   });
+
+  describe('集約地物の所属変更（下位領域すべて）+ 解体 (Phase 4-4)', () => {
+    // 集約地物（shape なし）コンテナの錨を構築する（t1000 開始・無期限）。
+    function containerAnchor(
+      id: string,
+      parentId: string | null,
+      childIds: readonly string[]
+    ): FeatureAnchor {
+      return new FeatureAnchor(
+        id,
+        { start: t1000 },
+        { name: id, description: '' },
+        undefined,
+        placement(parentId, childIds)
+      );
+    }
+
+    /**
+     * 多層コンテナの世界を restore する:
+     *   C（最上位コンテナ）─┬─ c1（コンテナ）── gc（末端）
+     *                       └─ leaf2（末端）
+     * すべて t1000 開始・無期限。extra の地物があれば併せて登録する。
+     */
+    function restoreMultiLevelWorld(extra: readonly Feature[] = []): void {
+      const c = makeFeature('C', [containerAnchor('C-a1', null, ['c1', 'leaf2'])]);
+      const c1 = makeFeature('c1', [containerAnchor('c1-a1', 'C', ['gc'])]);
+      const gc = makeFeature('gc', [makeAnchor('gc-a1', t1000, placement('c1'))]);
+      const leaf2 = makeFeature('leaf2', [makeAnchor('leaf2-a1', t1000, placement('C'))]);
+      const entries = new Map<string, Feature>([
+        ['C', c], ['c1', c1], ['gc', gc], ['leaf2', leaf2],
+      ]);
+      for (const feature of extra) entries.set(feature.id, feature);
+      addFeature.restore(entries, new Map());
+    }
+
+    it('annex で下位領域すべてを既存親へ移すとコンテナ子は subtree を保持し旧コンテナは解体される', () => {
+      // 新親 Y（最上位コンテナ、既存子 ey を持つ無期限コンテナ）。
+      const y = makeFeature('Y', [containerAnchor('Y-a1', null, ['ey'])]);
+      const ey = makeFeature('ey', [makeAnchor('ey-a1', t1000, placement('Y'))]);
+      restoreMultiLevelWorld([y, ey]);
+
+      transfer.reassignFeatureParent({
+        featureIds: ['c1', 'leaf2'],
+        newParentId: 'Y',
+        effectiveTime: t1500,
+        transferType: 'annex',
+      });
+
+      // コンテナ子 c1 は subtree（gc）を保持したまま位相のみ Y 配下へ
+      expect(addFeature.getFeatureById('c1')!.getActiveAnchor(t1500)?.placement.parentId).toBe('Y');
+      expect(addFeature.getFeatureById('c1')!.getActiveAnchor(t1500)?.placement.childIds).toEqual(['gc']);
+      expect(addFeature.getFeatureById('gc')!.getActiveAnchor(t1500)?.placement.parentId).toBe('c1');
+      // 末端子 leaf2 も Y 配下へ
+      expect(addFeature.getFeatureById('leaf2')!.getActiveAnchor(t1500)?.placement.parentId).toBe('Y');
+      // 旧コンテナ C は全子喪失で解体（t1500 以降は非アクティブ）
+      expect(addFeature.getFeatureById('C')!.getActiveAnchor(t1500)).toBeUndefined();
+      // 新親 Y は既存子 ey + 移動子 c1, leaf2 を保持
+      expect(addFeature.getFeatureById('Y')!.getActiveAnchor(t1500)?.placement.childIds.sort())
+        .toEqual(['c1', 'ey', 'leaf2']);
+    });
+
+    it('annex で下位領域すべてを親なしへ移す解体で、コンテナ子は最上位コンテナとして存続し旧コンテナは消滅する', () => {
+      restoreMultiLevelWorld();
+
+      transfer.reassignFeatureParent({
+        featureIds: ['c1', 'leaf2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        transferType: 'annex',
+      });
+
+      const c1Anchor = addFeature.getFeatureById('c1')!.getActiveAnchor(t1500);
+      expect(c1Anchor?.placement.parentId).toBeNull();
+      expect(c1Anchor?.placement.isTopLevel).toBe(true);
+      expect(c1Anchor?.placement.childIds).toEqual(['gc']); // subtree 保持
+      const leaf2Anchor = addFeature.getFeatureById('leaf2')!.getActiveAnchor(t1500);
+      expect(leaf2Anchor?.placement.parentId).toBeNull();
+      expect(leaf2Anchor?.placement.isTopLevel).toBe(true);
+      // 孫は影響を受けない
+      expect(addFeature.getFeatureById('gc')!.getActiveAnchor(t1500)?.placement.parentId).toBe('c1');
+      // 旧コンテナ C のみ消滅（解体: 元の集約地物のみ。要件定義書 §2.1 line 306）
+      expect(addFeature.getFeatureById('C')!.getActiveAnchor(t1500)).toBeUndefined();
+    });
+
+    it('annex で下位領域すべてを新規最上位コンテナへ帰属（連邦編入）し、旧コンテナは解体される', () => {
+      restoreMultiLevelWorld();
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['c1', 'leaf2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        transferType: 'annex',
+        createNewParent: { name: '連邦', kind: '連邦' },
+      });
+
+      const fed = addFeature.getFeatureById(result.createdParentId!)!;
+      const fedAnchor = fed.getActiveAnchor(t1500);
+      expect(fedAnchor?.placement.parentId).toBeNull();
+      expect(fedAnchor?.placement.isTopLevel).toBe(true);
+      expect(fedAnchor?.placement.childIds.slice().sort()).toEqual(['c1', 'leaf2']);
+      expect(fedAnchor?.property.kind).toBe('連邦');
+      // コンテナ子 c1 は subtree を保持したまま新規コンテナ配下へ
+      expect(addFeature.getFeatureById('c1')!.getActiveAnchor(t1500)?.placement.parentId)
+        .toBe(result.createdParentId);
+      expect(addFeature.getFeatureById('c1')!.getActiveAnchor(t1500)?.placement.childIds).toEqual(['gc']);
+      expect(addFeature.getFeatureById('leaf2')!.getActiveAnchor(t1500)?.placement.parentId)
+        .toBe(result.createdParentId);
+      // 旧コンテナ C は解体
+      expect(addFeature.getFeatureById('C')!.getActiveAnchor(t1500)).toBeUndefined();
+    });
+
+    it('集約展開分岐: 同じ集約地物子でも annex は許容し reassign は拒否する（要件 §2.1 line 313 二重防御）', () => {
+      const y = makeFeature('Y', [containerAnchor('Y-a1', null, ['ey'])]);
+      const ey = makeFeature('ey', [makeAnchor('ey-a1', t1000, placement('Y'))]);
+      restoreMultiLevelWorld([y, ey]);
+
+      // reassign（scope='selected' 相当）でコンテナ c1 を直接移動しようとすると拒否（line 313 ドメイン側強制）
+      expect(() => transfer.reassignFeatureParent({
+        featureIds: ['c1'],
+        newParentId: 'Y',
+        effectiveTime: t1500,
+        transferType: 'reassign',
+      })).toThrow(FeatureParentTransferError);
+
+      // annex（scope='children' 相当）では同じ c1 を集約展開分岐で許容する
+      expect(() => transfer.reassignFeatureParent({
+        featureIds: ['c1'],
+        newParentId: 'Y',
+        effectiveTime: t1500,
+        transferType: 'annex',
+      })).not.toThrow();
+      expect(addFeature.getFeatureById('c1')!.getActiveAnchor(t1500)?.placement.parentId).toBe('Y');
+    });
+
+    it('Undo/Redo: 多層コンテナの解体（下位領域すべて→親なし）を復元する', () => {
+      restoreMultiLevelWorld();
+      const undoRedo = new UndoRedoManager();
+
+      undoRedo.execute(new ReassignFeatureParentCommand(transfer, addFeature, {
+        featureIds: ['c1', 'leaf2'],
+        newParentId: null,
+        effectiveTime: t1500,
+        transferType: 'annex',
+      }));
+      expect(addFeature.getFeatureById('C')!.getActiveAnchor(t1500)).toBeUndefined();
+      expect(addFeature.getFeatureById('c1')!.getActiveAnchor(t1500)?.placement.parentId).toBeNull();
+
+      undoRedo.undo();
+      expect(addFeature.getFeatureById('C')!.getActiveAnchor(t1500)?.placement.childIds.slice().sort())
+        .toEqual(['c1', 'leaf2']);
+      expect(addFeature.getFeatureById('c1')!.getActiveAnchor(t1500)?.placement.parentId).toBe('C');
+
+      undoRedo.redo();
+      expect(addFeature.getFeatureById('C')!.getActiveAnchor(t1500)).toBeUndefined();
+      expect(addFeature.getFeatureById('c1')!.getActiveAnchor(t1500)?.placement.parentId).toBeNull();
+    });
+  });
 });
