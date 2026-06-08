@@ -277,6 +277,73 @@ describe('appPolygonEditing', () => {
     ).toContain('polygon-1');
   });
 
+  // Phase 4-4b-1 追補（High 修正 / 開発ガイド §6.1.8 適用）:
+  // 親リーフ内部に子を描く正当なケース（末端→集約遷移）で、UI 確定経路が末端排他で
+  // 手前ブロックしないことを固定する。AddFeatureCommand（コマンド層）の親除外
+  // （[`AddFeatureCommand.ts:92-94`](../../src/renderer/application/commands/AddFeatureCommand.ts)）と対称の制約。
+  it('validatePendingPolygonはparentId指定時に親自身との重なりで拒否しない', () => {
+    const vertices = new Map<string, Vertex>([
+      ['a1', makeVertex('a1', 0, 0)],
+      ['a2', makeVertex('a2', 10, 0)],
+      ['a3', makeVertex('a3', 10, 10)],
+      ['a4', makeVertex('a4', 0, 10)],
+    ]);
+    const parent = makePolygonFeature('parent-leaf', [
+      { id: 'outer', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
+    ]);
+
+    // 親リーフ内部に収まる子: parentId 未指定なら拒否、parentId 指定なら通す
+    const childCoords = [
+      new Coordinate(2, 2),
+      new Coordinate(8, 2),
+      new Coordinate(8, 8),
+      new Coordinate(2, 8),
+    ];
+    expect(
+      validatePendingPolygon(childCoords, 'polygon', time100, [parent], vertices)
+    ).toContain('parent-leaf');
+    expect(
+      validatePendingPolygon(childCoords, 'polygon', time100, [parent], vertices, 'parent-leaf')
+    ).toBeNull();
+  });
+
+  it('validatePendingPolygonはparentId指定でも親以外の末端地物との重なりは引き続き拒否する', () => {
+    const vertices = new Map<string, Vertex>([
+      ['a1', makeVertex('a1', 0, 0)],
+      ['a2', makeVertex('a2', 10, 0)],
+      ['a3', makeVertex('a3', 10, 10)],
+      ['a4', makeVertex('a4', 0, 10)],
+      ['b1', makeVertex('b1', 20, 0)],
+      ['b2', makeVertex('b2', 30, 0)],
+      ['b3', makeVertex('b3', 30, 10)],
+      ['b4', makeVertex('b4', 20, 10)],
+    ]);
+    const parent = makePolygonFeature('parent-leaf', [
+      { id: 'outer', vertexIds: ['a1', 'a2', 'a3', 'a4'], ringType: 'territory', parentId: null },
+    ]);
+    const sibling = makePolygonFeature('sibling-leaf', [
+      { id: 'outer', vertexIds: ['b1', 'b2', 'b3', 'b4'], ringType: 'territory', parentId: null },
+    ]);
+
+    // parent-leaf と sibling-leaf の両方に跨る形状: 親除外しても sibling との重なりは残るため拒否
+    const overlappingCoords = [
+      new Coordinate(15, 0),
+      new Coordinate(25, 0),
+      new Coordinate(25, 10),
+      new Coordinate(15, 10),
+    ];
+    expect(
+      validatePendingPolygon(
+        overlappingCoords,
+        'polygon',
+        time100,
+        [parent, sibling],
+        vertices,
+        'parent-leaf'
+      )
+    ).toContain('sibling-leaf');
+  });
+
   it('ソース地物を除く全ての面地物の領土リングをエッジ滑り障害物として集める', () => {
     // Phase 2-D-6-3a: 旧モデルの「同一レイヤー絞り込み」を撤去。
     // 末端地物排他は地図全体（要件定義書 §2.1 / 開発ガイド §6.6.8）に整合させ、

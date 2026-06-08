@@ -1081,7 +1081,8 @@
         addToolType,
         currentTime,
         features,
-        addFeature.getVertices()
+        addFeature.getVertices(),
+        getAddPolygonParentId()
       );
       if (pendingValidation) {
         validationMessage = pendingValidation;
@@ -1111,7 +1112,8 @@
         addToolType,
         currentTime,
         features,
-        addFeature.getVertices()
+        addFeature.getVertices(),
+        getAddPolygonParentId()
       );
       if (pendingValidation) {
         validationMessage = pendingValidation;

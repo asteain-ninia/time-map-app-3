@@ -276,17 +276,32 @@ describe('AddFeatureCommand', () => {
 
       undoRedo.execute(cmd);
 
-      const child = addFeature.getFeatures().find((feature) => feature.id !== parent.id)!;
-      expect(child.getActiveAnchor(time)?.placement.parentId).toBe(parent.id);
-      expect(addFeature.getFeatureById(parent.id)!.getActiveAnchor(time)?.placement.childIds).toEqual([child.id]);
+      // リーフ親が子を獲得して集約地物化し、離れた子のため旧形状全体が直轄領になる
+      // （要件定義書 §2.1 line 225-227）。直轄領は名称末尾「直轄領」で識別する。
+      const parentAnchor = addFeature.getFeatureById(parent.id)!.getActiveAnchor(time)!;
+      expect(parentAnchor.shape).toBeUndefined();
+      expect(parentAnchor.placement.childIds).toHaveLength(2);
+      const directId = parentAnchor.placement.childIds.find((id) =>
+        addFeature.getFeatureById(id)!.getActiveAnchor(time)!.property.name.endsWith('直轄領')
+      )!;
+      const childId = parentAnchor.placement.childIds.find((id) => id !== directId)!;
+      expect(addFeature.getFeatureById(childId)!.getActiveAnchor(time)?.placement.parentId).toBe(parent.id);
+      expect(addFeature.getFeatureById(directId)!.getActiveAnchor(time)?.placement.parentId).toBe(parent.id);
 
+      // Undo: 子・直轄領ともに消滅し、親は末端地物（shape あり）へ戻る
       undoRedo.undo();
-      expect(addFeature.getFeatureById(child.id)).toBeUndefined();
-      expect(addFeature.getFeatureById(parent.id)!.getActiveAnchor(time)?.placement.childIds).toEqual([]);
+      expect(addFeature.getFeatureById(childId)).toBeUndefined();
+      expect(addFeature.getFeatureById(directId)).toBeUndefined();
+      const undoneParent = addFeature.getFeatureById(parent.id)!.getActiveAnchor(time)!;
+      expect(undoneParent.placement.childIds).toEqual([]);
+      expect(undoneParent.shape?.type).toBe('Polygon');
 
+      // Redo: 子・直轄領を復元し、親は再び集約地物化する
       undoRedo.redo();
-      expect(addFeature.getFeatureById(child.id)?.getActiveAnchor(time)?.placement.parentId).toBe(parent.id);
-      expect(addFeature.getFeatureById(parent.id)!.getActiveAnchor(time)?.placement.childIds).toEqual([child.id]);
+      expect(addFeature.getFeatureById(childId)?.getActiveAnchor(time)?.placement.parentId).toBe(parent.id);
+      expect(addFeature.getFeatureById(directId)).toBeDefined();
+      expect(addFeature.getFeatureById(parent.id)!.getActiveAnchor(time)?.placement.childIds.slice().sort())
+        .toEqual([childId, directId].sort());
     });
 
     it('parentId指定が親錨を分割する場合もredoで初回の錨IDを復元する', () => {
@@ -317,18 +332,28 @@ describe('AddFeatureCommand', () => {
 
       undoRedo.execute(cmd);
 
-      const child = addFeature.getFeatures().find((feature) => feature.id !== parent.id)!;
+      // 親錨は childTime で分割され、[parentTime, childTime) は末端のまま、
+      // [childTime, ∞) は集約地物化して子＋直轄領を持つ（要件定義書 §2.1 line 225-227）。
       const parentAnchorIds = addFeature.getFeatureById(parent.id)!.anchors.map((anchor) => anchor.id);
       expect(parentAnchorIds).toHaveLength(2);
-      expect(addFeature.getFeatureById(parent.id)!.getActiveAnchor(childTime)?.placement.childIds).toEqual([child.id]);
+      const childIdsAfter = addFeature.getFeatureById(parent.id)!.getActiveAnchor(childTime)!.placement.childIds;
+      expect(childIdsAfter).toHaveLength(2);
+      const directId = childIdsAfter.find((id) =>
+        addFeature.getFeatureById(id)!.getActiveAnchor(childTime)!.property.name.endsWith('直轄領')
+      )!;
+      const childId = childIdsAfter.find((id) => id !== directId)!;
 
       undoRedo.undo();
       expect(addFeature.getFeatureById(parent.id)!.anchors).toHaveLength(1);
+      expect(addFeature.getFeatureById(childId)).toBeUndefined();
+      expect(addFeature.getFeatureById(directId)).toBeUndefined();
 
       undoRedo.redo();
-      expect(addFeature.getFeatureById(child.id)?.getActiveAnchor(childTime)?.placement.parentId).toBe(parent.id);
+      expect(addFeature.getFeatureById(childId)?.getActiveAnchor(childTime)?.placement.parentId).toBe(parent.id);
+      // redo は初回 execute 時の錨IDをスナップショット復元する（§6.4.12）
       expect(addFeature.getFeatureById(parent.id)!.anchors.map((anchor) => anchor.id)).toEqual(parentAnchorIds);
-      expect(addFeature.getFeatureById(parent.id)!.getActiveAnchor(childTime)?.placement.childIds).toEqual([child.id]);
+      expect(addFeature.getFeatureById(parent.id)!.getActiveAnchor(childTime)?.placement.childIds.slice().sort())
+        .toEqual([childId, directId].sort());
     });
 
     it('parentId指定が事前検証で失敗した場合は地物イベントを発火しない', () => {
@@ -361,6 +386,94 @@ describe('AddFeatureCommand', () => {
 
       expect(addFeature.getFeatures()).toHaveLength(0);
       expect(events).toEqual([]);
+    });
+
+    it('parentId指定で親リーフ内部に子を描けて、親が集約地物化し直轄領が生成される', () => {
+      // 親（末端地物）= 10×10。Issue 2 回帰: 旧実装は親自身を末端排他障害物として
+      // 親内部の子追加をコマンド入口で拒否していた。
+      const parent = addFeature.addPolygon(
+        [
+          new Coordinate(0, 0),
+          new Coordinate(10, 0),
+          new Coordinate(10, 10),
+          new Coordinate(0, 10),
+        ],
+        time,
+        '親地物'
+      );
+
+      const cmd = createCommand({
+        type: 'polygon',
+        coords: [
+          new Coordinate(2, 2),
+          new Coordinate(6, 2),
+          new Coordinate(6, 6),
+          new Coordinate(2, 6),
+        ],
+        time,
+        parentId: parent.id,
+      });
+
+      expect(() => undoRedo.execute(cmd)).not.toThrow();
+
+      // 親は集約地物化（shape 破棄）し、子 + 直轄領を下位領域に持つ
+      const parentAnchor = addFeature.getFeatureById(parent.id)!.getActiveAnchor(time)!;
+      expect(parentAnchor.shape).toBeUndefined();
+      expect(parentAnchor.placement.childIds).toHaveLength(2);
+      const directId = parentAnchor.placement.childIds.find((id) =>
+        addFeature.getFeatureById(id)!.getActiveAnchor(time)!.property.name.endsWith('直轄領')
+      )!;
+      expect(directId).toBeDefined();
+      // 直轄領 = 親 − 子 は穴あき（子が親内部）
+      const dShape = addFeature.getFeatureById(directId)!.getActiveAnchor(time)!.shape;
+      if (dShape?.type === 'Polygon') {
+        expect(dShape.rings.filter((r) => r.ringType === 'hole')).toHaveLength(1);
+      }
+
+      // Undo で子・直轄領が消え、親が末端地物へ戻る
+      undoRedo.undo();
+      expect(addFeature.getFeatureById(directId)).toBeUndefined();
+      expect(addFeature.getFeatureById(parent.id)!.getActiveAnchor(time)?.shape?.type).toBe('Polygon');
+    });
+
+    it('parentId指定でも親以外の末端地物と重なる子は引き続き拒否する', () => {
+      const parent = addFeature.addPolygon(
+        [
+          new Coordinate(0, 0),
+          new Coordinate(4, 0),
+          new Coordinate(4, 4),
+          new Coordinate(0, 4),
+        ],
+        time,
+        '親地物'
+      );
+      // 兄弟末端地物（親の外）。子がこれと重なる場合は親を除外しても拒否されるべき。
+      addFeature.addPolygon(
+        [
+          new Coordinate(6, 6),
+          new Coordinate(10, 6),
+          new Coordinate(10, 10),
+          new Coordinate(6, 10),
+        ],
+        time,
+        '兄弟地物'
+      );
+
+      const cmd = createCommand({
+        type: 'polygon',
+        coords: [
+          new Coordinate(5, 5),
+          new Coordinate(9, 5),
+          new Coordinate(9, 9),
+          new Coordinate(5, 9),
+        ],
+        time,
+        parentId: parent.id,
+      });
+
+      expect(() => undoRedo.execute(cmd)).toThrow('重なっています');
+      // 拒否時は新地物を残さない
+      expect(addFeature.getFeatures()).toHaveLength(2);
     });
   });
 

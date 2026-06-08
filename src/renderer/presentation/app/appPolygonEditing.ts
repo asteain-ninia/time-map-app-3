@@ -232,12 +232,25 @@ export function validateRingDrawingVertex(
     : getRingDrawingConstraintMessage(target, ringDrawingState, vertices);
 }
 
+/**
+ * 追加ツールで描画中・確定前のポリゴンを検証する。
+ *
+ * `parentId` を指定した場合は親自身を末端排他の障害物から除外する。これは
+ * `AddFeatureCommand`（コマンド層）の親除外（[`AddFeatureCommand.ts:92-94`](../../application/commands/AddFeatureCommand.ts)）と
+ * 対称にすべき制約で、UI 確定手前で親リーフ内部の頂点配置が末端排他としてブロックされる
+ * silent な経路漏れを防ぐ（開発ガイド §6.1.8「状態遷移の検出は入力経路でゲートせず結果状態で
+ * 判定する」の射程: 同じ「親除外」制約をコマンド経路と UI 経路の両方で網羅）。
+ *
+ * 親除外の正当性は要件定義書 §2.1 line 225-227（末端→集約遷移で親形状は下位領域の和へ
+ * 置換される）に依拠。親以外の末端地物との重なり（親外へのはみ出し）は引き続き拒否する。
+ */
 export function validatePendingPolygon(
   coords: readonly Coordinate[],
   addToolType: AddToolType,
   currentTime: TimePoint | undefined,
   features: readonly Feature[],
-  vertices: ReadonlyMap<string, Vertex>
+  vertices: ReadonlyMap<string, Vertex>,
+  parentId: string | null = null
 ): string | null {
   if (addToolType !== 'polygon' || !currentTime) return null;
 
@@ -253,9 +266,12 @@ export function validatePendingPolygon(
     for (const [vertexId, vertex] of transient.vertices) {
       validationVertices.set(vertexId, vertex);
     }
+    const obstacleFeatures = parentId
+      ? features.filter((feature) => feature.id !== parentId)
+      : features;
     validatePolygonOrThrow(
       transient.feature,
-      features,
+      obstacleFeatures,
       validationVertices,
       currentTime
     );

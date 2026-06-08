@@ -11,12 +11,17 @@
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
-import type { AnchorProperty, AnchorPlacement, FeatureShape, PolygonStyle } from '@domain/value-objects/FeatureAnchor';
+import type { AnchorProperty, AnchorPlacement, FeatureShape, PolygonStyle, TimeRange } from '@domain/value-objects/FeatureAnchor';
 import { Ring } from '@domain/value-objects/Ring';
 import { Vertex } from '@domain/entities/Vertex';
 import { Feature } from '@domain/entities/Feature';
 import type { FeatureType } from '@domain/entities/Feature';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
+import type { RingCoords } from '@domain/services/GeometryService';
+import {
+  buildPolygonRingDrafts,
+  rebuildTerritoryHierarchy,
+} from '@domain/services/PolygonShapeService';
 import { eventBus } from './EventBus';
 
 /**
@@ -225,6 +230,60 @@ export class AddFeatureUseCase {
       placement
     );
     return new Feature(featureId, 'Polygon', [anchor]);
+  }
+
+  /**
+   * 末端地物（リーフ: shape あり Polygon）を MultiPolygon 座標から in-memory で構築する。
+   *
+   * 要件定義書 §2.1 line 226-229「集約地物への遷移時の差分処理（直轄領の自動生成）」で、
+   * 旧形状と下位領域の和の差分（`BooleanOperationService.polygonDifferenceAll` の結果）を
+   * 新規末端地物（直轄領）として実体化する経路。複数領域に分かれた差分は 1 末端地物の
+   * 複数領土リング（飛び地化）として保持する（§6.6.2 / §2.1 line 229）。
+   *
+   * `buildContainerFeature` と同じく **登録（`this.features` / `this.vertices` への set /
+   * イベント発行）はしない**。生成した Feature と新規 Vertex 群を返却し、呼び出し側が
+   * staging を介して整合性検証後にまとめて commit することで atomic 性を確保する
+   * （検証失敗時の頂点・地物リークを防ぐ）。ID 採番（feature / anchor / ring / vertex）は
+   * 進める（`ReassignFeatureParentCommand` のスナップショット undo が afterState に固定し
+   * Redo 時の ID 安定を担保。§6.4.12）。
+   *
+   * @param timeRange 直轄領錨の有効期間（遷移区間 = 旧親が集約地物である区間に一致させる）
+   * @param polygons territory ごとの `[territory, ...holes]` 群（polygon-clipping 差分結果）
+   * @param property 名称・種別など（種別は元末端地物から継承、§2.1 line 228）
+   * @param parentId 直轄領の所属先（遷移した集約地物の ID）
+   */
+  buildLeafPolygonFeature(
+    timeRange: TimeRange,
+    polygons: readonly (readonly RingCoords[])[],
+    property: AnchorProperty,
+    parentId: string | null
+  ): { feature: Feature; vertices: Map<string, Vertex> } {
+    const createdVertices = new Map<string, Vertex>();
+    const rings: Ring[] = [];
+    const drafts = rebuildTerritoryHierarchy(
+      buildPolygonRingDrafts(polygons, () => `ring-${this.nextRingNum++}`)
+    );
+    for (const draft of drafts) {
+      const vertexIds: string[] = [];
+      for (const coord of draft.coords) {
+        const vertexId = `v-${this.nextVertexNum++}`;
+        const vertex = new Vertex(vertexId, new Coordinate(coord.x, coord.y));
+        createdVertices.set(vertexId, vertex);
+        vertexIds.push(vertexId);
+      }
+      rings.push(new Ring(draft.id, vertexIds, draft.ringType, draft.parentId));
+    }
+
+    if (rings.length === 0) {
+      throw new Error('直轄領の形状が空です（差分が空のときは生成しないこと）');
+    }
+
+    const shape: FeatureShape = { type: 'Polygon', rings };
+    const featureId = `f-${this.nextFeatureNum++}`;
+    const anchorId = `a-${this.nextAnchorNum++}`;
+    const placement: AnchorPlacement = createAnchorPlacement(parentId, []);
+    const anchor = new FeatureAnchor(anchorId, timeRange, property, shape, placement);
+    return { feature: new Feature(featureId, 'Polygon', [anchor]), vertices: createdVertices };
   }
 
   /** 頂点を生成して登録する */

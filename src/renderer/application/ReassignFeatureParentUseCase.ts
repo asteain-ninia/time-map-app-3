@@ -10,16 +10,21 @@
 import type { Feature } from '@domain/entities/Feature';
 import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import type { Vertex } from '@domain/entities/Vertex';
+import type { Coordinate } from '@domain/value-objects/Coordinate';
 import {
   FeatureAnchor,
   createAnchorPlacement,
+  isLeafPolygonAnchor,
   type AnchorPlacement,
 } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import {
+  deriveParentPolygons,
   getAncestors,
+  resolvePolygonAnchorPolygons,
   validateHierarchy,
 } from '@domain/services/HierarchyService';
+import { polygonDifferenceAll } from '@domain/services/BooleanOperationService';
 import { featureCoversRange } from '@domain/services/TimeService';
 import {
   validateTransfer,
@@ -117,6 +122,11 @@ export class ReassignFeatureParentUseCase {
     const changedFeatureIds = new Set<string>();
     const usedAnchorIds = collectUsedAnchorIds(staged);
     const prunedParentQueue: CascadingParentSync[] = [];
+    // 直轄領自動生成（要件定義書 §2.1 line 226-229）用の staging。
+    // 新規末端地物（直轄領）の頂点は検証通過後にまとめて commit し、失敗時のリークを防ぐ。
+    // 遷移で旧 shape を破棄した地物の旧頂点は現状残置する（孤立頂点掃除は本サブフェーズの
+    // スコープ外として後続へ defer。無害＝未参照で描画・トポロジーに影響しない。現状.md §6 参照）。
+    const createdVertices = new Map<string, Vertex>();
 
     // 新規上位領域作成サブフロー: 対象地物を下位領域に持つ集約地物のチェーン（最内 → 最外）を
     // in-memory に生成して staged へ挿入し、最内コンテナの ID を新親とする
@@ -173,6 +183,19 @@ export class ReassignFeatureParentUseCase {
       createdParentId = chain[0].id; // 後方互換: createdParentId は最内コンテナ
     }
 
+    // 末端地物 → 集約地物の遷移で直轄領を生成すべき「変異前に effectiveTime で末端地物だった地物」を控える
+    // （要件定義書 §2.1 line 225）。判定は変異前の features（オリジナル状態）で行い、ロード済みの
+    // 移行期間ノード（変異前から childIds 保持）を誤って巻き込まない。子を獲得する経路は
+    //   (1) 既存末端を新親に指定（征服: newParentId が既存末端）、
+    //   (2) 新規上位領域作成サブフローの所属先 Q が既存末端（自治化: createNewParent.parentId）
+    // のいずれもあり得るため、特定の候補に絞らず「全 changedFeatureIds のうち変異前に末端だったもの」を
+    // 対象とする（§6.0.1 検出観点2: newParentId と所属先 Q の対概念を一様に扱う）。
+    const wasLeafAtEffectiveTime = (featureId: string): boolean => {
+      const original = features.get(featureId);
+      const anchor = original?.getActiveAnchor(params.effectiveTime);
+      return anchor !== undefined && isLeafPolygonAnchor(anchor);
+    };
+
     const allFeatures = [...staged.values()];
 
     this.validateRequest(featureIds, newParentId, params.effectiveTime, allFeatures, transferType);
@@ -227,6 +250,23 @@ export class ReassignFeatureParentUseCase {
       );
     }
 
+    // 末端地物 → 集約地物の遷移時の直轄領自動生成（要件定義書 §2.1 line 226-229）。
+    // この時点で子の獲得（newParentId の childIds 更新 / syncCreatedContainerChain での所属先 Q 同期）は
+    // 完了している。変異前に末端だった changedFeatureIds を走査し、移行期間ノード錨を獲得したものを
+    // resolveLeafToContainerTransition で解決する（征服の newParentId・自治化の所属先 Q を一様に網羅）。
+    // 反復中に直轄領が changedFeatureIds へ追加されるため、走査対象はスナップショットで固定する
+    // （直轄領は新規地物で features に存在せず wasLeafAtEffectiveTime=false のため二重処理されない）。
+    for (const featureId of [...changedFeatureIds]) {
+      if (!wasLeafAtEffectiveTime(featureId)) continue;
+      this.resolveLeafToContainerTransition(
+        staged,
+        changedFeatureIds,
+        createdVertices,
+        params.effectiveTime,
+        featureId
+      );
+    }
+
     for (const oldParentId of oldParentIds) {
       if (oldParentId === newParentId) continue;
       const oldParent = staged.get(oldParentId);
@@ -273,6 +313,15 @@ export class ReassignFeatureParentUseCase {
       .filter((featureId) => !staged.has(featureId))
       .map((featureId) => features.get(featureId))
       .filter((feature): feature is Feature => feature !== undefined);
+
+    // 直轄領の新規頂点は検証通過後にのみ反映する（validateStagedHierarchy より後）。
+    // 検証で throw した場合は createdVertices が live マップへ漏れないため atomic 性を保つ。
+    if (createdVertices.size > 0) {
+      const verticesMap = this.featureUseCase.getVertices() as Map<string, Vertex>;
+      for (const [vertexId, vertex] of createdVertices) {
+        verticesMap.set(vertexId, vertex);
+      }
+    }
 
     for (const featureId of changedFeatureIds) {
       const updated = staged.get(featureId);
@@ -760,6 +809,130 @@ export class ReassignFeatureParentUseCase {
     const originalAnchor = original.getActiveAnchor(time);
     if (!originalAnchor) return false;
     return originalAnchor.placement.childIds.some((childId) => removedChildIds.has(childId));
+  }
+
+  /**
+   * 末端地物 → 集約地物の遷移時の直轄領自動生成（要件定義書 §2.1 line 226-229 / §6.4）。
+   *
+   * 遷移した地物（新親）の effectiveTime 以降の各錨について、子の獲得で「shape あり Polygon +
+   * childIds 非空」（移行期間ノード）になった区間を検出し:
+   *   - 旧形状 − 下位領域の和 の差分（`polygonDifferenceAll`）を算出する。
+   *   - 差分が非空なら新規末端地物（直轄領）を生成し、当該錨の下位領域へ追加する。
+   *     名称は「`<元名> 直轄領`」、種別は元末端地物から継承する（§2.1 line 228）。
+   *     差分が複数領域に分かれる場合は 1 末端地物の複数領土リング（飛び地化）で保持する
+   *     （§2.1 line 229 / §6.6.2 / §6.6.5）。
+   *   - 差分が空（下位領域が旧形状を完全に覆う）なら直轄領は生成しない（§2.1 line 230）。
+   *   - いずれの場合も新親の shape を破棄し集約地物化する（§2.1 line 225）。childIds は移動子＋
+   *     直轄領で必ず非空のため「shape なし ⟹ childIds 非空」不変条件を維持する（§6.6.8）。
+   *
+   * 直轄領は旧形状の部分集合（差分は面積を増やさない）であり、旧形状は遷移前に末端地物排他
+   * （地図全体）を満たしていたため、直轄領は他の末端地物とも下位領域とも空間的に重ならない。
+   * よって本経路は空間競合を構造上生まず、§2.2.3 整合性維持プロセスの起動配線は不要
+   * （要件定義書 §2.1 line 145-153 / 開発ガイド §6.6.8）。
+   *
+   * 既知の単純化（現スコープでは実害なし）: 遷移地物が effectiveTime 以降に複数の移行期間ノード錨を
+   * 持つ（名称変更等で既に区間分割済みの）場合、錨ごとに別 ID の直轄領を生成するため、同一領域が
+   * 連続区間で別地物に分かれ得る。構造的には有効（各区間で親≡子の和は成立）。1 地物の複数錨へ
+   * まとめる方が自然な可能性があり、将来の精緻化候補。
+   */
+  private resolveLeafToContainerTransition(
+    staged: Map<string, Feature>,
+    changedFeatureIds: Set<string>,
+    createdVertices: Map<string, Vertex>,
+    effectiveTime: TimePoint,
+    transitionFeatureId: string
+  ): void {
+    const stagedFeature = staged.get(transitionFeatureId);
+    if (!stagedFeature) return;
+
+    const allStaged = [...staged.values()];
+    // 旧形状（subject）と子の和（clip）を同一の解決規則で揃えるため、両者とも HierarchyService の
+    // `resolvePolygonAnchorPolygons`（subject）/ `deriveParentPolygons`（clip = 内部で同関数を使用）で
+    // 解決する（§6.6.9: 同じ shape 解決経路を共有。別解決器だと欠落頂点・退化リングの扱いが非対称になる）。
+    // 両 API は座標マップ（`ReadonlyMap<string, Coordinate>`）を要するため一度だけ構築する。
+    const coordMap = new Map<string, Coordinate>();
+    for (const [id, vertex] of this.featureUseCase.getVertices()) {
+      coordMap.set(id, vertex.coordinate);
+    }
+
+    const newAnchors: FeatureAnchor[] = [];
+    let changed = false;
+
+    for (const anchor of stagedFeature.anchors) {
+      const shape = anchor.shape;
+      // effectiveTime 以降で「shape あり Polygon + childIds 非空」= 子の獲得で生じた移行期間ノード。
+      if (
+        !anchor.timeRange.start.isAtOrAfter(effectiveTime) ||
+        shape === undefined ||
+        shape.type !== 'Polygon' ||
+        anchor.placement.childIds.length === 0
+      ) {
+        newAnchors.push(anchor);
+        continue;
+      }
+
+      changed = true;
+
+      // 旧形状（破棄される末端 shape）を MultiPolygon として解決する（subject）。
+      const subjectPolygons = resolvePolygonAnchorPolygons(anchor, coordMap);
+      // 子の和（clip）は正規の派生経路 `deriveParentPolygons` で解決し、shape 解決のドリフトを防ぐ
+      // （§6.6.9）。この移行期間ノード錨の childIds を子として anchor.start 時点で union 済み
+      // MultiPolygon を得る（末端は自身 shape、集約は再帰下降、移行期間ノードは派生空なら自身 shape へ
+      // fallback、と同一規則 = `resolveChildPolygonsForUnion`）。clip は polygonDifferenceAll が内部で
+      // 結合するため union 済みでも等価。
+      // 時間解決の前提（現スコープでは実害なし）: 子形状は遷移錨 start 時点で解決し、生成する直轄領錨は
+      // 遷移錨の全 range に適用する。本経路の移動子は range 内で静的なため一致する（単一時刻解決と整合）。
+      // 子形状が range 内で変化する将来経路が出た場合は時間スライス分割を要検討。
+      const childPolygons = deriveParentPolygons(
+        stagedFeature,
+        allStaged,
+        coordMap,
+        anchor.timeRange.start
+      );
+      const difference = polygonDifferenceAll(subjectPolygons, childPolygons);
+
+      if (difference.isEmpty) {
+        // 差分が空: 直轄領は生成せず shape のみ破棄（§2.1 line 230）。
+        newAnchors.push(anchor.withShape(undefined));
+        continue;
+      }
+
+      const built = this.featureUseCase.buildLeafPolygonFeature(
+        anchor.timeRange,
+        difference.polygons,
+        {
+          name: `${anchor.property.name} 直轄領`,
+          description: '',
+          ...(anchor.property.kind !== undefined ? { kind: anchor.property.kind } : {}),
+        },
+        transitionFeatureId
+      );
+      staged.set(built.feature.id, built.feature);
+      changedFeatureIds.add(built.feature.id);
+      for (const [vertexId, vertex] of built.vertices) {
+        createdVertices.set(vertexId, vertex);
+      }
+
+      newAnchors.push(
+        anchor
+          .withShape(undefined)
+          .withPlacement(
+            createAnchorPlacement(anchor.placement.parentId, [
+              ...anchor.placement.childIds,
+              built.feature.id,
+            ])
+          )
+      );
+    }
+
+    if (changed) {
+      this.stageFeature(
+        staged,
+        changedFeatureIds,
+        stagedFeature,
+        stagedFeature.withAnchors(newAnchors)
+      );
+    }
   }
 
   private cleanupDeletedFeatureArtifacts(deletedFeatures: readonly Feature[]): void {

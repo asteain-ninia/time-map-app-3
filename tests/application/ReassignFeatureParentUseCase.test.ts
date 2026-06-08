@@ -1553,4 +1553,313 @@ describe('ReassignFeatureParentUseCase', () => {
       expect(addFeature.getFeatureById('c1')!.getActiveAnchor(t1500)?.placement.parentId).toBeNull();
     });
   });
+
+  // 末端地物 → 集約地物の遷移時の直轄領自動生成（要件定義書 §2.1 line 225-230 / §6.4）。
+  // 既存末端地物を新親に指定して下位領域を獲得させると、新親は shape を破棄して集約地物化し、
+  // 旧形状 − 下位領域の和 の差分を直轄領（新規末端地物）として自動生成する。
+  describe('末端地物→集約地物遷移時の直轄領自動生成 (Phase 4-4b)', () => {
+    // 実座標を持つ末端地物（リーフ）を生成し、頂点を vertices マップへ登録する。
+    function registerLeaf(
+      vertices: Map<string, Vertex>,
+      id: string,
+      coords: readonly (readonly [number, number])[],
+      parentId: string | null,
+      kind?: string
+    ): Feature {
+      const vertexIds: string[] = [];
+      coords.forEach((c, i) => {
+        const vid = `${id}-v${i + 1}`;
+        vertices.set(vid, new Vertex(vid, new Coordinate(c[0], c[1])));
+        vertexIds.push(vid);
+      });
+      const ring = new Ring(`${id}-ring`, vertexIds, 'territory', null);
+      const property = kind !== undefined
+        ? { name: id, description: '', kind }
+        : { name: id, description: '' };
+      return makeFeature(id, [
+        new FeatureAnchor(
+          `${id}-a1`,
+          { start: t1000 },
+          property,
+          { type: 'Polygon', rings: [ring] },
+          createAnchorPlacement(parentId, [])
+        ),
+      ]);
+    }
+
+    /** 新親 X の集約地物化（shape 破棄 + childIds 非空）を確認する。 */
+    function expectContainerInvariant(featureId: string, time: TimePoint): FeatureAnchor {
+      const anchor = addFeature.getFeatureById(featureId)!.getActiveAnchor(time)!;
+      expect(anchor.shape).toBeUndefined();
+      expect(anchor.placement.childIds.length).toBeGreaterThan(0);
+      return anchor;
+    }
+
+    it('内部に収まる下位領域を獲得すると集約地物化し、差分（穴あき）を直轄領として生成する', () => {
+      const vertices = new Map<string, Vertex>();
+      // X = 10×10 の最上位末端地物（種別=国）
+      const x = registerLeaf(vertices, 'X', [[0, 0], [10, 0], [10, 10], [0, 10]], null, '国');
+      // Y = X 内部に収まる 4×4 の末端地物（最上位 → X 配下へ移す）
+      const y = registerLeaf(vertices, 'Y', [[2, 2], [6, 2], [6, 6], [2, 6]], null);
+      addFeature.restore(new Map([['X', x], ['Y', y]]), vertices);
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['Y'],
+        newParentId: 'X',
+        effectiveTime: t1000,
+        transferType: 'cede',
+      });
+
+      // X は shape を破棄して集約地物化（§2.1 line 225）
+      const xAnchor = expectContainerInvariant('X', t1000);
+      expect(xAnchor.placement.childIds).toContain('Y');
+
+      // 直轄領が生成され X の下位領域へ追加される
+      const directIds = xAnchor.placement.childIds.filter((id) => id !== 'Y');
+      expect(directIds).toHaveLength(1);
+      const directId = directIds[0];
+      expect(result.changedFeatureIds).toContain(directId);
+
+      const direct = addFeature.getFeatureById(directId)!;
+      const dAnchor = direct.getActiveAnchor(t1000)!;
+      // 直轄領は末端地物（shape あり Polygon + childIds 空）で X を親に持つ
+      expect(dAnchor.shape?.type).toBe('Polygon');
+      expect(dAnchor.placement.parentId).toBe('X');
+      expect(dAnchor.placement.isTopLevel).toBe(false);
+      expect(dAnchor.placement.childIds).toEqual([]);
+      // デフォルト名称「<元名> 直轄領」+ 種別継承（§2.1 line 228）
+      expect(dAnchor.property.name).toBe('X 直轄領');
+      expect(dAnchor.property.kind).toBe('国');
+      // 直轄領 = X − Y は 1 領土リング + 1 穴リング（Y が内部のため）
+      if (dAnchor.shape?.type === 'Polygon') {
+        const territories = dAnchor.shape.rings.filter((r) => r.ringType === 'territory');
+        const holes = dAnchor.shape.rings.filter((r) => r.ringType === 'hole');
+        expect(territories).toHaveLength(1);
+        expect(holes).toHaveLength(1);
+      }
+    });
+
+    it('差分が複数領域に分かれる場合は1つの直轄領を複数領土リング（飛び地化）で保持する', () => {
+      const vertices = new Map<string, Vertex>();
+      const x = registerLeaf(vertices, 'X', [[0, 0], [10, 0], [10, 10], [0, 10]], null);
+      // Y = X を縦に分断する帯（上下辺に接触）→ X − Y は左右 2 片
+      const y = registerLeaf(vertices, 'Y', [[3, 0], [5, 0], [5, 10], [3, 10]], null);
+      addFeature.restore(new Map([['X', x], ['Y', y]]), vertices);
+
+      const xAnchorBefore = transfer.reassignFeatureParent({
+        featureIds: ['Y'],
+        newParentId: 'X',
+        effectiveTime: t1000,
+        transferType: 'cede',
+      });
+
+      const xAnchor = expectContainerInvariant('X', t1000);
+      const directId = xAnchor.placement.childIds.find((id) => id !== 'Y')!;
+      expect(xAnchorBefore.changedFeatureIds).toContain(directId);
+      const dAnchor = addFeature.getFeatureById(directId)!.getActiveAnchor(t1000)!;
+      // 1 末端地物に 2 領土リング（§2.1 line 229 / §6.6.2）
+      if (dAnchor.shape?.type === 'Polygon') {
+        const territories = dAnchor.shape.rings.filter((r) => r.ringType === 'territory');
+        expect(territories).toHaveLength(2);
+      }
+    });
+
+    it('下位領域が旧形状を完全に覆う場合は直轄領を生成しない（差分空, §2.1 line 230）', () => {
+      const vertices = new Map<string, Vertex>();
+      const x = registerLeaf(vertices, 'X', [[0, 0], [10, 0], [10, 10], [0, 10]], null);
+      // Y = X と同形状（完全被覆）
+      const y = registerLeaf(vertices, 'Y', [[0, 0], [10, 0], [10, 10], [0, 10]], null);
+      addFeature.restore(new Map([['X', x], ['Y', y]]), vertices);
+
+      transfer.reassignFeatureParent({
+        featureIds: ['Y'],
+        newParentId: 'X',
+        effectiveTime: t1000,
+        transferType: 'cede',
+      });
+
+      // X は shape 破棄で集約地物化するが、直轄領は生成されず子は Y のみ
+      const xAnchor = expectContainerInvariant('X', t1000);
+      expect(xAnchor.placement.childIds).toEqual(['Y']);
+    });
+
+    it('直轄領は新規頂点（v-プレフィックス）で実体化し、Yの頂点は下位領域として存続する', () => {
+      const vertices = new Map<string, Vertex>();
+      const x = registerLeaf(vertices, 'X', [[0, 0], [10, 0], [10, 10], [0, 10]], null);
+      const y = registerLeaf(vertices, 'Y', [[2, 2], [6, 2], [6, 6], [2, 6]], null);
+      addFeature.restore(new Map([['X', x], ['Y', y]]), vertices);
+
+      transfer.reassignFeatureParent({
+        featureIds: ['Y'],
+        newParentId: 'X',
+        effectiveTime: t1000,
+        transferType: 'cede',
+      });
+
+      // Y の頂点は下位領域として存続するため残る
+      expect(addFeature.getVertices().has('Y-v1')).toBe(true);
+      // 直轄領は元 shape を流用せず新規頂点（v-プレフィックス）で実体化される
+      const xAnchor = addFeature.getFeatureById('X')!.getActiveAnchor(t1000)!;
+      const directId = xAnchor.placement.childIds.find((id) => id !== 'Y')!;
+      const dShape = addFeature.getFeatureById(directId)!.getActiveAnchor(t1000)!.shape;
+      if (dShape?.type === 'Polygon') {
+        const directVertexIds = dShape.rings.flatMap((r) => r.vertexIds);
+        expect(directVertexIds.length).toBeGreaterThan(0);
+        for (const vid of directVertexIds) {
+          expect(addFeature.getVertices().has(vid)).toBe(true);
+          expect(vid.startsWith('v-')).toBe(true);
+        }
+      }
+      // NOTE: 遷移で破棄した X の旧 shape 頂点（X-v*）の孤立掃除は本サブフェーズではスコープ外
+      // （後続へ defer）。無害な未参照頂点として残置する（現状.md §6 参照）。
+    });
+
+    it('新規上位領域作成（連邦化）では新親が shape なしコンテナのため直轄領を生成しない', () => {
+      const vertices = new Map<string, Vertex>();
+      const a = registerLeaf(vertices, 'A', [[0, 0], [4, 0], [4, 4], [0, 4]], null);
+      const b = registerLeaf(vertices, 'B', [[6, 0], [10, 0], [10, 4], [6, 4]], null);
+      addFeature.restore(new Map([['A', a], ['B', b]]), vertices);
+
+      const result = transfer.reassignFeatureParent({
+        featureIds: ['A', 'B'],
+        newParentId: null,
+        effectiveTime: t1000,
+        createNewParent: { name: '連邦' },
+      });
+
+      // 新規コンテナの子は A, B のみ（直轄領なし）。A/B は末端地物として shape を保持する。
+      const fed = addFeature.getFeatureById(result.createdParentId!)!.getActiveAnchor(t1000)!;
+      expect(fed.shape).toBeUndefined();
+      expect(fed.placement.childIds.slice().sort()).toEqual(['A', 'B']);
+      expect(addFeature.getFeatureById('A')!.getActiveAnchor(t1000)?.shape?.type).toBe('Polygon');
+    });
+
+    it('Undo/Redo: 直轄領の生成と旧 shape 破棄を 1 アンドゥ単位で復元する', () => {
+      const vertices = new Map<string, Vertex>();
+      const x = registerLeaf(vertices, 'X', [[0, 0], [10, 0], [10, 10], [0, 10]], null, '国');
+      const y = registerLeaf(vertices, 'Y', [[2, 2], [6, 2], [6, 6], [2, 6]], null);
+      addFeature.restore(new Map([['X', x], ['Y', y]]), vertices);
+      const undoRedo = new UndoRedoManager();
+
+      undoRedo.execute(new ReassignFeatureParentCommand(transfer, addFeature, {
+        featureIds: ['Y'],
+        newParentId: 'X',
+        effectiveTime: t1000,
+        transferType: 'cede',
+      }));
+
+      const xAnchorAfter = addFeature.getFeatureById('X')!.getActiveAnchor(t1000)!;
+      const directId = xAnchorAfter.placement.childIds.find((id) => id !== 'Y')!;
+      expect(addFeature.getFeatureById(directId)).toBeDefined();
+      expect(xAnchorAfter.shape).toBeUndefined();
+
+      // 直轄領の新規頂点 ID を控える（snapshot 復元の検証用）
+      const directVertexIds = (() => {
+        const s = addFeature.getFeatureById(directId)!.getActiveAnchor(t1000)!.shape;
+        return s?.type === 'Polygon' ? s.rings.flatMap((r) => r.vertexIds) : [];
+      })();
+      expect(directVertexIds.length).toBeGreaterThan(0);
+
+      // Undo: X の shape 復活、直轄領と直轄領の新規頂点は消滅、X の旧 shape は復元される
+      undoRedo.undo();
+      const xAnchorUndo = addFeature.getFeatureById('X')!.getActiveAnchor(t1000)!;
+      expect(xAnchorUndo.shape?.type).toBe('Polygon');
+      expect(xAnchorUndo.placement.childIds).toEqual([]);
+      expect(addFeature.getFeatureById(directId)).toBeUndefined();
+      expect(addFeature.getVertices().has('X-v1')).toBe(true);
+      for (const vid of directVertexIds) {
+        expect(addFeature.getVertices().has(vid)).toBe(false);
+      }
+
+      // Redo: 同じ直轄領 ID・同じ頂点で再生成（スナップショット復元, §6.4.12）
+      undoRedo.redo();
+      const xAnchorRedo = addFeature.getFeatureById('X')!.getActiveAnchor(t1000)!;
+      expect(xAnchorRedo.shape).toBeUndefined();
+      expect(xAnchorRedo.placement.childIds).toContain(directId);
+      expect(addFeature.getFeatureById(directId)).toBeDefined();
+      for (const vid of directVertexIds) {
+        expect(addFeature.getVertices().has(vid)).toBe(true);
+      }
+    });
+
+    it('既存集約地物への下位領域追加では差分処理は発生しない（§2.1 line 231）', () => {
+      const vertices = new Map<string, Vertex>();
+      // P = 既存の集約地物（shape なし）、子 leaf を持つ
+      const leaf = registerLeaf(vertices, 'leaf', [[0, 0], [4, 0], [4, 4], [0, 4]], 'P');
+      const p = makeFeature('P', [
+        new FeatureAnchor('P-a1', { start: t1000 }, { name: 'P', description: '' }, undefined, placement(null, ['leaf'])),
+      ]);
+      // Z = 最上位末端地物 → P 配下へ移す
+      const z = registerLeaf(vertices, 'Z', [[6, 0], [10, 0], [10, 4], [6, 4]], null);
+      addFeature.restore(new Map([['P', p], ['leaf', leaf], ['Z', z]]), vertices);
+
+      transfer.reassignFeatureParent({
+        featureIds: ['Z'],
+        newParentId: 'P',
+        effectiveTime: t1000,
+        transferType: 'cede',
+      });
+
+      // P は元から shape なしコンテナ。直轄領は生成されず子は leaf, Z のみ。
+      const pAnchor = addFeature.getFeatureById('P')!.getActiveAnchor(t1000)!;
+      expect(pAnchor.shape).toBeUndefined();
+      expect(pAnchor.placement.childIds.slice().sort()).toEqual(['Z', 'leaf']);
+    });
+
+    it('自治化で所属先が末端地物のとき、所属先も集約地物化し直轄領を生成する（Undo/Redo含む）', () => {
+      const vertices = new Map<string, Vertex>();
+      // Q = 既存の最上位末端地物（新規中間コンテナの所属先, 種別「国」）
+      const q = registerLeaf(vertices, 'Q', [[0, 0], [10, 0], [10, 10], [0, 10]], null, '国');
+      // X = Q 内部の最上位末端地物。新規中間コンテナ Y を作って X を Y 配下に、Y を Q 配下に（自治化）
+      const x = registerLeaf(vertices, 'X', [[2, 2], [6, 2], [6, 6], [2, 6]], null);
+      addFeature.restore(new Map([['Q', q], ['X', x]]), vertices);
+      const undoRedo = new UndoRedoManager();
+
+      undoRedo.execute(new ReassignFeatureParentCommand(transfer, addFeature, {
+        featureIds: ['X'],
+        newParentId: null,
+        effectiveTime: t1000,
+        createNewParent: { name: '自治州', kind: '州', parentId: 'Q' },
+      }));
+
+      // 新規中間コンテナ Y（X を子に, Q を親に）
+      const yId = addFeature.getFeatureById('X')!.getActiveAnchor(t1000)!.placement.parentId!;
+      const yAnchor = addFeature.getFeatureById(yId)!.getActiveAnchor(t1000)!;
+      expect(yAnchor.shape).toBeUndefined();
+      expect(yAnchor.placement.parentId).toBe('Q');
+      expect(yAnchor.placement.childIds).toEqual(['X']);
+
+      // 所属先 Q も末端→集約遷移する（shape 破棄 + childIds=[Y, 直轄領]）。
+      // これが Issue 1 の回帰: 旧実装では Q が「shape あり + childIds=[Y]」の移行期間ノードのまま残った。
+      const qAnchor = addFeature.getFeatureById('Q')!.getActiveAnchor(t1000)!;
+      expect(qAnchor.shape).toBeUndefined();
+      expect(qAnchor.placement.childIds).toContain(yId);
+      const directId = qAnchor.placement.childIds.find((id) => id !== yId)!;
+      expect(directId).toBeDefined();
+      const dAnchor = addFeature.getFeatureById(directId)!.getActiveAnchor(t1000)!;
+      expect(dAnchor.shape?.type).toBe('Polygon');
+      expect(dAnchor.placement.parentId).toBe('Q');
+      expect(dAnchor.placement.childIds).toEqual([]);
+      expect(dAnchor.property.name).toBe('Q 直轄領');
+      expect(dAnchor.property.kind).toBe('国');
+      // 直轄領 = Q − X は穴あき（X が Q 内部）
+      if (dAnchor.shape?.type === 'Polygon') {
+        expect(dAnchor.shape.rings.filter((r) => r.ringType === 'territory')).toHaveLength(1);
+        expect(dAnchor.shape.rings.filter((r) => r.ringType === 'hole')).toHaveLength(1);
+      }
+
+      // Undo: Q が末端地物（shape あり）へ戻り、Y・直轄領は消滅
+      undoRedo.undo();
+      const qUndo = addFeature.getFeatureById('Q')!.getActiveAnchor(t1000)!;
+      expect(qUndo.shape?.type).toBe('Polygon');
+      expect(qUndo.placement.childIds).toEqual([]);
+      expect(addFeature.getFeatureById(yId)).toBeUndefined();
+      expect(addFeature.getFeatureById(directId)).toBeUndefined();
+
+      // Redo: Q が再び集約地物化し、同じ直轄領 ID が復元される
+      undoRedo.redo();
+      expect(addFeature.getFeatureById('Q')!.getActiveAnchor(t1000)!.shape).toBeUndefined();
+      expect(addFeature.getFeatureById(directId)).toBeDefined();
+    });
+  });
 });

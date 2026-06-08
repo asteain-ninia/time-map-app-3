@@ -186,6 +186,54 @@ export function polygonDifference(
 }
 
 /**
+ * MultiPolygon 同士の差分を計算する（subject - clip）。
+ *
+ * `polygonDifference` は subject / clip を単一ポリゴン（`rings[0]` = 外周、以降 = 穴）として
+ * 扱うため、飛び地（複数領土）を持つ subject や、複数地物の和である clip を
+ * フラットな `RingCoords[]` で渡すと 2 本目以降の territory が穴として誤解釈される
+ * （§6.6.2 / §6.6.9）。本関数は両辺を MultiPolygon（`RingCoords[][]` = territory ごとの
+ * `[territory, ...holes]` 群）のまま polygon-clipping へ渡し、territory 境界を保ったまま
+ * 差分を計算する。直轄領（旧形状 − 下位領域の和、要件定義書 §2.1 line 227）の算出に使う。
+ *
+ * 戻り値の `polygons` は複数片・複数リングを保持する（§6.6.5: 片落とし禁止）。
+ *
+ * @param subject 差し引かれる MultiPolygon
+ * @param clip 差し引く MultiPolygon（複数地物の和でもよい。polygon-clipping が内部で結合する）
+ */
+export function polygonDifferenceAll(
+  subject: readonly (readonly RingCoords[])[],
+  clip: readonly (readonly RingCoords[])[]
+): BooleanResult {
+  const subjectGeom = subject
+    .filter((polygon) => polygon.length > 0)
+    .map((polygon) => toClipPolygon(polygon));
+  if (subjectGeom.length === 0) {
+    return { polygons: [], isEmpty: true };
+  }
+
+  const clipGeom = clip
+    .filter((polygon) => polygon.length > 0)
+    .map((polygon) => toClipPolygon(polygon));
+  if (clipGeom.length === 0) {
+    // clip 空 ⟹ subject をそのまま返す。空ポリゴンは除外して結果へ混入させない
+    // （subjectGeom の filter と整合。呼び出し側は空を渡さない前提だが防御的に揃える）。
+    return {
+      polygons: subject
+        .filter((polygon) => polygon.length > 0)
+        .map((polygon) => polygon.map((ring) => [...ring])),
+      isEmpty: false,
+    };
+  }
+
+  const result = polygonClipping.difference(subjectGeom, clipGeom);
+  const polygons = result.map((poly) => fromClipPolygon(poly));
+  return {
+    polygons,
+    isEmpty: polygons.length === 0,
+  };
+}
+
+/**
  * ポリゴンの交差を計算する
  *
  * @param a ポリゴンAのリング群

@@ -5,6 +5,7 @@ import {
   toClipPolygon,
   fromClipPolygon,
   polygonDifference,
+  polygonDifferenceAll,
   polygonIntersection,
   polygonUnion,
 } from '@domain/services/BooleanOperationService';
@@ -114,6 +115,55 @@ describe('BooleanOperationService', () => {
       const clip = [square(0, 0, 10)]; // 左下を削り取る
       const result = polygonDifference(subject, clip);
       expect(result.isEmpty).toBe(false);
+    });
+  });
+
+  describe('polygonDifferenceAll', () => {
+    it('MultiPolygon clip（複数地物の和）を territory 境界を保って差し引く（穴誤解釈しない）', () => {
+      // 大正方形 − {左下小正方形, 右上小正方形} = 1 領土 + 2 穴
+      const subject = [[square(0, 0, 20)]];
+      const clip = [[square(2, 2, 4)], [square(14, 14, 4)]];
+      const result = polygonDifferenceAll(subject, clip);
+      expect(result.isEmpty).toBe(false);
+      expect(result.polygons).toHaveLength(1);
+      // 内部に収まる2つの clip が穴になる（territory 1 + holes 2）
+      expect(result.polygons[0].length).toBe(3);
+    });
+
+    it('MultiPolygon subject（飛び地）の各片を保持する（片落とししない, §6.6.5）', () => {
+      // 離れた2領土を持つ subject から中央の小片を引いても2片を保つ
+      const subject = [[square(0, 0, 4)], [square(10, 0, 4)]];
+      const clip = [[square(1, 1, 1)]];
+      const result = polygonDifferenceAll(subject, clip);
+      expect(result.polygons.length).toBe(2);
+    });
+
+    it('差分が複数領域に分かれる場合は複数ポリゴンを返す', () => {
+      // 正方形を縦帯で分断 → 2片
+      const subject = [[square(0, 0, 10)]];
+      const band: RingCoords = [
+        { x: 4, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 10 }, { x: 4, y: 10 },
+      ];
+      const result = polygonDifferenceAll(subject, [[band]]);
+      expect(result.polygons.length).toBe(2);
+    });
+
+    it('clip が subject を完全に覆うと空になる', () => {
+      const subject = [[square(2, 2, 3)]];
+      const clip = [[square(0, 0, 10)]];
+      expect(polygonDifferenceAll(subject, clip).isEmpty).toBe(true);
+    });
+
+    it('空の clip は subject をそのまま返す（空ポリゴンは除外する）', () => {
+      // subject に空ポリゴンが混じっても、結果には非空ポリゴンのみ返す（subjectGeom の filter と整合）
+      const subject = [[] as RingCoords[], [square(0, 0, 10)]];
+      const result = polygonDifferenceAll(subject, []);
+      expect(result.isEmpty).toBe(false);
+      expect(result.polygons).toHaveLength(1);
+    });
+
+    it('空の subject は空結果', () => {
+      expect(polygonDifferenceAll([], [[square(0, 0, 10)]]).isEmpty).toBe(true);
     });
   });
 

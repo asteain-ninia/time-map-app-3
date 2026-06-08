@@ -41,6 +41,11 @@ export class AddFeatureCommand implements UndoableCommand {
   private addedVertices = new Map<string, Vertex>();
   private modifiedFeaturesBeforeParentAssignment = new Map<string, Feature>();
   private modifiedFeaturesAfterParentAssignment = new Map<string, Feature>();
+  /**
+   * 親割り当て（所属変更）の過程で新規生成された地物（リーフ親が集約地物化したときの直轄領など。
+   * 要件定義書 §2.1 line 226-229）。undo で削除し redo で復元する。新規頂点は addedVertices に集約する。
+   */
+  private createdFeaturesDuringAssign = new Map<string, Feature>();
 
   constructor(
     private readonly featureUseCase: AddFeatureUseCase,
@@ -75,9 +80,21 @@ export class AddFeatureCommand implements UndoableCommand {
       for (const [vertexId, vertex] of transient.vertices) {
         validationVertices.set(vertexId, vertex);
       }
+      // 親指定時は親自身を末端排他の障害物から除外する（要件定義書 §2.1 line 225-227 / 開発ガイド §6.6.8）。
+      // 親リーフ内部に子を描く正当なケースでは、親はこの後 `assignParent`（所属変更）で集約地物へ遷移し
+      // 自身の領域が下位領域へ細分化される（差分は直轄領で補填）ため、親を「他の末端地物」として
+      // 重複扱いしてはならない。親以外の末端地物との重なり（親外へのはみ出し）は引き続き拒否する。
+      // 設計上の緩さ（既知・許容）: 親除外により、子が親をまたいで無主地へはみ出すケースも
+      // 兄弟末端と重ならなければ受理され、親の実効領域が旧形状より拡大し得る。不変条件（集約地物の
+      // 領域 = 子の和 / 末端排他）は破れないため害はない。「子は親に内包されるべき」の強制は追加モードの
+      // リアルタイム配置ブロック（§2.1 line 159, 現状未実装）側の責務であり、Phase 4-4b-2 / 配置ブロック
+      // 実装時に内包強制の要否を判断する。
+      const obstacleFeatures = this.params.parentId
+        ? this.featureUseCase.getFeatures().filter((feature) => feature.id !== this.params.parentId)
+        : this.featureUseCase.getFeatures();
       validatePolygonOrThrow(
         transient.feature,
-        this.featureUseCase.getFeatures(),
+        obstacleFeatures,
         validationVertices,
         this.params.time
       );
@@ -143,6 +160,9 @@ export class AddFeatureCommand implements UndoableCommand {
     const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
 
     features.delete(this.addedFeature.id);
+    for (const createdId of this.createdFeaturesDuringAssign.keys()) {
+      features.delete(createdId);
+    }
     for (const vid of this.addedVertexIds) {
       vertices.delete(vid);
     }
@@ -160,6 +180,9 @@ export class AddFeatureCommand implements UndoableCommand {
       vertices.set(vertexId, vertex);
     }
     features.set(this.addedFeature.id, this.addedFeature);
+    for (const [createdId, feature] of this.createdFeaturesDuringAssign) {
+      features.set(createdId, feature);
+    }
     for (const [featureId, feature] of this.modifiedFeaturesAfterParentAssignment) {
       features.set(featureId, feature);
     }
@@ -168,6 +191,7 @@ export class AddFeatureCommand implements UndoableCommand {
 
   private assignParent(featureId: string, parentId: string): void {
     const featuresBefore = new Map(this.featureUseCase.getFeaturesMap());
+    const verticesBeforeAssign = new Set(this.featureUseCase.getVertices().keys());
     this.parentTransferUseCase.reassignFeatureParent({
       featureIds: [featureId],
       newParentId: parentId,
@@ -178,15 +202,32 @@ export class AddFeatureCommand implements UndoableCommand {
 
     this.modifiedFeaturesBeforeParentAssignment.clear();
     this.modifiedFeaturesAfterParentAssignment.clear();
-    for (const [changedFeatureId, before] of featuresBefore) {
-      const after = featuresAfter.get(changedFeatureId);
-      if (!after || after === before) continue;
+    this.createdFeaturesDuringAssign.clear();
+    // featuresAfter を走査して created（直轄領など）/ modified（リーフ親→集約遷移）を分類する。
+    // この経路（新規地物への親割当）は旧親を持たないため地物削除は発生しない。
+    for (const [changedFeatureId, after] of featuresAfter) {
+      const before = featuresBefore.get(changedFeatureId);
+      if (before === after) continue;
 
       if (changedFeatureId === featureId) {
         this.addedFeature = after;
+      } else if (before === undefined) {
+        this.createdFeaturesDuringAssign.set(changedFeatureId, after);
       } else {
         this.modifiedFeaturesBeforeParentAssignment.set(changedFeatureId, before);
         this.modifiedFeaturesAfterParentAssignment.set(changedFeatureId, after);
+      }
+    }
+
+    // 所属変更で新規生成された頂点（直轄領の頂点）を addedVertices に集約し、
+    // undo での頂点削除・redo での復元対象に含める。
+    for (const vertexId of this.featureUseCase.getVertices().keys()) {
+      if (verticesBeforeAssign.has(vertexId)) continue;
+      if (this.addedVertices.has(vertexId)) continue;
+      const vertex = this.featureUseCase.getVertices().get(vertexId);
+      if (vertex) {
+        this.addedVertexIds.push(vertexId);
+        this.addedVertices.set(vertexId, vertex);
       }
     }
   }

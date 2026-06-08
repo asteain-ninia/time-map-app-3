@@ -388,8 +388,13 @@ export interface DerivedShapeResult {
  * `RingCoords[]` として渡すと polygon-clipping が 2 本目以降の territory を hole として
  * 誤解釈する。各 territory ごとに `[territory, ...holes]` の polygon を作って分離する。
  * holes は `parentId` で territory に紐付け、所属が無い hole（不正データ）は捨てる。
+ * 欠落頂点・3 頂点未満の退化リングは除外する（解決不能な ring を結果へ混入させない）。
+ *
+ * export する理由（§6.6.9）: 末端→集約遷移の直轄領差分（`ReassignFeatureParentUseCase`）で
+ * 旧形状（subject）と子の和（clip = `deriveParentPolygons`）を同一の解決規則で揃えるため、
+ * subject 側も本関数で解決する。subject/clip で別解決器を使うと退化データで非対称が生じる。
  */
-function resolvePolygonAnchorPolygons(
+export function resolvePolygonAnchorPolygons(
   anchor: FeatureAnchor,
   vertices: ReadonlyMap<string, Coordinate>
 ): RingCoords[][] {
