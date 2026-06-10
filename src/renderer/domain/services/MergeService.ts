@@ -42,17 +42,22 @@ export interface MergeValidation {
  *   同時選択できない。重複 child 参照・不正なツリー更新を防ぐ。§2.1 line 351-354）。
  *   循環検出は所属変更の `validateTransfer` と同じ祖先連鎖（`getAncestors`）で判定する。
  * - 現行の結合は末端地物のみ対応する（集約地物の平坦化・混在結合は Phase 4-7）。
+ * - 結合対象はすべて同一の上位領域に属すること（最上位同士 = 全員親なしも可）。
+ *   異なる上位領域に属する対象の結合は「結果地物の所属」をユーザーが決定する
+ *   上位領域決定ダイアログ（現状.md §6.10 Phase 4-6）が前提であり、UI 導入までは
+ *   拒否する（暗黙に primary の親へ吸収すると上位領域の領土が黙って書き換わる）。
  *
  * 旧「同じレイヤーに属する面情報のみ結合できる」前提は新階層モデルで撤廃した
  * （グローバルレイヤー序列は廃止。現状.md §6 / 開発ガイド §6.6.3 補足）。
  *
- * @param features 結合対象の地物情報（id と下位領域保持フラグ）
+ * @param features 結合対象の地物情報（id・下位領域保持フラグ・上位領域ID）
  * @param getAncestors 指定地物IDの祖先地物ID群を返す関数（上位・下位関係の判定用）
  */
 export function validateMerge(
   features: readonly {
     id: string;
     hasChildren: boolean;
+    parentId: string | null;
   }[],
   getAncestors: (featureId: string) => readonly string[]
 ): MergeValidation {
@@ -92,6 +97,16 @@ export function validateMerge(
     };
   }
 
+  // 同一上位領域チェック。結果地物の所属が一意に定まらない結合（異なる上位領域・
+  // 最上位と下位の混在）は、上位領域決定ダイアログ（現状.md §6.10 Phase 4-6）導入まで拒否する。
+  const parentIds = new Set(features.map(f => f.parentId));
+  if (parentIds.size > 1) {
+    return {
+      valid: false,
+      error: '異なる上位領域に属する面情報は結合できません（結合対象はすべて同じ上位領域に属している必要があります）',
+    };
+  }
+
   return { valid: true };
 }
 
@@ -101,8 +116,8 @@ export function validateMerge(
  * 選択時のリアルタイム判定（UI の `addMergeTarget`）と確定前検証
  * （`MergeFeatureCommand`）の双方から呼び出し、判定経路を単一化してドリフトを防ぐ
  * （開発ガイド §6.6.1 / §6.6.3 line 584「操作開始前と確定前の両方で検証」）。
- * pure な `validateMerge` に対し、Feature から判定入力（下位領域フラグ・祖先連鎖）を
- * 解決して与える薄いラッパ。祖先連鎖は所属変更と同じ `HierarchyService.getAncestors`。
+ * pure な `validateMerge` に対し、Feature から判定入力（下位領域フラグ・上位領域ID・
+ * 祖先連鎖）を解決して与える薄いラッパ。祖先連鎖は所属変更と同じ `HierarchyService.getAncestors`。
  *
  * @param targetIds 結合対象の地物ID群
  * @param allFeatures 全地物（祖先連鎖の解決に使用）
@@ -118,7 +133,7 @@ export function validateMergeFeatures(
   // 共通の事前条件（開発ガイド §6.6.3 line 584）: 対象が存在し・面情報であり・指定時刻に
   // 有効であることを、操作開始前と確定前の両方で検証する。missing / inactive / 非 Polygon を
   // 明示的に invalid 化する（時刻変更で古い選択が無効化したケースを通さない）。
-  const targets: { id: string; hasChildren: boolean }[] = [];
+  const targets: { id: string; hasChildren: boolean; parentId: string | null }[] = [];
   for (const id of targetIds) {
     const feature = featureMap.get(id);
     if (!feature) {
@@ -139,7 +154,11 @@ export function validateMergeFeatures(
     if (!anchor.shape && anchor.placement.childIds.length === 0) {
       return { valid: false, error: `地物「${id}」は結合可能な形状を持ちません` };
     }
-    targets.push({ id, hasChildren: anchor.placement.childIds.length > 0 });
+    targets.push({
+      id,
+      hasChildren: anchor.placement.childIds.length > 0,
+      parentId: anchor.placement.parentId,
+    });
   }
 
   return validateMerge(targets, (id) => {

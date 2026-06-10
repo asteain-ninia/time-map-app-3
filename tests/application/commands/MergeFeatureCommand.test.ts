@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { MergeFeatureCommand } from '@application/commands/MergeFeatureCommand';
 import { MoveVertexCommand } from '@application/commands/MoveVertexCommand';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
+import { DeleteFeatureUseCase } from '@application/DeleteFeatureUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
 import { VertexEditUseCase } from '@application/VertexEditUseCase';
 import { eventBus } from '@application/EventBus';
@@ -15,6 +16,7 @@ import { validatePolygonRingHierarchy } from '@domain/services/RingEditService';
 
 describe('MergeFeatureCommand', () => {
   let addFeature: AddFeatureUseCase;
+  let deleteFeature: DeleteFeatureUseCase;
   let vertexEdit: VertexEditUseCase;
   let undoRedo: UndoRedoManager;
   const time = new TimePoint(2000);
@@ -34,6 +36,7 @@ describe('MergeFeatureCommand', () => {
 
   beforeEach(() => {
     addFeature = new AddFeatureUseCase();
+    deleteFeature = new DeleteFeatureUseCase(addFeature);
     vertexEdit = new VertexEditUseCase(addFeature);
     undoRedo = new UndoRedoManager();
   });
@@ -42,7 +45,7 @@ describe('MergeFeatureCommand', () => {
     const { f1, f2 } = createAdjacentSquares();
     const featuresBefore = addFeature.getFeatures().length;
 
-    const cmd = new MergeFeatureCommand(addFeature, {
+    const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id, f2.id],
       currentTime: time,
     });
@@ -61,7 +64,7 @@ describe('MergeFeatureCommand', () => {
     const { f1, f2 } = createAdjacentSquares();
     const featuresBefore = addFeature.getFeatures().length;
 
-    const cmd = new MergeFeatureCommand(addFeature, {
+    const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id, f2.id],
       currentTime: time,
     });
@@ -78,7 +81,7 @@ describe('MergeFeatureCommand', () => {
     const { f1, f2 } = createAdjacentSquares();
     const verticesBefore = addFeature.getVertices().size;
 
-    const cmd = new MergeFeatureCommand(addFeature, {
+    const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id, f2.id],
       currentTime: time,
     });
@@ -100,7 +103,7 @@ describe('MergeFeatureCommand', () => {
     });
 
     try {
-      const cmd = new MergeFeatureCommand(addFeature, {
+      const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
         featureIds: [f1.id, f2.id],
         currentTime: time,
       });
@@ -124,7 +127,7 @@ describe('MergeFeatureCommand', () => {
 
   it('redoで結合後の頂点IDを復元し後続の頂点移動を再実行できる', () => {
     const { f1, f2 } = createAdjacentSquares();
-    const mergeCommand = new MergeFeatureCommand(addFeature, {
+    const mergeCommand = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id, f2.id],
       currentTime: time,
     });
@@ -159,7 +162,7 @@ describe('MergeFeatureCommand', () => {
   it('カスタム名を設定できる', () => {
     const { f1, f2 } = createAdjacentSquares();
 
-    const cmd = new MergeFeatureCommand(addFeature, {
+    const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id, f2.id],
       currentTime: time,
       mergedName: '統合領域',
@@ -174,7 +177,7 @@ describe('MergeFeatureCommand', () => {
   it('1つの地物IDでは拒否する', () => {
     const { f1 } = createAdjacentSquares();
 
-    const cmd = new MergeFeatureCommand(addFeature, {
+    const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id],
       currentTime: time,
     });
@@ -185,7 +188,7 @@ describe('MergeFeatureCommand', () => {
   it('同じ地物IDだけの結合は拒否する', () => {
     const { f1 } = createAdjacentSquares();
 
-    const cmd = new MergeFeatureCommand(addFeature, {
+    const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id, f1.id],
       currentTime: time,
     });
@@ -208,7 +211,7 @@ describe('MergeFeatureCommand', () => {
       time
     );
 
-    const cmd = new MergeFeatureCommand(addFeature, {
+    const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id, f2.id, f3.id],
       currentTime: time,
     });
@@ -229,7 +232,7 @@ describe('MergeFeatureCommand', () => {
       time
     );
 
-    const cmd = new MergeFeatureCommand(addFeature, {
+    const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id, f2.id],
       currentTime: time,
     });
@@ -252,7 +255,7 @@ describe('MergeFeatureCommand', () => {
       [new Coordinate(20, 0), new Coordinate(25, 0), new Coordinate(25, 5), new Coordinate(20, 5)],
       time
     );
-    const firstMerge = new MergeFeatureCommand(addFeature, {
+    const firstMerge = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id, f2.id],
       currentTime: time,
     });
@@ -262,7 +265,7 @@ describe('MergeFeatureCommand', () => {
       [new Coordinate(25, 0), new Coordinate(30, 0), new Coordinate(30, 5), new Coordinate(25, 5)],
       time
     );
-    const secondMerge = new MergeFeatureCommand(addFeature, {
+    const secondMerge = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [f1.id, f3.id],
       currentTime: time,
     });
@@ -327,7 +330,7 @@ describe('MergeFeatureCommand', () => {
       [new Coordinate(8, 8), new Coordinate(12, 8), new Coordinate(12, 12), new Coordinate(8, 12)],
       time
     );
-    const cmd = new MergeFeatureCommand(addFeature, {
+    const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: [donut.id, island.id],
       currentTime: time,
     });
@@ -391,11 +394,186 @@ describe('MergeFeatureCommand', () => {
     ]);
     addFeature.restore(new Map([['parent', parent], ['child', child]]), vertices);
 
-    const cmd = new MergeFeatureCommand(addFeature, {
+    const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
       featureIds: ['parent', 'child'],
       currentTime: time,
     });
     expect(() => cmd.execute()).toThrow('同時に結合対象にできません');
+  });
+
+  describe('親を持つ末端地物同士の結合（B33: 階層参照の掃除）', () => {
+    /**
+     * 純粋コンテナ container（shape なし）の下に隣接する末端地物 leaf-a / leaf-b を置く。
+     * fixture は実体クラスで構築する（開発ガイド §6.5.5）。
+     */
+    function setupSiblingsUnderContainer() {
+      const vertices = new Map<string, Vertex>();
+      const makeSquareVertexIds = (prefix: string, x0: number): string[] => {
+        const coords = [
+          new Coordinate(x0, 0),
+          new Coordinate(x0 + 5, 0),
+          new Coordinate(x0 + 5, 10),
+          new Coordinate(x0, 10),
+        ];
+        return coords.map((coordinate, index) => {
+          const id = `${prefix}${index}`;
+          vertices.set(id, new Vertex(id, coordinate));
+          return id;
+        });
+      };
+      const leafA = new Feature('leaf-a', 'Polygon', [
+        new FeatureAnchor(
+          'leaf-a-anchor',
+          { start: time },
+          { name: '左末端', description: '' },
+          { type: 'Polygon', rings: [new Ring('leaf-a-r', makeSquareVertexIds('a', 0), 'territory', null)] },
+          createAnchorPlacement('container', [])
+        ),
+      ]);
+      const leafB = new Feature('leaf-b', 'Polygon', [
+        new FeatureAnchor(
+          'leaf-b-anchor',
+          { start: time },
+          { name: '右末端', description: '' },
+          { type: 'Polygon', rings: [new Ring('leaf-b-r', makeSquareVertexIds('b', 5), 'territory', null)] },
+          createAnchorPlacement('container', [])
+        ),
+      ]);
+      const container = new Feature('container', 'Polygon', [
+        new FeatureAnchor(
+          'container-anchor',
+          { start: time },
+          { name: '上位領域', description: '' },
+          undefined,
+          createAnchorPlacement(null, ['leaf-a', 'leaf-b'])
+        ),
+      ]);
+      addFeature.restore(
+        new Map([['container', container], ['leaf-a', leafA], ['leaf-b', leafB]]),
+        vertices
+      );
+    }
+
+    function buildSiblingMergeCommand(): MergeFeatureCommand {
+      return new MergeFeatureCommand(addFeature, deleteFeature, {
+        featureIds: ['leaf-a', 'leaf-b'],
+        currentTime: time,
+      });
+    }
+
+    function getContainerChildIds(): readonly string[] {
+      return addFeature.getFeatureById('container')!.getActiveAnchor(time)!.placement.childIds;
+    }
+
+    it('結合で消滅したセカンダリへの親の childIds 参照を掃除する（dangling 参照ゼロ）', () => {
+      setupSiblingsUnderContainer();
+      buildSiblingMergeCommand().execute();
+
+      expect(addFeature.getFeatureById('leaf-b')).toBeUndefined();
+      expect(getContainerChildIds()).toEqual(['leaf-a']);
+
+      // 全地物・全錨の親子参照が存在する地物のみを指す（保存→再ロードの参照整合検証と同条件）
+      const features = addFeature.getFeaturesMap();
+      for (const feature of features.values()) {
+        for (const anchor of feature.anchors) {
+          if (anchor.placement.parentId !== null) {
+            expect(features.has(anchor.placement.parentId)).toBe(true);
+          }
+          for (const childId of anchor.placement.childIds) {
+            expect(features.has(childId)).toBe(true);
+          }
+        }
+      }
+    });
+
+    it('結合で消滅したセカンダリの未使用頂点を削除し、Undoで復元する', () => {
+      setupSiblingsUnderContainer();
+      const cmd = buildSiblingMergeCommand();
+      cmd.execute();
+      expect(addFeature.getVertices().has('b0')).toBe(false);
+
+      cmd.undo();
+      expect(addFeature.getVertices().has('b0')).toBe(true);
+    });
+
+    it('Undoで参照掃除された親の childIds とセカンダリ地物を復元する', () => {
+      setupSiblingsUnderContainer();
+      const cmd = buildSiblingMergeCommand();
+      cmd.execute();
+      cmd.undo();
+
+      expect(addFeature.getFeatureById('leaf-b')).toBeDefined();
+      expect(getContainerChildIds()).toEqual(['leaf-a', 'leaf-b']);
+    });
+
+    it('Redoで結合後状態（参照掃除込み）を同一IDで復元する', () => {
+      setupSiblingsUnderContainer();
+      const cmd = buildSiblingMergeCommand();
+      cmd.execute();
+      const mergedVertexIds = getPolygonVertexIds('leaf-a');
+
+      cmd.undo();
+      cmd.execute();
+
+      expect(addFeature.getFeatureById('leaf-b')).toBeUndefined();
+      expect(getContainerChildIds()).toEqual(['leaf-a']);
+      // 生成 ID の固定（§6.4.12）: redo は afterState 復元で頂点IDを採番し直さない
+      expect(getPolygonVertexIds('leaf-a')).toEqual(mergedVertexIds);
+    });
+
+    it('execute/undo/redoで参照掃除された親も含む対称イベントを発火する（厳密一致）', () => {
+      setupSiblingsUnderContainer();
+
+      const events: string[] = [];
+      const unsubscribeAdded = eventBus.on('feature:added', ({ featureId }) => {
+        events.push(`added:${featureId}`);
+      });
+      const unsubscribeRemoved = eventBus.on('feature:removed', ({ featureId }) => {
+        events.push(`removed:${featureId}`);
+      });
+
+      try {
+        const cmd = buildSiblingMergeCommand();
+        undoRedo.execute(cmd);
+        expect([...events].sort()).toEqual(
+          ['added:leaf-a', 'removed:leaf-b', 'added:container'].sort()
+        );
+
+        events.length = 0;
+        undoRedo.undo();
+        expect([...events].sort()).toEqual(
+          ['added:leaf-a', 'added:leaf-b', 'added:container'].sort()
+        );
+
+        events.length = 0;
+        undoRedo.redo();
+        expect([...events].sort()).toEqual(
+          ['added:leaf-a', 'removed:leaf-b', 'added:container'].sort()
+        );
+      } finally {
+        unsubscribeAdded();
+        unsubscribeRemoved();
+      }
+    });
+
+    it('異なる上位領域に属する地物の結合を拒否し、状態を変異させない', () => {
+      setupSiblingsUnderContainer();
+      // container の子 leaf-a と、最上位の独立末端地物（上位領域決定 UI は Phase 4-6）
+      const topLevel = addFeature.addPolygon(
+        [new Coordinate(20, 0), new Coordinate(25, 0), new Coordinate(25, 10), new Coordinate(20, 10)],
+        time
+      );
+
+      const cmd = new MergeFeatureCommand(addFeature, deleteFeature, {
+        featureIds: ['leaf-a', topLevel.id],
+        currentTime: time,
+      });
+      expect(() => cmd.execute()).toThrow('異なる上位領域');
+
+      expect(addFeature.getFeatureById('leaf-a')).toBeDefined();
+      expect(addFeature.getFeatureById(topLevel.id)).toBeDefined();
+      expect(getContainerChildIds()).toEqual(['leaf-a', 'leaf-b']);
+    });
   });
 
   function getPolygonVertexIds(featureId: string): readonly string[] {

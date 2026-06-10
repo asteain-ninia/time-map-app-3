@@ -1331,7 +1331,7 @@
 
     try {
       undoRedo.execute(
-        new MergeFeatureCommand(addFeature, {
+        new MergeFeatureCommand(addFeature, deleteFeature, {
           featureIds: mergeTargetIds,
           currentTime,
           mergedName,

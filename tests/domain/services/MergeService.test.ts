@@ -59,15 +59,15 @@ describe('MergeService', () => {
   describe('validateMerge', () => {
     it('2つ以上の地物で有効', () => {
       const result = validateMerge([
-        { id: 'f1', hasChildren: false },
-        { id: 'f2', hasChildren: false },
+        { id: 'f1', hasChildren: false, parentId: null },
+        { id: 'f2', hasChildren: false, parentId: null },
       ], noAncestors);
       expect(result.valid).toBe(true);
     });
 
     it('1つの地物は無効', () => {
       const result = validateMerge([
-        { id: 'f1', hasChildren: false },
+        { id: 'f1', hasChildren: false, parentId: null },
       ], noAncestors);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('2つ以上');
@@ -75,8 +75,8 @@ describe('MergeService', () => {
 
     it('下位領域を持つ地物は無効', () => {
       const result = validateMerge([
-        { id: 'f1', hasChildren: false },
-        { id: 'f2', hasChildren: true },
+        { id: 'f1', hasChildren: false, parentId: null },
+        { id: 'f2', hasChildren: true, parentId: null },
       ], noAncestors);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('下位領域');
@@ -84,17 +84,17 @@ describe('MergeService', () => {
 
     it('3つ以上の地物でも有効', () => {
       const result = validateMerge([
-        { id: 'f1', hasChildren: false },
-        { id: 'f2', hasChildren: false },
-        { id: 'f3', hasChildren: false },
+        { id: 'f1', hasChildren: false, parentId: null },
+        { id: 'f2', hasChildren: false, parentId: null },
+        { id: 'f3', hasChildren: false, parentId: null },
       ], noAncestors);
       expect(result.valid).toBe(true);
     });
 
     it('同一地物の重複指定は無効（§6.6.3 line 584「対象が同一地物ではないこと」）', () => {
       const result = validateMerge([
-        { id: 'a', hasChildren: false },
-        { id: 'a', hasChildren: false },
+        { id: 'a', hasChildren: false, parentId: null },
+        { id: 'a', hasChildren: false, parentId: null },
       ], noAncestors);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('重複');
@@ -104,8 +104,8 @@ describe('MergeService', () => {
       // child の祖先連鎖に parent が含まれる → 同時選択を拒否
       const getAncestors = (id: string) => (id === 'child' ? ['parent', 'root'] : []);
       const result = validateMerge([
-        { id: 'parent', hasChildren: true },
-        { id: 'child', hasChildren: false },
+        { id: 'parent', hasChildren: true, parentId: 'root' },
+        { id: 'child', hasChildren: false, parentId: 'parent' },
       ], getAncestors);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('同時に結合対象にできません');
@@ -114,8 +114,8 @@ describe('MergeService', () => {
     it('間接的な上位・下位関係（祖父-孫）でも無効', () => {
       const getAncestors = (id: string) => (id === 'grandchild' ? ['parent', 'grandparent'] : []);
       const result = validateMerge([
-        { id: 'grandparent', hasChildren: true },
-        { id: 'grandchild', hasChildren: false },
+        { id: 'grandparent', hasChildren: true, parentId: null },
+        { id: 'grandchild', hasChildren: false, parentId: 'parent' },
       ], getAncestors);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('同時に結合対象にできません');
@@ -125,10 +125,28 @@ describe('MergeService', () => {
       // 双方に共通の親 root がいるが、root は選択集合に含まれない
       const getAncestors = () => ['root'];
       const result = validateMerge([
-        { id: 'siblingA', hasChildren: false },
-        { id: 'siblingB', hasChildren: false },
+        { id: 'siblingA', hasChildren: false, parentId: 'root' },
+        { id: 'siblingB', hasChildren: false, parentId: 'root' },
       ], getAncestors);
       expect(result.valid).toBe(true);
+    });
+
+    it('異なる上位領域に属する地物は無効（上位領域決定 UI 導入まで拒否）', () => {
+      const result = validateMerge([
+        { id: 'f1', hasChildren: false, parentId: 'p' },
+        { id: 'f2', hasChildren: false, parentId: 'q' },
+      ], noAncestors);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('異なる上位領域');
+    });
+
+    it('最上位（親なし）と下位領域所属の混在は無効', () => {
+      const result = validateMerge([
+        { id: 'f1', hasChildren: false, parentId: null },
+        { id: 'f2', hasChildren: false, parentId: 'p' },
+      ], noAncestors);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('異なる上位領域');
     });
   });
 
@@ -138,6 +156,24 @@ describe('MergeService', () => {
       const b = makeLeaf('b');
       const result = validateMergeFeatures(['a', 'b'], [a, b], mergeTime);
       expect(result.valid).toBe(true);
+    });
+
+    it('同一の上位領域に属する兄弟末端地物は有効', () => {
+      const a = makeLeaf('a', 'container');
+      const b = makeLeaf('b', 'container');
+      const container = makeContainer('container', ['a', 'b']);
+      const result = validateMergeFeatures(['a', 'b'], [a, b, container], mergeTime);
+      expect(result.valid).toBe(true);
+    });
+
+    it('異なる上位領域に属する末端地物は無効（上位領域決定 UI 導入まで拒否）', () => {
+      const a = makeLeaf('a', 'p');
+      const b = makeLeaf('b', 'q');
+      const p = makeContainer('p', ['a']);
+      const q = makeContainer('q', ['b']);
+      const result = validateMergeFeatures(['a', 'b'], [a, b, p, q], mergeTime);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('異なる上位領域');
     });
 
     it('集約地物とその下位領域の同時選択は無効（上位・下位関係）', () => {
