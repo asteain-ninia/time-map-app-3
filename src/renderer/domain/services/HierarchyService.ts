@@ -562,6 +562,23 @@ export function isSplittable(
   return !hasChildren(feature, time);
 }
 
+/**
+ * 末端地物 → 集約地物の遷移で自動生成される直轄領のデフォルト名称を構築する
+ * （要件定義書 §2.1 line 228「直轄領のデフォルト名称は『`<元の末端地物名> 直轄領`』」）。
+ *
+ * この命名規則はドメインのルールであり、application 層（`ReassignFeatureParentUseCase`
+ * の直轄領生成）と presentation 層（`parentTransferDialogUtils.resolveDirectlyGovernedDefault`
+ * の上書き UI プレフィル）の双方が同じ既定値を必要とする。文字列表現を 2 箇所に独立ハードコード
+ * すると両者がドリフトし得るため、ドメイン（両層が依存する共有カーネル）の本関数に一元化する
+ * （開発ガイド §6.0.1 検出観点2「対概念の同期」のコード版。層をまたぐ型依存は避けつつ、
+ * 値生成ロジックはドメインで共有する）。
+ *
+ * 元名が空（前後空白のみ含む）の場合は先頭空白を避け「直轄領」のみを返す。
+ */
+export function buildDirectlyGovernedDefaultName(originalName: string): string {
+  return originalName.trim() === '' ? '直轄領' : `${originalName} 直轄領`;
+}
+
 // ──────────────────────────────────────────
 // 階層維持操作
 // ──────────────────────────────────────────

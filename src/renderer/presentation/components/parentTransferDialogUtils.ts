@@ -1,6 +1,7 @@
 import type { Feature } from '@domain/entities/Feature';
+import { buildDirectlyGovernedDefaultName } from '@domain/services/HierarchyService';
 import { featureCoversRange } from '@domain/services/TimeService';
-import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
+import { isLeafPolygonAnchor, type FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 
 export type ParentTransferScope = 'selected' | 'children';
@@ -50,6 +51,18 @@ export interface CreateNewParentInput {
   readonly ancestors?: readonly NewParentContainerInput[];
 }
 
+/**
+ * 末端地物 → 集約地物の遷移で自動生成される直轄領（要件定義書 §2.1 line 226-229）の
+ * 名称・種別ラベルの上書き入力（§2.1 line 228）。
+ * Application 層 `DirectlyGovernedOverrideSpec`（`ReassignFeatureParentUseCase.ts`）と同形の
+ * 独立宣言（§6.0.1 検出観点2: フィールド追加時は両型をセットで見直す）。
+ * 値はダイアログ入力の生文字列で、前後空白除去・空判定は UseCase 側で行う。
+ */
+export interface DirectlyGovernedOverrideInput {
+  readonly name?: string;
+  readonly kind?: string;
+}
+
 export interface ParentTransferConfirmDetail {
   readonly scope: ParentTransferScope;
   readonly featureIds: readonly string[];
@@ -60,6 +73,12 @@ export interface ParentTransferConfirmDetail {
    * 既存の上位領域に所属する新中間コンテナ（自治化）。
    */
   readonly createNewParent?: CreateNewParentInput;
+  /**
+   * 既存末端地物が下位領域を獲得して集約地物へ遷移する場合の、自動生成される直轄領の
+   * 名称・種別の上書き（§2.1 line 228）。遷移が起きない選択（独立・連邦化・既存集約地物への帰属）
+   * では未設定。
+   */
+  readonly directlyGovernedOverride?: DirectlyGovernedOverrideInput;
 }
 
 /**
@@ -356,6 +375,66 @@ export function resolveParentTransferTarget(params: {
         : {}),
       ...(containerParentId !== null ? { parentId: containerParentId } : {}),
     },
+  };
+}
+
+/**
+ * 末端→集約遷移で直轄領が生成される「遷移する既存末端地物」の解決結果。
+ * `defaultName` / `defaultKind` は入力欄の初期値（プレフィル）に使う。
+ */
+export interface DirectlyGovernedDefault {
+  /** 遷移する既存末端地物（直轄領の親になる集約地物）の ID */
+  readonly featureId: string;
+  /** 遷移する地物の表示名（説明文用） */
+  readonly parentName: string;
+  /** 直轄領のデフォルト名称「`<元名> 直轄領`」 */
+  readonly defaultName: string;
+  /** 直轄領のデフォルト種別（元末端地物の種別。なければ空文字） */
+  readonly defaultKind: string;
+}
+
+/**
+ * 確定意図（`transferTarget`）から、末端→集約遷移で直轄領が生成される「遷移する既存末端地物」を
+ * 特定し、直轄領のデフォルト名称・種別を返す（要件定義書 §2.1 line 225-229）。遷移が起きなければ `null`。
+ *
+ * 子を獲得して末端→集約遷移し得る既存地物は次の 2 経路（開発ガイド §6.1.8 / §6.0.1 検出観点2:
+ * 征服と自治化の所属先を一様に扱う）:
+ * - `reassign`（割譲・帰属・直轄化）: 新親 `newParentId`。
+ * - `createNewParent` の自治化: 新規コンテナの所属先 `spec.parentId`（連邦化は `parentId` 不在 = 遷移なし）。
+ *
+ * 独立（`newParentId === null`）・連邦化（`parentId` 不在）は既存地物が子を獲得しないため遷移しない。
+ * 既存集約地物（コンテナ）への帰属も、形状は下位領域の和として派生再計算されるだけで直轄領は生じない
+ * （§2.1 line 231）。よって対象を既存末端地物（`isLeafPolygonAnchor`）に限定する（リーフ判定はドメインの
+ * `isLeafPolygonAnchor` を共有し独自判定でドリフトさせない。開発ガイド §6.6.8）。
+ *
+ * デフォルト名称はドメインの `buildDirectlyGovernedDefaultName` を UseCase 側
+ * （`resolveLeafToContainerTransition`）と共有して構築する（命名規則の二重ハードコードを避け
+ * ドリフトを防ぐ。開発ガイド §6.0.1 検出観点2 / §6.6.9）。
+ */
+export function resolveDirectlyGovernedDefault(params: {
+  readonly features: readonly Feature[];
+  readonly time: TimePoint | undefined;
+  readonly transferTarget: ParentTransferResolution | null;
+}): DirectlyGovernedDefault | null {
+  const { features, time, transferTarget } = params;
+  if (!time || !transferTarget) return null;
+
+  const targetParentId =
+    transferTarget.type === 'reassign'
+      ? transferTarget.newParentId
+      : transferTarget.spec.parentId ?? null;
+  if (targetParentId === null) return null;
+
+  const parent = features.find((feature) => feature.id === targetParentId);
+  if (!parent) return null;
+  const anchor = getActivePolygonAnchor(parent, time);
+  if (!anchor || !isLeafPolygonAnchor(anchor)) return null;
+
+  return {
+    featureId: parent.id,
+    parentName: anchor.property.name || parent.id,
+    defaultName: buildDirectlyGovernedDefaultName(anchor.property.name),
+    defaultKind: anchor.property.kind ?? '',
   };
 }
 

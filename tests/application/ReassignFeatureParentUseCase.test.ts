@@ -1861,5 +1861,100 @@ describe('ReassignFeatureParentUseCase', () => {
       expect(addFeature.getFeatureById('Q')!.getActiveAnchor(t1000)!.shape).toBeUndefined();
       expect(addFeature.getFeatureById(directId)).toBeDefined();
     });
+
+    // 直轄領のデフォルト名称/種別の上書き（要件定義書 §2.1 line 228, Phase 4-4b-2a）。
+    it('上書き指定時は直轄領の名称・種別をユーザー入力で置き換える（征服）', () => {
+      const vertices = new Map<string, Vertex>();
+      const x = registerLeaf(vertices, 'X', [[0, 0], [10, 0], [10, 10], [0, 10]], null, '国');
+      const y = registerLeaf(vertices, 'Y', [[2, 2], [6, 2], [6, 6], [2, 6]], null);
+      addFeature.restore(new Map([['X', x], ['Y', y]]), vertices);
+
+      transfer.reassignFeatureParent({
+        featureIds: ['Y'],
+        newParentId: 'X',
+        effectiveTime: t1000,
+        transferType: 'cede',
+        directlyGovernedOverride: { name: '首都圏', kind: '特別区' },
+      });
+
+      const xAnchor = expectContainerInvariant('X', t1000);
+      const directId = xAnchor.placement.childIds.find((id) => id !== 'Y')!;
+      const dAnchor = addFeature.getFeatureById(directId)!.getActiveAnchor(t1000)!;
+      expect(dAnchor.property.name).toBe('首都圏');
+      expect(dAnchor.property.kind).toBe('特別区');
+    });
+
+    it('上書きの名称が空ならデフォルト名称、種別が空なら継承を解除して種別なし', () => {
+      const vertices = new Map<string, Vertex>();
+      // X は種別「国」。override が存在し種別が空のときは継承を解除する
+      // （override 未指定時の継承＝既存テスト とは区別する）。
+      const x = registerLeaf(vertices, 'X', [[0, 0], [10, 0], [10, 10], [0, 10]], null, '国');
+      const y = registerLeaf(vertices, 'Y', [[2, 2], [6, 2], [6, 6], [2, 6]], null);
+      addFeature.restore(new Map([['X', x], ['Y', y]]), vertices);
+
+      transfer.reassignFeatureParent({
+        featureIds: ['Y'],
+        newParentId: 'X',
+        effectiveTime: t1000,
+        transferType: 'cede',
+        directlyGovernedOverride: { name: '   ', kind: '   ' },
+      });
+
+      const xAnchor = expectContainerInvariant('X', t1000);
+      const directId = xAnchor.placement.childIds.find((id) => id !== 'Y')!;
+      const dAnchor = addFeature.getFeatureById(directId)!.getActiveAnchor(t1000)!;
+      expect(dAnchor.property.name).toBe('X 直轄領');
+      expect(dAnchor.property.kind).toBeUndefined();
+    });
+
+    it('自治化で所属先が末端のとき、所属先の直轄領にも上書きが反映される', () => {
+      const vertices = new Map<string, Vertex>();
+      const q = registerLeaf(vertices, 'Q', [[0, 0], [10, 0], [10, 10], [0, 10]], null, '国');
+      const x = registerLeaf(vertices, 'X', [[2, 2], [6, 2], [6, 6], [2, 6]], null);
+      addFeature.restore(new Map([['Q', q], ['X', x]]), vertices);
+
+      transfer.reassignFeatureParent({
+        featureIds: ['X'],
+        newParentId: null,
+        effectiveTime: t1000,
+        createNewParent: { name: '自治州', kind: '州', parentId: 'Q' },
+        directlyGovernedOverride: { name: 'Q中央領', kind: '直轄' },
+      });
+
+      const qAnchor = addFeature.getFeatureById('Q')!.getActiveAnchor(t1000)!;
+      expect(qAnchor.shape).toBeUndefined();
+      const yId = addFeature.getFeatureById('X')!.getActiveAnchor(t1000)!.placement.parentId!;
+      const directId = qAnchor.placement.childIds.find((id) => id !== yId)!;
+      const dAnchor = addFeature.getFeatureById(directId)!.getActiveAnchor(t1000)!;
+      expect(dAnchor.property.name).toBe('Q中央領');
+      expect(dAnchor.property.kind).toBe('直轄');
+    });
+
+    it('annex（下位領域すべて）経路でも新親が既存末端なら上書きが反映される', () => {
+      const vertices = new Map<string, Vertex>();
+      // X = 既存最上位末端（annex 先）。c1/c2 = 集約地物 C の子（X 内部）。
+      const x = registerLeaf(vertices, 'X', [[0, 0], [10, 0], [10, 10], [0, 10]], null, '国');
+      const c1 = registerLeaf(vertices, 'c1', [[2, 2], [4, 2], [4, 4], [2, 4]], 'C');
+      const c2 = registerLeaf(vertices, 'c2', [[6, 6], [8, 6], [8, 8], [6, 8]], 'C');
+      const c = makeFeature('C', [
+        new FeatureAnchor('C-a1', { start: t1000 }, { name: 'C', description: '' }, undefined, placement(null, ['c1', 'c2'])),
+      ]);
+      addFeature.restore(new Map([['X', x], ['C', c], ['c1', c1], ['c2', c2]]), vertices);
+
+      // C の下位領域すべて（c1, c2）を X 配下へ annex。X は末端→集約遷移する。
+      transfer.reassignFeatureParent({
+        featureIds: ['c1', 'c2'],
+        newParentId: 'X',
+        effectiveTime: t1000,
+        transferType: 'annex',
+        directlyGovernedOverride: { name: '本土', kind: '直轄州' },
+      });
+
+      const xAnchor = expectContainerInvariant('X', t1000);
+      const directId = xAnchor.placement.childIds.find((id) => id !== 'c1' && id !== 'c2')!;
+      const dAnchor = addFeature.getFeatureById(directId)!.getActiveAnchor(t1000)!;
+      expect(dAnchor.property.name).toBe('本土');
+      expect(dAnchor.property.kind).toBe('直轄州');
+    });
   });
 });

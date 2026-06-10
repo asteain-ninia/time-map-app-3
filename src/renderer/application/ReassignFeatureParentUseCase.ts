@@ -19,6 +19,7 @@ import {
 } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import {
+  buildDirectlyGovernedDefaultName,
   deriveParentPolygons,
   getAncestors,
   resolvePolygonAnchorPolygons,
@@ -73,6 +74,24 @@ export interface CreateNewParentSpec {
   readonly ancestors?: readonly NewParentContainerSpec[];
 }
 
+/**
+ * 末端地物 → 集約地物の遷移で自動生成される直轄領（要件定義書 §2.1 line 226-229）の
+ * 名称・種別ラベルの上書き指定。所属変更ダイアログでユーザーが入力する（§2.1 line 228）。
+ *
+ * - `name`: 前後空白除去後が非空ならその名称を採用。空または未指定なら
+ *   デフォルト「`<元末端地物名> 直轄領`」へフォールバックする。
+ * - `kind`: 前後空白除去後が非空ならその種別を採用。空なら種別なし（明示的な除去）。
+ *   本 spec 自体が未指定（`directlyGovernedOverride === undefined`）のときのみ、
+ *   元末端地物の種別を継承する（ダイアログ非経由の直接呼び出し・既存テスト互換）。
+ *
+ * 注意（§6.0.1 検出観点2）: presentation 層 `DirectlyGovernedOverrideInput`
+ * （`parentTransferDialogUtils.ts`）と同形の独立宣言。フィールド追加時は両型をセットで見直す。
+ */
+export interface DirectlyGovernedOverrideSpec {
+  readonly name?: string;
+  readonly kind?: string;
+}
+
 export interface ReassignFeatureParentParams {
   readonly featureIds: readonly string[];
   readonly newParentId: string | null;
@@ -83,6 +102,12 @@ export interface ReassignFeatureParentParams {
    * このとき `newParentId` は無視され、生成されたコンテナの ID が新親になる。
    */
   readonly createNewParent?: CreateNewParentSpec;
+  /**
+   * 末端地物 → 集約地物の遷移で自動生成される直轄領の名称・種別の上書き（§2.1 line 228）。
+   * 1 操作で遷移する既存末端地物は高々 1 件（征服の新親 / 自治化の所属先 Q）のため、
+   * 単一の上書きで足りる（`resolveLeafToContainerTransition` の全呼び出しへ同一値を渡す）。
+   */
+  readonly directlyGovernedOverride?: DirectlyGovernedOverrideSpec;
 }
 
 export interface ReassignFeatureParentResult {
@@ -263,7 +288,8 @@ export class ReassignFeatureParentUseCase {
         changedFeatureIds,
         createdVertices,
         params.effectiveTime,
-        featureId
+        featureId,
+        params.directlyGovernedOverride
       );
     }
 
@@ -818,7 +844,8 @@ export class ReassignFeatureParentUseCase {
    * childIds 非空」（移行期間ノード）になった区間を検出し:
    *   - 旧形状 − 下位領域の和 の差分（`polygonDifferenceAll`）を算出する。
    *   - 差分が非空なら新規末端地物（直轄領）を生成し、当該錨の下位領域へ追加する。
-   *     名称は「`<元名> 直轄領`」、種別は元末端地物から継承する（§2.1 line 228）。
+   *     名称はデフォルト「`<元名> 直轄領`」＋種別は元末端地物から継承するが、ダイアログからの
+   *     上書き（`override`）が指定されていればそれを優先する（§2.1 line 228）。
    *     差分が複数領域に分かれる場合は 1 末端地物の複数領土リング（飛び地化）で保持する
    *     （§2.1 line 229 / §6.6.2 / §6.6.5）。
    *   - 差分が空（下位領域が旧形状を完全に覆う）なら直轄領は生成しない（§2.1 line 230）。
@@ -840,7 +867,8 @@ export class ReassignFeatureParentUseCase {
     changedFeatureIds: Set<string>,
     createdVertices: Map<string, Vertex>,
     effectiveTime: TimePoint,
-    transitionFeatureId: string
+    transitionFeatureId: string,
+    override?: DirectlyGovernedOverrideSpec
   ): void {
     const stagedFeature = staged.get(transitionFeatureId);
     if (!stagedFeature) return;
@@ -897,13 +925,32 @@ export class ReassignFeatureParentUseCase {
         continue;
       }
 
+      // 名称・種別の決定（§2.1 line 228）。ダイアログからの上書き（`override`）が指定されていれば
+      // それを優先し、未指定（ダイアログ非経由の直接呼び出し）ならデフォルト「`<元名> 直轄領`」＋
+      // 元末端地物の種別継承へフォールバックする。
+      // - name: 上書きが前後空白除去後に非空ならその名称、空ならデフォルト名称。
+      // - kind: 上書き spec が存在すれば override.kind（空文字＝種別なしの明示的除去）、
+      //   spec 自体が未指定のときのみ元末端地物の種別を継承する。
+      const overrideName = override?.name?.trim();
+      const name =
+        overrideName !== undefined && overrideName !== ''
+          ? overrideName
+          : buildDirectlyGovernedDefaultName(anchor.property.name);
+      let kind: string | undefined;
+      if (override !== undefined) {
+        const overrideKind = override.kind?.trim() ?? '';
+        kind = overrideKind !== '' ? overrideKind : undefined;
+      } else {
+        kind = anchor.property.kind;
+      }
+
       const built = this.featureUseCase.buildLeafPolygonFeature(
         anchor.timeRange,
         difference.polygons,
         {
-          name: `${anchor.property.name} 直轄領`,
+          name,
           description: '',
-          ...(anchor.property.kind !== undefined ? { kind: anchor.property.kind } : {}),
+          ...(kind !== undefined ? { kind } : {}),
         },
         transitionFeatureId
       );

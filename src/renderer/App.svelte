@@ -1377,6 +1377,9 @@
           effectiveTime: currentTime,
           transferType: detail.scope === 'children' ? 'annex' : 'cede',
           ...(detail.createNewParent ? { createNewParent: detail.createNewParent } : {}),
+          ...(detail.directlyGovernedOverride
+            ? { directlyGovernedOverride: detail.directlyGovernedOverride }
+            : {}),
         })
       );
     } catch (error) {

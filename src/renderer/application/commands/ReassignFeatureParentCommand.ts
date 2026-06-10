@@ -12,6 +12,7 @@ import type { TransferType } from '@domain/services/MergeService';
 import type { AddFeatureUseCase } from '../AddFeatureUseCase';
 import type {
   CreateNewParentSpec,
+  DirectlyGovernedOverrideSpec,
   ReassignFeatureParentUseCase,
 } from '../ReassignFeatureParentUseCase';
 import type { UndoableCommand } from '../UndoRedoManager';
@@ -31,6 +32,11 @@ export interface ReassignFeatureParentCommandParams {
    * （多段コンテナを 1 アンドゥ単位として記録。要件定義書 §2.1 line 299）。
    */
   readonly createNewParent?: CreateNewParentSpec;
+  /**
+   * 末端地物 → 集約地物の遷移で自動生成される直轄領の名称・種別の上書き（要件定義書 §2.1 line 228）。
+   * 直轄領の生成・破棄も beforeState スナップショット復元で 1 アンドゥ単位として取り消される。
+   */
+  readonly directlyGovernedOverride?: DirectlyGovernedOverrideSpec;
 }
 
 export class ReassignFeatureParentCommand implements UndoableCommand {
@@ -66,6 +72,7 @@ export class ReassignFeatureParentCommand implements UndoableCommand {
       effectiveTime: this.params.effectiveTime,
       transferType: this.params.transferType,
       createNewParent: this.params.createNewParent,
+      directlyGovernedOverride: this.params.directlyGovernedOverride,
     });
 
     this.changedFeatureIds = new Set(result.changedFeatureIds);

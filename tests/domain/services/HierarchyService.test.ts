@@ -15,6 +15,7 @@ import {
   shouldParentDisappear,
   buildParentChildLink,
   buildParentChildUnlink,
+  buildDirectlyGovernedDefaultName,
 } from '@domain/services/HierarchyService';
 import { Feature } from '@domain/entities/Feature';
 import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
@@ -566,6 +567,19 @@ describe('HierarchyService', () => {
 
     it('存在しない時間点ではundefined', () => {
       expect(buildParentChildUnlink(country, province1, new TimePoint(1800))).toBeUndefined();
+    });
+  });
+
+  // 直轄領のデフォルト名称（要件定義書 §2.1 line 228）。application / presentation 両層で共有する
+  // 命名規則を一元化した（二重ハードコードのドリフト防止）。
+  describe('buildDirectlyGovernedDefaultName', () => {
+    it('元名に「 直轄領」を付与する', () => {
+      expect(buildDirectlyGovernedDefaultName('日本')).toBe('日本 直轄領');
+    });
+
+    it('元名が空なら先頭空白を避け「直轄領」のみ', () => {
+      expect(buildDirectlyGovernedDefaultName('')).toBe('直轄領');
+      expect(buildDirectlyGovernedDefaultName('   ')).toBe('直轄領');
     });
   });
 });

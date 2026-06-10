@@ -8,6 +8,7 @@
     getActivePolygonAnchor,
     getFeatureDisplayName,
     getTransferFeatureIds,
+    resolveDirectlyGovernedDefault,
     resolveParentTransferTarget,
     type NewParentPlacementMode,
     type ParentTransferConfirmDetail,
@@ -40,6 +41,13 @@
   // 新規上位領域作成サブフローにおける、チェーン最外コンテナ自身の所属（連邦化 = root / 自治化 = existing）。
   let newParentPlacementMode = $state<NewParentPlacementMode>('root');
   let selectedNewParentParentId = $state('');
+  // 末端→集約遷移で自動生成される直轄領の名称・種別の上書き入力（要件定義書 §2.1 line 228）。
+  // 遷移する既存末端地物が確定したとき（`directlyGovernedDefault` 非 null）にデフォルトをプレフィルする。
+  let directlyGovernedName = $state('');
+  let directlyGovernedKind = $state('');
+  // プレフィル済みの遷移地物 ID。遷移地物が切り替わった瞬間だけ入力欄をデフォルトへ同期し、
+  // 同一地物のままの間はユーザー編集を保持する（再代入のたびに上書きしない）。
+  let directlyGovernedSyncedId = $state<string | null>(null);
 
   let activeAnchor = $derived(getActivePolygonAnchor(feature, currentTime));
   let selectedEnabled = $derived(canTransferSelectedFeature(feature, currentTime));
@@ -87,6 +95,13 @@
   let hasEmptyNewParentLevelName = $derived(
     newParentLevels.some((level) => level.name.trim() === '')
   );
+  // 末端→集約遷移で直轄領が生成される「遷移する既存末端地物」とデフォルト名称/種別。
+  // 遷移しない選択（独立・連邦化・既存集約地物への帰属）では null（上書き UI 非表示）。
+  let directlyGovernedDefault = $derived(resolveDirectlyGovernedDefault({
+    features,
+    time: currentTime,
+    transferTarget,
+  }));
   let targetNames = $derived(
     featureIds.map((featureId) => {
       const target = features.find((candidate) => candidate.id === featureId);
@@ -111,6 +126,22 @@
     newParentLevels = [{ name: '', kind: '' }];
     newParentPlacementMode = 'root';
     selectedNewParentParentId = '';
+    directlyGovernedName = '';
+    directlyGovernedKind = '';
+    directlyGovernedSyncedId = null;
+  });
+
+  // 遷移する既存末端地物が切り替わった瞬間だけ、直轄領の名称・種別をデフォルトへ同期する。
+  // 同一地物のままユーザーが編集している間は再代入しない（編集を保持）。遷移なし（null）になったら空へ戻す。
+  // `directlyGovernedDefault` は transferTarget 由来で directlyGovernedName/Kind には依存しないため
+  // 無限ループにならない（書き込む directlyGovernedSyncedId は guard 済み）。
+  $effect(() => {
+    const def = directlyGovernedDefault;
+    const id = def?.featureId ?? null;
+    if (id === directlyGovernedSyncedId) return;
+    directlyGovernedSyncedId = id;
+    directlyGovernedName = def?.defaultName ?? '';
+    directlyGovernedKind = def?.defaultKind ?? '';
   });
 
   $effect(() => {
@@ -164,12 +195,18 @@
 
   function confirm(): void {
     if (confirmDisabled || transferTarget === null) return;
+    // 末端→集約遷移が予測される場合のみ直轄領の上書きを同梱する（要件定義書 §2.1 line 228）。
+    // 値の前後空白除去・空判定（空名→デフォルト名称 / 空種別→種別なし）は UseCase 側で行う。
+    const directlyGovernedOverride = directlyGovernedDefault
+      ? { name: directlyGovernedName, kind: directlyGovernedKind }
+      : undefined;
     if (transferTarget.type === 'createNewParent') {
       onConfirm?.({
         scope,
         featureIds,
         newParentId: null,
         createNewParent: transferTarget.spec,
+        ...(directlyGovernedOverride ? { directlyGovernedOverride } : {}),
       });
       return;
     }
@@ -177,6 +214,7 @@
       scope,
       featureIds,
       newParentId: transferTarget.newParentId,
+      ...(directlyGovernedOverride ? { directlyGovernedOverride } : {}),
     });
   }
 </script>
@@ -368,6 +406,31 @@
           </div>
         {/if}
       </div>
+
+      {#if directlyGovernedDefault}
+        <div class="form-group">
+          <span class="group-label">直轄領（自動生成）</span>
+          <p class="dg-note">
+            「{directlyGovernedDefault.parentName}」が下位領域を獲得して集約地物になります。下位領域に覆われない領域があれば直轄領（末端地物）として自動生成されます。既定値が入力済みです。名称を空欄にすると既定名称、種別を空欄にすると種別なしになります。
+          </p>
+          <label class="field-label" for="directly-governed-name">直轄領の名称</label>
+          <input
+            id="directly-governed-name"
+            class="text-input"
+            type="text"
+            placeholder={directlyGovernedDefault.defaultName}
+            bind:value={directlyGovernedName}
+          />
+          <label class="field-label" for="directly-governed-kind">直轄領の種別（任意）</label>
+          <input
+            id="directly-governed-kind"
+            class="text-input"
+            type="text"
+            placeholder="国 / 県 など"
+            bind:value={directlyGovernedKind}
+          />
+        </div>
+      {/if}
 
       {#if confirmDisabled}
         <div class="modal-hint">
@@ -585,6 +648,13 @@
   .field-label {
     color: #aaa;
     font-size: 11px;
+  }
+
+  .dg-note {
+    margin: 0 0 4px;
+    color: #9ab;
+    font-size: 11px;
+    line-height: 1.5;
   }
 
   .text-input {

@@ -8,6 +8,7 @@ import {
   getActivePolygonAnchor,
   getTransferFeatureIds,
   isLeafFromTime,
+  resolveDirectlyGovernedDefault,
   resolveParentTransferSelection,
   resolveParentTransferTarget,
 } from '@presentation/components/parentTransferDialogUtils';
@@ -580,5 +581,108 @@ describe('parentTransferDialogUtils 集約地物（コンテナ）の受容 (Pha
     });
 
     expect(candidates.map((item) => item.id)).toContain('container');
+  });
+
+  // 直轄領デフォルト名称/種別の解決（要件定義書 §2.1 line 225-229, Phase 4-4b-2a）。
+  describe('resolveDirectlyGovernedDefault', () => {
+    // 種別ラベル付きの末端ポリゴンを生成する（makeFeature は kind なしのため）。
+    function makeLeafWithKind(id: string, kind: string): Feature {
+      return new Feature(id, 'Polygon', [
+        new FeatureAnchor(
+          `${id}-a1`,
+          { start: time },
+          { name: id, description: '', kind },
+          { type: 'Polygon', rings: [new Ring(`${id}-ring`, ['v1', 'v2', 'v3'], 'territory', null)] },
+          createAnchorPlacement(null, [])
+        ),
+      ]);
+    }
+
+    it('既存末端地物を新親に選ぶと直轄領のデフォルト名称・種別を返す（征服）', () => {
+      const parent = makeLeafWithKind('X', '国');
+      const result = resolveDirectlyGovernedDefault({
+        features: [parent],
+        time,
+        transferTarget: { type: 'reassign', newParentId: 'X' },
+      });
+      expect(result).toEqual({
+        featureId: 'X',
+        parentName: 'X',
+        defaultName: 'X 直轄領',
+        defaultKind: '国',
+      });
+    });
+
+    it('種別なしの末端地物では defaultKind が空文字', () => {
+      const parent = makeFeature('X', null);
+      const result = resolveDirectlyGovernedDefault({
+        features: [parent],
+        time,
+        transferTarget: { type: 'reassign', newParentId: 'X' },
+      });
+      expect(result?.defaultKind).toBe('');
+    });
+
+    it('既存集約地物（コンテナ）を親に選んでも遷移しないため null', () => {
+      const container = makeContainer('C', null, ['child']);
+      const result = resolveDirectlyGovernedDefault({
+        features: [container],
+        time,
+        transferTarget: { type: 'reassign', newParentId: 'C' },
+      });
+      expect(result).toBeNull();
+    });
+
+    it('独立（親なし）は遷移しないため null', () => {
+      const result = resolveDirectlyGovernedDefault({
+        features: [makeFeature('X', null)],
+        time,
+        transferTarget: { type: 'reassign', newParentId: null },
+      });
+      expect(result).toBeNull();
+    });
+
+    it('連邦化（新規最上位コンテナ作成, parentId なし）は遷移しないため null', () => {
+      const result = resolveDirectlyGovernedDefault({
+        features: [makeFeature('X', null)],
+        time,
+        transferTarget: { type: 'createNewParent', spec: { name: '連邦' } },
+      });
+      expect(result).toBeNull();
+    });
+
+    it('自治化で所属先が既存末端地物なら、その所属先のデフォルトを返す', () => {
+      const q = makeLeafWithKind('Q', '国');
+      const result = resolveDirectlyGovernedDefault({
+        features: [q],
+        time,
+        transferTarget: { type: 'createNewParent', spec: { name: '自治州', parentId: 'Q' } },
+      });
+      expect(result).toEqual({
+        featureId: 'Q',
+        parentName: 'Q',
+        defaultName: 'Q 直轄領',
+        defaultKind: '国',
+      });
+    });
+
+    it('自治化で所属先が既存集約地物なら遷移しないため null', () => {
+      const container = makeContainer('Q', null, ['child']);
+      const result = resolveDirectlyGovernedDefault({
+        features: [container],
+        time,
+        transferTarget: { type: 'createNewParent', spec: { name: '自治州', parentId: 'Q' } },
+      });
+      expect(result).toBeNull();
+    });
+
+    it('transferTarget が null（未確定）なら null', () => {
+      const result = resolveDirectlyGovernedDefault({
+        features: [makeFeature('X', null)],
+        time,
+        transferTarget: null,
+      });
+      expect(result).toBeNull();
+    });
   });
 });
