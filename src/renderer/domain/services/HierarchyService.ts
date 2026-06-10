@@ -14,7 +14,7 @@
 
 import type { Feature } from '@domain/entities/Feature';
 import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
-import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
+import { createAnchorPlacement, isEmptyContainerAnchor } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { RingCoords } from './GeometryService';
 import { polygonUnionAll } from './BooleanOperationService';
@@ -393,6 +393,11 @@ export interface DerivedShapeResult {
  * export する理由（§6.6.9）: 末端→集約遷移の直轄領差分（`ReassignFeatureParentUseCase`）で
  * 旧形状（subject）と子の和（clip = `deriveParentPolygons`）を同一の解決規則で揃えるため、
  * subject 側も本関数で解決する。subject/clip で別解決器を使うと退化データで非対称が生じる。
+ *
+ * @internal 上記の subject/clip 統一のための限定 export（バレル `services/index.ts` には
+ * 再エクスポートしない運用）。新規 consumer は本関数を直接 import する前に、
+ * `deriveParentShape` / `deriveParentPolygons` など経路統合済みの公開 API で
+ * 賄えないかを先に検討すること（§6.6.9: shape 解決経路の分散はドリフトの温床）。
  */
 export function resolvePolygonAnchorPolygons(
   anchor: FeatureAnchor,
@@ -673,9 +678,7 @@ function sweepReferencesToDeleted(feature: Feature, deletedId: string): Feature 
   }
   if (!changed) return feature;
 
-  const pruned = sweptAnchors.filter(
-    (anchor) => !(anchor.shape === undefined && anchor.placement.childIds.length === 0)
-  );
+  const pruned = sweptAnchors.filter((anchor) => !isEmptyContainerAnchor(anchor));
   if (pruned.length === 0) return null;
   return feature.withAnchors(pruned);
 }

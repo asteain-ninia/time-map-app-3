@@ -16,6 +16,7 @@ import {
   buildParentChildLink,
   buildParentChildUnlink,
   buildDirectlyGovernedDefaultName,
+  resolvePolygonAnchorPolygons,
 } from '@domain/services/HierarchyService';
 import { Feature } from '@domain/entities/Feature';
 import { FeatureAnchor, createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
@@ -705,6 +706,103 @@ describe('HierarchyService', () => {
     it('元名が空なら先頭空白を避け「直轄領」のみ', () => {
       expect(buildDirectlyGovernedDefaultName('')).toBe('直轄領');
       expect(buildDirectlyGovernedDefaultName('   ')).toBe('直轄領');
+    });
+  });
+
+  // ポリゴン錨の rings → polygon-clipping 互換の「1 territory + 直下 holes」解決（§6.6.2）。
+  // 直轄領差分の subject/clip が共有する解決規則（filter 規則）を単体で pin する
+  // （§6.6.9: subject 側が別実装へ戻る回帰の検知。Phase 4-4b-1 追補申し送り）。
+  describe('resolvePolygonAnchorPolygons', () => {
+    function makeRingsAnchor(rings: Ring[]): FeatureAnchor {
+      return new FeatureAnchor(
+        'a1',
+        { start: time },
+        { name: 'f', description: '' },
+        { type: 'Polygon', rings },
+        createAnchorPlacement(null, [])
+      );
+    }
+
+    const squareVertices = makeVertices([
+      ['v1', 0, 0], ['v2', 10, 0], ['v3', 10, 10], ['v4', 0, 10],
+      ['h1', 2, 2], ['h2', 6, 2], ['h3', 6, 6], ['h4', 2, 6],
+      ['w1', 20, 0], ['w2', 30, 0], ['w3', 30, 10], ['w4', 20, 10],
+    ]);
+
+    it('territory と直下の hole を 1 polygon（[territory, ...holes]）へ束ねる', () => {
+      const anchor = makeRingsAnchor([
+        new Ring('t1', ['v1', 'v2', 'v3', 'v4'], 'territory', null),
+        new Ring('h', ['h1', 'h2', 'h3', 'h4'], 'hole', 't1'),
+      ]);
+      const polygons = resolvePolygonAnchorPolygons(anchor, squareVertices);
+      expect(polygons).toHaveLength(1);
+      expect(polygons[0]).toHaveLength(2);
+      expect(polygons[0][0]).toHaveLength(4);
+    });
+
+    it('複数 territory（飛び地）は polygon 単位で分離し、hole は parentId の territory にのみ付く', () => {
+      const anchor = makeRingsAnchor([
+        new Ring('t1', ['v1', 'v2', 'v3', 'v4'], 'territory', null),
+        new Ring('t2', ['w1', 'w2', 'w3', 'w4'], 'territory', null),
+        new Ring('h', ['h1', 'h2', 'h3', 'h4'], 'hole', 't1'),
+      ]);
+      const polygons = resolvePolygonAnchorPolygons(anchor, squareVertices);
+      expect(polygons).toHaveLength(2);
+      // t1 側は territory + hole、t2 側は territory のみ
+      expect(polygons[0]).toHaveLength(2);
+      expect(polygons[1]).toHaveLength(1);
+    });
+
+    it('欠落頂点は座標解決から脱落し、全欠落で 3 頂点未満になった territory は除外する', () => {
+      const anchor = makeRingsAnchor([
+        new Ring('t1', ['v1', 'v2', 'v3', 'v4'], 'territory', null),
+        new Ring('t-missing', ['m1', 'm2', 'm3'], 'territory', null),
+      ]);
+      const polygons = resolvePolygonAnchorPolygons(anchor, squareVertices);
+      expect(polygons).toHaveLength(1);
+      expect(polygons[0][0]).toHaveLength(4);
+    });
+
+    it('3 頂点未満の退化 territory / hole は除外する', () => {
+      const anchor = makeRingsAnchor([
+        new Ring('t1', ['v1', 'v2', 'v3', 'v4'], 'territory', null),
+        new Ring('t-deg', ['w1', 'w2'], 'territory', null),
+        new Ring('h-deg', ['h1', 'h2'], 'hole', 't1'),
+      ]);
+      const polygons = resolvePolygonAnchorPolygons(anchor, squareVertices);
+      expect(polygons).toHaveLength(1);
+      expect(polygons[0]).toHaveLength(1);
+    });
+
+    it('parentId が null または存在しないリングを指す hole は捨てる', () => {
+      const anchor = makeRingsAnchor([
+        new Ring('t1', ['v1', 'v2', 'v3', 'v4'], 'territory', null),
+        new Ring('h-null', ['h1', 'h2', 'h3', 'h4'], 'hole', null),
+        new Ring('h-orphan', ['h1', 'h2', 'h3', 'h4'], 'hole', 'ghost-ring'),
+      ]);
+      const polygons = resolvePolygonAnchorPolygons(anchor, squareVertices);
+      expect(polygons).toHaveLength(1);
+      expect(polygons[0]).toHaveLength(1);
+    });
+
+    it('shape なし錨・Polygon 以外の shape は空配列を返す', () => {
+      const containerAnchor = new FeatureAnchor(
+        'a-container',
+        { start: time },
+        { name: 'c', description: '' },
+        undefined,
+        createAnchorPlacement(null, ['child'])
+      );
+      expect(resolvePolygonAnchorPolygons(containerAnchor, squareVertices)).toEqual([]);
+
+      const pointAnchor = new FeatureAnchor(
+        'a-point',
+        { start: time },
+        { name: 'p', description: '' },
+        { type: 'Point', vertexId: 'v1' },
+        createAnchorPlacement(null, [])
+      );
+      expect(resolvePolygonAnchorPolygons(pointAnchor, squareVertices)).toEqual([]);
     });
   });
 });

@@ -14,6 +14,7 @@ import type { Coordinate } from '@domain/value-objects/Coordinate';
 import {
   FeatureAnchor,
   createAnchorPlacement,
+  isEmptyContainerAnchor,
   isLeafPolygonAnchor,
   type AnchorPlacement,
 } from '@domain/value-objects/FeatureAnchor';
@@ -719,6 +720,27 @@ export class ReassignFeatureParentUseCase {
     effectiveTime: TimePoint,
     changedFeatureIds: ReadonlySet<string>
   ): void {
+    // 「shape なし ⟹ childIds 非空」不変条件の結果状態検証（開発ガイド §6.1.8 / §6.6.8）。
+    // 各変異サイトの剪定（pruneEmptyContainerAnchors / removeEmptyParentRangesFromTime）が
+    // 経路ごとに分散しているため、剪定漏れの回帰は経路ゲートでは検出できない。漏れると
+    // 実行時は沈黙し、保存後の次回ロード（validateShapePresence）で初めて拒否される
+    // 「保存できるが開けないファイル」になるため、変異後の staged 状態をここで走査して
+    // 操作ごと拒否する。
+    // なお削除経路（HierarchyService.planFeatureRemoval）に同等のゲートは意図的に置かない:
+    // 削除側の剪定は単一共有経路（sweepReferencesToDeleted, B31-B33 で統一済み）+ 同一述語
+    // （isEmptyContainerAnchor）共有のため分散リスクがない。削除経路に第 2 の剪定サイトが
+    // 生まれた時点でゲート追加を検討する（2026-06-10 レビュー判断）。
+    for (const feature of staged.values()) {
+      if (!changedFeatureIds.has(feature.id)) continue;
+      for (const anchor of feature.anchors) {
+        if (isEmptyContainerAnchor(anchor)) {
+          throw new FeatureParentTransferError(
+            `地物 "${feature.id}" の錨 "${anchor.id}" が「形状なし・下位領域なし」の不正状態になります（剪定漏れ）`
+          );
+        }
+      }
+    }
+
     const validationTimes = collectValidationTimes([...staged.values()], effectiveTime);
     for (const time of validationTimes) {
       const errors = validateHierarchy([...staged.values()], time)
@@ -794,6 +816,20 @@ export class ReassignFeatureParentUseCase {
     }
   }
 
+  /**
+   * 旧親から子を除去した結果「childIds が空になった effectiveTime 以降の区間」の錨を剪定する。
+   * 対象は「除去された子を元々持っていた区間」のみ（`didLoseRemovedChildren`）で、
+   * 元から空だった無関係な区間は触らない。全錨が消えたら null（地物ごと消滅）。
+   *
+   * **削除経路との意図的な非対称**: 削除経路（`HierarchyService.sweepReferencesToDeleted`）は
+   * 「shape を保持する錨は childIds が空になっても残す（末端地物へ戻る）」が、本関数は
+   * shape の有無を確認せず剪定する。所属変更では除去された子地物が**別の場所に存続する**ため、
+   * 旧親が移行期間ノード（shape あり + childIds 非空。外部生成 .gimoza 由来のみ）だった場合に
+   * shape を末端として温存すると、存続する子と領土が重複し末端地物排他（要件定義書 §2.1）へ
+   * 違反する。削除経路では子自体が消滅するため温存しても重複しない。純粋な集約地物
+   * （shape なし）ではどちらの経路も同じ挙動になる。移行期間ノードの shape 取り扱いポリシー
+   * 全般は現状.md B34 で追跡中（仕様確定待ち）。
+   */
   private removeEmptyParentRangesFromTime(
     original: Feature,
     feature: Feature,
@@ -1046,6 +1082,18 @@ function appendUnique(baseIds: readonly string[], idsToAdd: readonly string[]): 
 }
 
 /**
+ * 新規コンテナ（生成直後の単一開区間錨）の parentId を付け替える（チェーン内側 → 直上コンテナ）。
+ * `createAnchorPlacement` 経由で `isTopLevel === (parentId === null)` 同値不変条件を再構築する
+ * （現状.md §6.12 / 開発ガイド §6.6.8）。childIds は構築時のまま維持する。
+ */
+function withContainerParent(container: Feature, parentId: string): Feature {
+  const anchors = container.anchors.map((anchor) =>
+    anchor.withPlacement(createAnchorPlacement(parentId, anchor.placement.childIds))
+  );
+  return container.withAnchors(anchors);
+}
+
+/**
  * 集約地物（shape を持たない錨）で childIds が空になった区間を剪定する。
  *
  * 不変条件「shape なし ⟹ childIds 非空」（要件定義書 §4.1 / 開発ガイド §6.6.8）を
@@ -1058,22 +1106,8 @@ function appendUnique(baseIds: readonly string[], idsToAdd: readonly string[]): 
  * 全錨が消える場合は下位領域全喪失としてコンテナ消滅を表す null を返す
  * （要件定義書 §2.1「集約地物が全ての下位領域を失った場合、自動的に消滅する」）。
  */
-/**
- * 新規コンテナ（生成直後の単一開区間錨）の parentId を付け替える（チェーン内側 → 直上コンテナ）。
- * `createAnchorPlacement` 経由で `isTopLevel === (parentId === null)` 同値不変条件を再構築する
- * （現状.md §6.12 / 開発ガイド §6.6.8）。childIds は構築時のまま維持する。
- */
-function withContainerParent(container: Feature, parentId: string): Feature {
-  const anchors = container.anchors.map((anchor) =>
-    anchor.withPlacement(createAnchorPlacement(parentId, anchor.placement.childIds))
-  );
-  return container.withAnchors(anchors);
-}
-
 function pruneEmptyContainerAnchors(feature: Feature): Feature | null {
-  const anchors = feature.anchors.filter(
-    (anchor) => !(anchor.shape === undefined && anchor.placement.childIds.length === 0)
-  );
+  const anchors = feature.anchors.filter((anchor) => !isEmptyContainerAnchor(anchor));
   if (anchors.length === feature.anchors.length) return feature;
   if (anchors.length === 0) return null;
   return feature.withAnchors(anchors);

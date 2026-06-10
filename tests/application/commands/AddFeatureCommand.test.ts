@@ -332,6 +332,69 @@ describe('AddFeatureCommand', () => {
         .toEqual([childId, directId].sort());
     });
 
+    it('親が複数 territory（飛び地）を持ち子が一方の内部の場合、直轄領が残余を複数領土リングで保持する', () => {
+      // 直轄領差分（旧形状 − 子）の MultiPolygon 対応（要件定義書 §2.1 line 229 / §6.6.2 / §6.6.5）を
+      // 追加ツール親指定の経路で pin する。親除外（feature 単位の排他除外）が territory 単位へ
+      // 狭まる回帰や、差分の 2 片目が落ちる回帰を検知する（Phase 4-4b-1 申し送り）。
+      const vertices = new Map<string, Vertex>([
+        ['t1-1', new Vertex('t1-1', new Coordinate(0, 0))],
+        ['t1-2', new Vertex('t1-2', new Coordinate(10, 0))],
+        ['t1-3', new Vertex('t1-3', new Coordinate(10, 10))],
+        ['t1-4', new Vertex('t1-4', new Coordinate(0, 10))],
+        ['t2-1', new Vertex('t2-1', new Coordinate(20, 0))],
+        ['t2-2', new Vertex('t2-2', new Coordinate(30, 0))],
+        ['t2-3', new Vertex('t2-3', new Coordinate(30, 10))],
+        ['t2-4', new Vertex('t2-4', new Coordinate(20, 10))],
+      ]);
+      const rings = [
+        new Ring('t1', ['t1-1', 't1-2', 't1-3', 't1-4'], 'territory', null),
+        new Ring('t2', ['t2-1', 't2-2', 't2-3', 't2-4'], 'territory', null),
+      ];
+      const anchor = new FeatureAnchor(
+        'a-multi',
+        { start: time },
+        { name: '飛び地親', description: '' },
+        { type: 'Polygon', rings },
+        { parentId: null, childIds: [], isTopLevel: true }
+      );
+      addFeature.restore(
+        new Map([['f-multi', new Feature('f-multi', 'Polygon', [anchor])]]),
+        vertices
+      );
+
+      const cmd = createCommand({
+        type: 'polygon',
+        coords: [
+          new Coordinate(2, 2),
+          new Coordinate(6, 2),
+          new Coordinate(6, 6),
+          new Coordinate(2, 6),
+        ],
+        time,
+        parentId: 'f-multi',
+      });
+      undoRedo.execute(cmd);
+
+      // 親は集約地物化し、子 + 直轄領の 2 下位領域を持つ
+      const parentAnchor = addFeature.getFeatureById('f-multi')!.getActiveAnchor(time)!;
+      expect(parentAnchor.shape).toBeUndefined();
+      expect(parentAnchor.placement.childIds).toHaveLength(2);
+      const directId = parentAnchor.placement.childIds.find((id) =>
+        addFeature.getFeatureById(id)!.getActiveAnchor(time)!.property.name.endsWith('直轄領')
+      )!;
+
+      // 直轄領 = (t1 − 子) ∪ t2 が 1 末端地物に収まる:
+      // 領土リング 2 本（穴あき t1 残余 + 無傷の t2）+ 子をくり抜いた穴 1 本
+      const directAnchor = addFeature.getFeatureById(directId)!.getActiveAnchor(time)!;
+      expect(directAnchor.shape?.type).toBe('Polygon');
+      if (directAnchor.shape?.type === 'Polygon') {
+        const territories = directAnchor.shape.rings.filter((r) => r.ringType === 'territory');
+        const holes = directAnchor.shape.rings.filter((r) => r.ringType === 'hole');
+        expect(territories).toHaveLength(2);
+        expect(holes).toHaveLength(1);
+      }
+    });
+
     it('parentId指定が親錨を分割する場合もredoで初回の錨IDを復元する', () => {
       const parentTime = new TimePoint(1000);
       const childTime = new TimePoint(1500);

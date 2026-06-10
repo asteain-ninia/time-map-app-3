@@ -153,3 +153,16 @@ export type LeafPolygonAnchor = FeatureAnchor & {
 export function isLeafPolygonAnchor(anchor: FeatureAnchor): anchor is LeafPolygonAnchor {
   return anchor.shape?.type === 'Polygon' && anchor.placement.childIds.length === 0;
 }
+
+/**
+ * 空コンテナ錨（shape なし + childIds 空）の判定。
+ *
+ * 不変条件「shape なし ⟹ childIds 非空」（要件定義書 §4.1 / 開発ガイド §6.6.8）に違反する
+ * 一時状態であり、変異経路はこの錨を剪定して不変条件を変異後に再保証する。
+ * 剪定述語を 1 ヘルパーへ集約し、所属変更経路（`ReassignFeatureParentUseCase` の
+ * `pruneEmptyContainerAnchors`）と削除経路（`HierarchyService.sweepReferencesToDeleted`）の
+ * 判定ドリフトを防ぐ（§6.6.9 の応用: 同じ結果状態の判定は同じ実装を共有する）。
+ */
+export function isEmptyContainerAnchor(anchor: FeatureAnchor): boolean {
+  return anchor.shape === undefined && anchor.placement.childIds.length === 0;
+}

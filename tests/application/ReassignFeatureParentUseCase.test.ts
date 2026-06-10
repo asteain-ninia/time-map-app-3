@@ -1956,5 +1956,120 @@ describe('ReassignFeatureParentUseCase', () => {
       expect(dAnchor.property.name).toBe('本土');
       expect(dAnchor.property.kind).toBe('直轄州');
     });
+
+    it('退化リング（欠落頂点・3頂点未満・孤児穴）を含む旧形状でも subject/clip 対称に解決し直轄領を誤生成しない', () => {
+      // 直轄領差分の subject（旧形状）が clip（子の和）と同じ解決規則
+      // （resolvePolygonAnchorPolygons の filter 規則）を共有することを退化データで pin する。
+      // subject 側が未フィルタ実装へ戻ると、退化リングが polygon-clipping へ流れて
+      // 例外または直轄領の誤断片が生じる（開発ガイド §6.6.9 / Phase 4-4b-1 追補）。
+      const vertices = new Map<string, Vertex>();
+      const validIds: string[] = [];
+      ([[0, 0], [10, 0], [10, 10], [0, 10]] as const).forEach((c, i) => {
+        const vid = `X-v${i + 1}`;
+        vertices.set(vid, new Vertex(vid, new Coordinate(c[0], c[1])));
+        validIds.push(vid);
+      });
+      // (b) 用: 2 頂点しか持たない退化 hole の頂点（登録済みだが 3 頂点未満）
+      vertices.set('X-h1', new Vertex('X-h1', new Coordinate(1, 1)));
+      vertices.set('X-h2', new Vertex('X-h2', new Coordinate(2, 1)));
+      // (c) 用: 座標は有効な三角形だが紐付け先リングが存在しない孤児 hole
+      ([[7, 7], [9, 7], [8, 9]] as const).forEach((c, i) => {
+        const vid = `X-o${i + 1}`;
+        vertices.set(vid, new Vertex(vid, new Coordinate(c[0], c[1])));
+      });
+      const x = makeFeature('X', [
+        new FeatureAnchor(
+          'X-a1',
+          { start: t1000 },
+          { name: 'X', description: '' },
+          {
+            type: 'Polygon',
+            rings: [
+              new Ring('X-ring', validIds, 'territory', null),
+              // (a) 全頂点が vertices に欠落した territory（解決後 0 座標 → 除外）
+              new Ring('X-deg-territory', ['X-m1', 'X-m2', 'X-m3'], 'territory', null),
+              // (b) 3 頂点未満の退化 hole（有効 territory に紐付くが除外）
+              new Ring('X-deg-hole', ['X-h1', 'X-h2'], 'hole', 'X-ring'),
+              // (c) parentId が存在しないリングを指す孤児 hole（紐付け先なし → 捨てる）
+              new Ring('X-orphan-hole', ['X-o1', 'X-o2', 'X-o3'], 'hole', 'X-ghost-ring'),
+            ],
+          },
+          createAnchorPlacement(null, [])
+        ),
+      ]);
+      const y = registerLeaf(vertices, 'Y', [[2, 2], [6, 2], [6, 6], [2, 6]], null);
+      addFeature.restore(new Map([['X', x], ['Y', y]]), vertices);
+
+      transfer.reassignFeatureParent({
+        featureIds: ['Y'],
+        newParentId: 'X',
+        effectiveTime: t1000,
+        transferType: 'cede',
+      });
+
+      const xAnchor = expectContainerInvariant('X', t1000);
+      const directIds = xAnchor.placement.childIds.filter((id) => id !== 'Y');
+      expect(directIds).toHaveLength(1);
+      const dAnchor = addFeature.getFeatureById(directIds[0])!.getActiveAnchor(t1000)!;
+      // 直轄領 = 有効 territory − Y のみ。退化 territory 由来の断片は増えず、
+      // 孤児 hole が領土へ穴として誤適用されることもない（holes は Y の 1 穴のみ）
+      expect(dAnchor.shape?.type).toBe('Polygon');
+      if (dAnchor.shape?.type === 'Polygon') {
+        const territories = dAnchor.shape.rings.filter((r) => r.ringType === 'territory');
+        const holes = dAnchor.shape.rings.filter((r) => r.ringType === 'hole');
+        expect(territories).toHaveLength(1);
+        expect(holes).toHaveLength(1);
+      }
+    });
+
+    it('staged 検証で拒否された場合、live の地物・頂点マップへ一切反映しない（アトミック性）', () => {
+      // 変異 + 直轄領生成（createdVertices 蓄積）の後、commit 直前の validateStagedHierarchy で
+      // throw する経路を固定する: X の将来錨（t2000〜）に存在しない子 'ghost' への参照を仕込むと、
+      // 事前検証（validateRequest / validateTransfer は effectiveTime の有効錨基準）は通過し、
+      // t2000 スライスの validateChildReferences で初めて拒否される。
+      // throw 後に live マップが変異していれば、それは将来 commit タイミングが
+      // validation より前へ移動した回帰（直轄領・新規頂点のリーク）を意味する。
+      const vertices = new Map<string, Vertex>();
+      const x = registerLeaf(vertices, 'X', [[0, 0], [10, 0], [10, 10], [0, 10]], null);
+      const y = registerLeaf(vertices, 'Y', [[2, 2], [6, 2], [6, 6], [2, 6]], null);
+      const xAnchor1 = x.anchors[0];
+      const xWithFuture = makeFeature('X', [
+        new FeatureAnchor(
+          'X-a1',
+          { start: t1000, end: t2000 },
+          xAnchor1.property,
+          xAnchor1.shape,
+          createAnchorPlacement(null, [])
+        ),
+        new FeatureAnchor(
+          'X-a2',
+          { start: t2000 },
+          xAnchor1.property,
+          xAnchor1.shape,
+          createAnchorPlacement(null, ['ghost'])
+        ),
+      ]);
+      addFeature.restore(new Map([['X', xWithFuture], ['Y', y]]), vertices);
+
+      const featureCountBefore = addFeature.getFeaturesMap().size;
+      const vertexCountBefore = addFeature.getVertices().size;
+      const xBefore = addFeature.getFeatureById('X');
+
+      expect(() =>
+        transfer.reassignFeatureParent({
+          featureIds: ['Y'],
+          newParentId: 'X',
+          effectiveTime: t1000,
+          transferType: 'cede',
+        })
+      ).toThrow(FeatureParentTransferError);
+
+      // 直轄領・新規頂点が live マップへリークしない（変異前と完全一致）
+      expect(addFeature.getFeaturesMap().size).toBe(featureCountBefore);
+      expect(addFeature.getVertices().size).toBe(vertexCountBefore);
+      // X は変異前のオブジェクトのまま（shape 破棄・childIds 追加が反映されていない）
+      expect(addFeature.getFeatureById('X')).toBe(xBefore);
+      expect(addFeature.getFeatureById('X')!.getActiveAnchor(t1000)!.shape).toBeDefined();
+    });
   });
 });
