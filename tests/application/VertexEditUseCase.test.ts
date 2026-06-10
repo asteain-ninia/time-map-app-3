@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { VertexEditUseCase, VertexEditError } from '@application/VertexEditUseCase';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { eventBus } from '@application/EventBus';
+import type { Feature } from '@domain/entities/Feature';
+import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 
@@ -305,6 +307,47 @@ describe('VertexEditUseCase', () => {
 
       expect(deleted).toBe(true);
       expect(addFeature.getFeatureById(polygon.id)).toBeUndefined();
+    });
+
+    it('退化削除でも親の childIds から削除地物が掃除される（B31 同根: 削除 = 全時間軸からの消滅）', () => {
+      const polygon = addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+        time
+      );
+      const sibling = addFeature.addPolygon(
+        [new Coordinate(20, 0), new Coordinate(30, 0), new Coordinate(30, 10)],
+        time
+      );
+      // 集約地物（shape なしコンテナ）の下に polygon と sibling をぶら下げる
+      const container = addFeature.buildContainerFeature(
+        time,
+        [polygon.id, sibling.id],
+        { name: 'コンテナ', description: '' }
+      );
+      const featuresMap = addFeature.getFeaturesMap() as Map<string, Feature>;
+      featuresMap.set(container.id, container);
+      for (const childId of [polygon.id, sibling.id]) {
+        const child = featuresMap.get(childId)!;
+        featuresMap.set(childId, child.withAnchors(
+          child.anchors.map(a => a.withPlacement(
+            createAnchorPlacement(container.id, a.placement.childIds)
+          ))
+        ));
+      }
+
+      const anchor = addFeature.getFeatureById(polygon.id)!.getActiveAnchor(time)!;
+      const shape = anchor.shape as { type: 'Polygon'; rings: { id: string; vertexIds: string[] }[] };
+      const deleted = vertexEdit.deleteVertexFromPolygon(
+        polygon.id, time, shape.rings[0].id, shape.rings[0].vertexIds[0]
+      );
+
+      expect(deleted).toBe(true);
+      expect(addFeature.getFeatureById(polygon.id)).toBeUndefined();
+      // 親の childIds に dangling 参照が残らない（保存→再ロード拒否の防止）
+      const parent = addFeature.getFeatureById(container.id)!;
+      for (const parentAnchor of parent.anchors) {
+        expect(parentAnchor.placement.childIds).toEqual([sibling.id]);
+      }
     });
 
     it('リングに属さない頂点でエラー', () => {

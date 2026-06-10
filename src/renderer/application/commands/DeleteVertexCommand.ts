@@ -62,6 +62,7 @@ export class DeleteVerticesCommand implements UndoableCommand {
   }
 
   undo(): void {
+    const featuresAfterExecute = new Map(this.featureUseCase.getFeaturesMap());
     this.restoreMap(
       this.featureUseCase.getFeaturesMap() as Map<string, Feature>,
       this.featuresBefore
@@ -74,8 +75,21 @@ export class DeleteVerticesCommand implements UndoableCommand {
       this.featureUseCase.getSharedVertexGroups() as Map<string, SharedVertexGroup>,
       this.sharedGroupsBefore
     );
-    for (const featureId of new Set(this.params.map((param) => param.featureId))) {
-      eventBus.emit('feature:added', { featureId });
+    // touch した全地物へ対称に通知（§6.4.16）。地物削除（退化形状）が階層参照の掃除で
+    // 対象外の地物（親の childIds 等）も変更し得るため、params ではなく before/after の
+    // インスタンス diff で復元された地物を特定する。
+    const touchedFeatureIds = new Set([
+      ...this.featuresBefore.keys(),
+      ...featuresAfterExecute.keys(),
+    ]);
+    for (const featureId of touchedFeatureIds) {
+      const before = this.featuresBefore.get(featureId);
+      if (before === featuresAfterExecute.get(featureId)) continue; // 変更なし
+      if (before) {
+        eventBus.emit('feature:added', { featureId });
+      } else {
+        eventBus.emit('feature:removed', { featureId });
+      }
     }
   }
 

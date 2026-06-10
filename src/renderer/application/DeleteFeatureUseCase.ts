@@ -2,29 +2,28 @@
  * 地物削除ユースケース
  *
  * §5.3.0: DeleteFeatureUseCase — 地物の削除
- * §2.1: 下位領域をすべて喪失した場合、上位領域も自動的に消失する
+ * §2.1: 面情報の削除は、全時刻を通じてその地物の下位領域・上位領域への参照を持つ
+ *       他の地物が存在しないか、削除に伴う再編が許容される場合にのみ可能とする。
+ *       集約地物が下位領域を全て失った場合は自動的に消滅する。
  *
- * 地物を削除し、使用されなくなった頂点のクリーンアップ、
- * 親子関係の整理（孤立した親の自動削除）を行う。
+ * 削除 = 全時間軸からの消滅。削除地物への参照（parentId / childIds）を残存する
+ * 全地物の全錨から掃除し（`planFeatureRemoval`）、使用されなくなった頂点を
+ * クリーンアップする。空コンテナ化した集約地物は連鎖的に消滅する。
  */
 
 import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
 import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import type { AddFeatureUseCase } from './AddFeatureUseCase';
-import { eventBus } from './EventBus';
-import {
-  shouldParentDisappear,
-  getParentFeature,
-  getChildFeatures,
-} from '@domain/services/HierarchyService';
-import type { TimePoint } from '@domain/value-objects/TimePoint';
-import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
+import { planFeatureRemoval } from '@domain/services/HierarchyService';
+import { applyFeatureRemoval } from './featureRemoval';
 
 /** 削除結果 */
 export interface DeleteFeatureResult {
-  /** 削除された地物ID群 */
+  /** 削除された地物ID群（削除起点 + 連鎖消滅した集約地物） */
   readonly deletedFeatureIds: readonly string[];
+  /** 参照掃除（parentId クリア / childIds 除去 / 空コンテナ錨の剪定）で更新された地物ID群 */
+  readonly modifiedFeatureIds: readonly string[];
   /** 削除された頂点ID群 */
   readonly deletedVertexIds: readonly string[];
 }
@@ -40,62 +39,39 @@ export class DeleteFeatureUseCase {
   /**
    * 地物を削除する
    *
-   * - 地物をfeaturesマップから除去
+   * - 削除地物への参照を全地物・全錨から掃除（子の parentId クリア + 親の childIds 除去）
+   * - 空コンテナ化した集約地物の連鎖消滅（§2.1）
    * - 他の地物から参照されていない頂点を除去
-   * - 親子関係の更新（子の parentId を null に設定）
-   * - 親が全子喪失なら親も自動削除（§2.1）
+   * - touch した全地物へイベントを対称に発火（§6.4.16）
    *
    * @param featureId 削除対象の地物ID
-   * @param currentTime 親子関係判定に使用する時間点（省略時は階層処理をスキップ）
    * @returns 削除結果。地物が存在しない場合はnull
    */
-  deleteFeature(
-    featureId: string,
-    currentTime?: TimePoint
-  ): DeleteFeatureResult | null {
+  deleteFeature(featureId: string): DeleteFeatureResult | null {
     const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
-    const feature = features.get(featureId);
-    if (!feature) return null;
+    if (!features.has(featureId)) return null;
 
-    const deletedFeatureIds: string[] = [];
-    const deletedVertexIds: string[] = [];
+    const plan = planFeatureRemoval(featureId, features);
 
-    // 階層処理: 子地物の parentId をクリア
-    if (currentTime) {
-      const allFeatures = this.featureUseCase.getFeatures();
-      const children = getChildFeatures(feature, allFeatures, currentTime);
-
-      for (const child of children) {
-        const anchor = child.getActiveAnchor(currentTime);
-        if (anchor) {
-          const updatedAnchor = anchor.withPlacement(
-            createAnchorPlacement(
-              null,
-              anchor.placement.childIds
-            )
-          );
-          const updatedAnchors = child.anchors.map(a =>
-            a.id === anchor.id ? updatedAnchor : a
-          );
-          features.set(child.id, child.withAnchors(updatedAnchors));
-        }
+    // 削除地物が持つ頂点IDを反映前（地物がまだ Map に居る状態）に収集
+    const candidateVertexIds = new Set<string>();
+    for (const deletedId of plan.deletedFeatureIds) {
+      const deleted = features.get(deletedId);
+      if (!deleted) continue;
+      for (const vid of this.collectVertexIds(deleted)) {
+        candidateVertexIds.add(vid);
       }
     }
 
-    // 地物が持つ頂点IDを収集
-    const featureVertexIds = this.collectVertexIds(feature);
-
-    // 地物を削除
-    features.delete(featureId);
-    deletedFeatureIds.push(featureId);
-    eventBus.emit('feature:removed', { featureId });
+    applyFeatureRemoval(features, plan);
 
     // 頂点クリーンアップ: 他の地物で使われていない頂点を削除
+    const deletedVertexIds: string[] = [];
     const usedVertexIds = this.collectAllUsedVertexIds(features);
     const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
     const sharedGroups = this.featureUseCase.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
 
-    for (const vid of featureVertexIds) {
+    for (const vid of candidateVertexIds) {
       if (!usedVertexIds.has(vid)) {
         vertices.delete(vid);
         deletedVertexIds.push(vid);
@@ -116,20 +92,11 @@ export class DeleteFeatureUseCase {
       }
     }
 
-    // 親が全子喪失したら親も自動削除（§2.1）
-    if (currentTime) {
-      const allFeatures = this.featureUseCase.getFeatures();
-      const parent = getParentFeature(feature, [...allFeatures, feature], currentTime);
-      if (parent && shouldParentDisappear(parent, allFeatures, featureId, currentTime)) {
-        const parentResult = this.deleteFeature(parent.id, currentTime);
-        if (parentResult) {
-          deletedFeatureIds.push(...parentResult.deletedFeatureIds);
-          deletedVertexIds.push(...parentResult.deletedVertexIds);
-        }
-      }
-    }
-
-    return { deletedFeatureIds, deletedVertexIds };
+    return {
+      deletedFeatureIds: plan.deletedFeatureIds,
+      modifiedFeatureIds: plan.modifiedFeatures.map(f => f.id),
+      deletedVertexIds,
+    };
   }
 
   /**

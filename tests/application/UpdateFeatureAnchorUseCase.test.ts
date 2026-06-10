@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { UpdateFeatureAnchorUseCase, AnchorEditError } from '@application/UpdateFeatureAnchorUseCase';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { eventBus } from '@application/EventBus';
+import type { Feature } from '@domain/entities/Feature';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
@@ -282,6 +283,43 @@ describe('UpdateFeatureAnchorUseCase', () => {
 
       expect(deleted).toBe(true);
       expect(addFeature.getFeatureById(feature.id)).toBeUndefined();
+    });
+
+    it('最後の錨の削除で消える地物への参照も親の childIds から掃除される（B31 同根）', () => {
+      const time = new TimePoint(1000);
+      const child = addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+        time
+      );
+      const sibling = addFeature.addPolygon(
+        [new Coordinate(20, 0), new Coordinate(30, 0), new Coordinate(30, 10)],
+        time
+      );
+      const container = addFeature.buildContainerFeature(
+        time,
+        [child.id, sibling.id],
+        { name: 'コンテナ', description: '' }
+      );
+      const featuresMap = addFeature.getFeaturesMap() as Map<string, Feature>;
+      featuresMap.set(container.id, container);
+      for (const childId of [child.id, sibling.id]) {
+        const f = featuresMap.get(childId)!;
+        featuresMap.set(childId, f.withAnchors(
+          f.anchors.map(a => a.withPlacement(
+            createAnchorPlacement(container.id, a.placement.childIds)
+          ))
+        ));
+      }
+
+      const target = addFeature.getFeatureById(child.id)!;
+      const deleted = anchorEdit.deleteAnchor(child.id, target.anchors[0].id);
+
+      expect(deleted).toBe(true);
+      expect(addFeature.getFeatureById(child.id)).toBeUndefined();
+      const parent = addFeature.getFeatureById(container.id)!;
+      for (const anchor of parent.anchors) {
+        expect(anchor.placement.childIds).toEqual([sibling.id]);
+      }
     });
 
     it('地物削除時にfeature:removedイベントが発行される', () => {

@@ -3,111 +3,94 @@
  *
  * §2.3.1: Undo/Redo対象操作 — 地物の削除
  *
- * execute で地物を削除し、undo で削除した地物と頂点を復元する。
+ * execute で地物を削除し、undo で削除前の状態を復元する。
+ *
+ * 削除は「削除地物の消滅」だけでなく「残存地物の参照掃除（子の parentId クリア /
+ * 親の childIds 除去 / 空コンテナ錨の剪定）+ 連鎖消滅 + 頂点クリーンアップ」を伴うため、
+ * 個別差分ではなく before/after の全マップスナップショットで復元する
+ * （§6.3.5: 依存データも含めて過不足なく保存する。`ReassignFeatureParentCommand` と同型）。
+ * redo は afterState 復元で初回 execute と同一状態に戻す。
+ *
+ * undo / redo の Map 直接復元でも、touch した全地物（削除 + 参照掃除で変更）へ
+ * `feature:added` / `feature:removed` を対称に発火する（§6.4.16）。
  */
 
 import type { Feature } from '@domain/entities/Feature';
 import type { Vertex } from '@domain/entities/Vertex';
 import type { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
-import type { DeleteFeatureUseCase, DeleteFeatureResult } from '../DeleteFeatureUseCase';
+import type { DeleteFeatureUseCase } from '../DeleteFeatureUseCase';
 import type { AddFeatureUseCase } from '../AddFeatureUseCase';
 import type { UndoableCommand } from '../UndoRedoManager';
-import type { TimePoint } from '@domain/value-objects/TimePoint';
 import { eventBus } from '../EventBus';
 
 export class DeleteFeatureCommand implements UndoableCommand {
   readonly description: string;
 
-  /** 削除前のスナップショット（undo用） */
-  private deletedFeatures: Feature[] = [];
-  private deletedVertices: Vertex[] = [];
-  private deletedSharedGroups: SharedVertexGroup[] = [];
-  /** 変更された共有頂点グループの削除前状態 */
-  private modifiedSharedGroups: SharedVertexGroup[] = [];
-  private deleteResult: DeleteFeatureResult | null = null;
+  private beforeState: DeleteFeatureSnapshot | null = null;
+  private afterState: DeleteFeatureSnapshot | null = null;
+  private changedFeatureIds = new Set<string>();
+  private initialized = false;
 
   constructor(
     private readonly deleteUseCase: DeleteFeatureUseCase,
     private readonly featureUseCase: AddFeatureUseCase,
-    private readonly featureId: string,
-    private readonly currentTime?: TimePoint
+    private readonly featureId: string
   ) {
     this.description = '地物を削除';
   }
 
   execute(): void {
-    const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
-    const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
-    const sharedGroups = this.featureUseCase.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
-
-    // 削除前にスナップショットを保存
-    const targetFeature = features.get(this.featureId);
-    if (!targetFeature) return;
-
-    // 削除対象の地物（親の自動削除も含めて全て保存）
-    this.deletedFeatures = [];
-    this.deletedVertices = [];
-    this.deletedSharedGroups = [];
-    this.modifiedSharedGroups = [];
-
-    // 削除前の全地物・頂点・共有グループの状態をキャプチャ
-    const featuresBefore = new Map(features);
-    const verticesBefore = new Map(vertices);
-    const sharedGroupsBefore = new Map(sharedGroups);
-
-    // UseCase経由で削除実行
-    this.deleteResult = this.deleteUseCase.deleteFeature(this.featureId, this.currentTime);
-    if (!this.deleteResult) return;
-
-    // 削除された地物を復元データとして保存
-    for (const fid of this.deleteResult.deletedFeatureIds) {
-      const f = featuresBefore.get(fid);
-      if (f) this.deletedFeatures.push(f);
+    if (this.initialized) {
+      // redo: afterState 復元（UseCase 再実行ではなくスナップショットで状態を固定。§6.4.12）
+      this.restoreState(this.afterState);
+      return;
     }
 
-    // 削除された頂点を復元データとして保存
-    for (const vid of this.deleteResult.deletedVertexIds) {
-      const v = verticesBefore.get(vid);
-      if (v) this.deletedVertices.push(v);
+    this.beforeState = this.captureSnapshot();
+
+    const result = this.deleteUseCase.deleteFeature(this.featureId);
+    if (result) {
+      this.changedFeatureIds = new Set([
+        ...result.deletedFeatureIds,
+        ...result.modifiedFeatureIds,
+      ]);
     }
 
-    // 共有頂点グループの変更を検出して復元データとして保存
-    for (const [gid, groupBefore] of sharedGroupsBefore) {
-      const groupAfter = sharedGroups.get(gid);
-      if (!groupAfter) {
-        // グループが削除された
-        this.deletedSharedGroups.push(groupBefore);
-      } else if (groupBefore.vertexIds.length !== groupAfter.vertexIds.length) {
-        // グループが変更された
-        this.modifiedSharedGroups.push(groupBefore);
-      }
-    }
+    this.afterState = this.captureSnapshot();
+    this.initialized = true;
   }
 
   undo(): void {
-    if (!this.deleteResult) return;
+    this.restoreState(this.beforeState);
+  }
 
-    const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
-    const vertices = this.featureUseCase.getVertices() as Map<string, Vertex>;
-    const sharedGroups = this.featureUseCase.getSharedVertexGroups() as Map<string, SharedVertexGroup>;
+  private captureSnapshot(): DeleteFeatureSnapshot {
+    return {
+      features: new Map(this.featureUseCase.getFeaturesMap()),
+      vertices: new Map(this.featureUseCase.getVertices()),
+      sharedGroups: new Map(this.featureUseCase.getSharedVertexGroups()),
+    };
+  }
 
-    // 頂点を復元
-    for (const v of this.deletedVertices) {
-      vertices.set(v.id, v);
-    }
+  private restoreState(snapshot: DeleteFeatureSnapshot | null): void {
+    if (!snapshot) return;
 
-    // 共有頂点グループを復元
-    for (const g of this.deletedSharedGroups) {
-      sharedGroups.set(g.id, g);
-    }
-    for (const g of this.modifiedSharedGroups) {
-      sharedGroups.set(g.id, g);
-    }
+    const currentFeatures = this.featureUseCase.getFeaturesMap();
+    this.featureUseCase.restore(snapshot.features, snapshot.vertices, snapshot.sharedGroups);
 
-    // 地物を復元
-    for (const f of this.deletedFeatures) {
-      features.set(f.id, f);
-      eventBus.emit('feature:added', { featureId: f.id });
+    for (const featureId of this.changedFeatureIds) {
+      const feature = snapshot.features.get(featureId);
+      if (feature) {
+        eventBus.emit('feature:added', { featureId });
+      } else if (currentFeatures.has(featureId)) {
+        eventBus.emit('feature:removed', { featureId });
+      }
     }
   }
+}
+
+interface DeleteFeatureSnapshot {
+  readonly features: ReadonlyMap<string, Feature>;
+  readonly vertices: ReadonlyMap<string, Vertex>;
+  readonly sharedGroups: ReadonlyMap<string, SharedVertexGroup>;
 }

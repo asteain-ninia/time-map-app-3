@@ -15,7 +15,9 @@ import { Feature } from '@domain/entities/Feature';
 import { FeatureAnchor, type FeatureShape } from '@domain/value-objects/FeatureAnchor';
 import { Ring } from '@domain/value-objects/Ring';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
+import { planFeatureRemoval } from '@domain/services/HierarchyService';
 import type { AddFeatureUseCase } from './AddFeatureUseCase';
+import { applyFeatureRemoval } from './featureRemoval';
 import { eventBus } from './EventBus';
 
 /** 頂点編集エラー */
@@ -270,10 +272,16 @@ export class VertexEditUseCase {
     eventBus.emit('feature:added', { featureId: feature.id });
   }
 
-  /** 地物を削除する */
+  /**
+   * 地物を削除する（退化形状の自動削除経路）
+   *
+   * §2.1: 削除 = 全時間軸からの消滅。削除地物への参照を残存する全地物の全錨から
+   * 掃除する（DeleteFeatureUseCase と同じ `planFeatureRemoval` を共有。§6.1.8）。
+   * 頂点クリーンアップは呼び出し側コマンド（`DeleteVerticesCommand`）の
+   * 使用頂点 diff が担う。
+   */
   private deleteFeature(featureId: string): void {
     const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
-    features.delete(featureId);
-    eventBus.emit('feature:removed', { featureId });
+    applyFeatureRemoval(features, planFeatureRemoval(featureId, features));
   }
 }

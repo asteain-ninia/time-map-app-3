@@ -18,7 +18,9 @@ import {
   type TimeRange,
 } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
+import { planFeatureRemoval } from '@domain/services/HierarchyService';
 import type { AddFeatureUseCase } from './AddFeatureUseCase';
+import { applyFeatureRemoval } from './featureRemoval';
 import { eventBus } from './EventBus';
 
 /** 錨更新エラー */
@@ -168,10 +170,10 @@ export class UpdateFeatureAnchorUseCase {
     const newAnchors = feature.anchors.filter(a => a.id !== anchorId);
 
     if (newAnchors.length === 0) {
-      // 最後の錨 → 地物削除
+      // 最後の錨 → 地物削除（§2.1: 削除 = 全時間軸からの消滅。
+      // 削除地物への参照を全地物の全錨から掃除する。§6.1.8 で DeleteFeatureUseCase と共有）
       const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
-      features.delete(featureId);
-      eventBus.emit('feature:removed', { featureId });
+      applyFeatureRemoval(features, planFeatureRemoval(featureId, features));
       return true;
     }
 

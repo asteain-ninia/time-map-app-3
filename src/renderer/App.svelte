@@ -1961,7 +1961,7 @@
       onDelete: () => {
         if (selectedFeatureId) {
           const cmd = new DeleteFeatureCommand(
-            deleteFeature, addFeature, selectedFeatureId, currentTime
+            deleteFeature, addFeature, selectedFeatureId
           );
           undoRedo.execute(cmd);
           selectedFeatureId = null;

@@ -99,6 +99,10 @@ export class CommitFeatureAnchorEditUseCase {
       if (!feature) continue;
 
       // 錨列が空 → 地物削除。イベント規約は存在 = feature:added / 削除 = feature:removed（開発ガイド §6.4.16）。
+      // NOTE: この素朴な delete は階層参照（他地物の parentId / childIds）を掃除しない（§6.4.17）。
+      // 本 commit 経路は現状 UI 未配線（DIContainer 構築のみ）。UI 配線時に
+      // planFeatureRemoval / applyFeatureRemoval への統一、または resolvedAnchorsByFeature 側で
+      // 削除地物への参照整合を保証する設計のいずれかが必要。
       if (newAnchors.length === 0) {
         features.delete(featureId);
         eventBus.emit('feature:removed', { featureId });

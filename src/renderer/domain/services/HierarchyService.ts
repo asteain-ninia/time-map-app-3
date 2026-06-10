@@ -583,24 +583,101 @@ export function buildDirectlyGovernedDefaultName(originalName: string): string {
 // 階層維持操作
 // ──────────────────────────────────────────
 
+/** 地物削除計画（`planFeatureRemoval` の算出結果） */
+export interface FeatureRemovalPlan {
+  /** 削除すべき地物ID群（削除起点 + 全錨剪定で連鎖消滅する集約地物） */
+  readonly deletedFeatureIds: readonly string[];
+  /** 参照掃除・錨剪定で更新される残存地物（更新後の状態） */
+  readonly modifiedFeatures: readonly Feature[];
+}
+
 /**
- * 子地物を除去した場合に親が自動消失すべきかどうか判定する
+ * 地物削除に伴う階層参照の掃除計画を算出する（削除 = 全時間軸からの消滅）
  *
- * §2.1: 下位領域をすべて喪失した場合、上位領域も自動的に消失する
+ * §2.1: 面情報の削除は、全時刻を通じてその地物の下位領域・上位領域への参照を持つ
+ * 他の地物が存在しないか、削除に伴う再編が許容される場合にのみ可能とする。
+ * 集約地物が下位領域を全て失った場合は自動的に消滅する。
  *
- * @param removedChildId 除去される子のID
- * @returns 親が消失すべきなら true
+ * 削除対象への参照（`placement.parentId` / `placement.childIds`）を残存する全地物の
+ * **全錨**（特定時刻の有効錨に限定しない）から除去する。参照除去の結果
+ * 「shape なし・childIds 空」となったコンテナ錨は剪定し（「shape なし ⟹ childIds 非空」
+ * 不変条件の変異後保証）、全錨が剪定された集約地物は連鎖的に削除対象へ加える。
+ * shape を保持する錨は childIds が空になっても残る（末端地物へ戻るだけで有効な状態）。
+ *
+ * 純粋関数であり `features` は変異しない。呼び出し側が計画を live マップへ反映し、
+ * touch した全地物へイベントを対称に発火する（§6.4.16。`applyFeatureRemoval` 参照）。
+ *
+ * @param featureId 削除起点の地物ID
+ * @param features 全地物マップ（削除起点を含む現在の状態）
  */
-export function shouldParentDisappear(
-  parent: Feature,
-  allFeatures: readonly Feature[],
-  removedChildId: string,
-  time: TimePoint
-): boolean {
-  const children = getChildFeatures(parent, allFeatures, time);
-  // 除去対象を除いた子が0個なら消失
-  const remaining = children.filter(c => c.id !== removedChildId);
-  return remaining.length === 0;
+export function planFeatureRemoval(
+  featureId: string,
+  features: ReadonlyMap<string, Feature>
+): FeatureRemovalPlan {
+  const working = new Map(features);
+  const deletedFeatureIds: string[] = [];
+  const queue: string[] = [featureId];
+
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (!working.delete(id)) continue; // 連鎖で重複キューされた場合は一度だけ処理
+    deletedFeatureIds.push(id);
+
+    for (const [otherId, other] of working) {
+      const swept = sweepReferencesToDeleted(other, id);
+      if (swept === other) continue; // 参照なし
+      if (swept === null) {
+        // 全錨が空コンテナ化 → 連鎖消滅（dequeue 時に削除し、この地物への参照も掃除する）
+        queue.push(otherId);
+      } else {
+        working.set(otherId, swept);
+      }
+    }
+  }
+
+  // 連鎖消滅した地物が途中で modified 扱いになっていても、最終状態（working 残存 + 変化あり）だけを返す
+  const modifiedFeatures = [...working.values()].filter(
+    (f) => features.get(f.id) !== f
+  );
+  return { deletedFeatureIds, modifiedFeatures };
+}
+
+/**
+ * 1地物の全錨から削除地物への参照を除去し、空化したコンテナ錨を剪定する。
+ *
+ * @returns 参照が無ければ引数と同一インスタンス、全錨が剪定されたら null（地物ごと消滅）、
+ *          それ以外は更新後の地物
+ */
+function sweepReferencesToDeleted(feature: Feature, deletedId: string): Feature | null {
+  let changed = false;
+  const sweptAnchors: FeatureAnchor[] = [];
+  for (const anchor of feature.anchors) {
+    const placement = anchor.placement;
+    const referencesAsParent = placement.parentId === deletedId;
+    const referencesAsChild = placement.childIds.includes(deletedId);
+    if (!referencesAsParent && !referencesAsChild) {
+      sweptAnchors.push(anchor);
+      continue;
+    }
+    changed = true;
+    sweptAnchors.push(
+      anchor.withPlacement(
+        createAnchorPlacement(
+          referencesAsParent ? null : placement.parentId,
+          referencesAsChild
+            ? placement.childIds.filter((cid) => cid !== deletedId)
+            : placement.childIds
+        )
+      )
+    );
+  }
+  if (!changed) return feature;
+
+  const pruned = sweptAnchors.filter(
+    (anchor) => !(anchor.shape === undefined && anchor.placement.childIds.length === 0)
+  );
+  if (pruned.length === 0) return null;
+  return feature.withAnchors(pruned);
 }
 
 /**

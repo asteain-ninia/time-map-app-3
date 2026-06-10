@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DeleteFeatureUseCase } from '@application/DeleteFeatureUseCase';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
+import { eventBus } from '@application/EventBus';
+import type { Feature } from '@domain/entities/Feature';
+import { World, DEFAULT_METADATA } from '@domain/entities/World';
+import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
+import { serialize, deserialize } from '@infrastructure/persistence/JSONSerializer';
 
 describe('DeleteFeatureUseCase', () => {
   let addFeature: AddFeatureUseCase;
@@ -14,6 +19,28 @@ describe('DeleteFeatureUseCase', () => {
     addFeature = new AddFeatureUseCase();
     deleteFeature = new DeleteFeatureUseCase(addFeature);
   });
+
+  /** 全錨の placement を一括設定する（isTopLevel は createAnchorPlacement で再派生） */
+  function setPlacement(featureId: string, parentId: string | null, childIds: string[]): void {
+    const featuresMap = addFeature.getFeaturesMap() as Map<string, Feature>;
+    const feature = featuresMap.get(featureId)!;
+    const updatedAnchors = feature.anchors.map(a =>
+      a.withPlacement(createAnchorPlacement(parentId, childIds))
+    );
+    featuresMap.set(featureId, feature.withAnchors(updatedAnchors));
+  }
+
+  /** 集約地物（shape なしコンテナ）を生成して登録し、子の parentId を設定する（子の childIds は保持） */
+  function addContainer(childIds: string[], name = 'コンテナ'): Feature {
+    const container = addFeature.buildContainerFeature(time, childIds, { name, description: '' });
+    const featuresMap = addFeature.getFeaturesMap() as Map<string, Feature>;
+    featuresMap.set(container.id, container);
+    for (const childId of childIds) {
+      const child = featuresMap.get(childId)!;
+      setPlacement(childId, container.id, [...child.anchors[0].placement.childIds]);
+    }
+    return container;
+  }
 
   describe('基本削除', () => {
     it('ポイント地物を削除できる', () => {
@@ -92,56 +119,98 @@ describe('DeleteFeatureUseCase', () => {
       const result = deleteFeature.deleteFeature(feature.id);
       expect(result!.deletedVertexIds.length).toBeGreaterThanOrEqual(2);
     });
-  });
 
-  describe('親子関係の処理', () => {
-    it('子を削除しても親はまだ他の子があれば存続する', () => {
-      // 手動で親子関係を構成
-      const parent = addFeature.addPolygon(
-        [new Coordinate(0, 0), new Coordinate(20, 0), new Coordinate(20, 20)],
-        time
-      );
-      const child1 = addFeature.addPolygon(
+    it('参照掃除で更新された地物IDを modifiedFeatureIds に含む', () => {
+      const c1 = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
         time
       );
-      const child2 = addFeature.addPolygon(
+      const c2 = addFeature.addPolygon(
         [new Coordinate(10, 0), new Coordinate(20, 0), new Coordinate(20, 10)],
         time
       );
+      const container = addContainer([c1.id, c2.id]);
 
-      // 親子関係設定
-      const featuresMap = addFeature.getFeaturesMap() as Map<string, any>;
-      const parentFeature = featuresMap.get(parent.id)!;
-      const parentAnchor = parentFeature.getActiveAnchor(time)!;
-      const updatedParentAnchor = parentAnchor.withPlacement({
-        ...parentAnchor.placement,
-        childIds: [child1.id, child2.id],
-      });
-      featuresMap.set(parent.id, parentFeature.withAnchors([updatedParentAnchor]));
+      const result = deleteFeature.deleteFeature(c1.id);
 
-      const c1Feature = featuresMap.get(child1.id)!;
-      const c1Anchor = c1Feature.getActiveAnchor(time)!;
-      featuresMap.set(child1.id, c1Feature.withAnchors([
-        c1Anchor.withPlacement({ ...c1Anchor.placement, parentId: parent.id }),
-      ]));
+      expect(result!.modifiedFeatureIds).toEqual([container.id]);
+    });
+  });
 
-      const c2Feature = featuresMap.get(child2.id)!;
-      const c2Anchor = c2Feature.getActiveAnchor(time)!;
-      featuresMap.set(child2.id, c2Feature.withAnchors([
-        c2Anchor.withPlacement({ ...c2Anchor.placement, parentId: parent.id }),
-      ]));
+  describe('親子関係の処理（削除 = 全時間軸からの消滅）', () => {
+    it('子を削除すると親の childIds から除去される（B31）', () => {
+      const c1 = addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+        time
+      );
+      const c2 = addFeature.addPolygon(
+        [new Coordinate(10, 0), new Coordinate(20, 0), new Coordinate(20, 10)],
+        time
+      );
+      const container = addContainer([c1.id, c2.id]);
 
-      // child1を削除
-      deleteFeature.deleteFeature(child1.id, time);
+      deleteFeature.deleteFeature(c1.id);
 
-      // 親はまだ存在（child2がいるため）
-      expect(addFeature.getFeatureById(parent.id)).toBeDefined();
-      // child2はまだ存在
-      expect(addFeature.getFeatureById(child2.id)).toBeDefined();
+      // 親は存続し、childIds に削除 ID が残らない（dangling 子参照なし）
+      const parent = addFeature.getFeatureById(container.id)!;
+      for (const anchor of parent.anchors) {
+        expect(anchor.placement.childIds).toEqual([c2.id]);
+      }
+      expect(addFeature.getFeatureById(c2.id)).toBeDefined();
     });
 
-    it('最後の子を削除すると親も自動削除される', () => {
+    it('親を削除すると子の parentId が全錨でクリアされる', () => {
+      const c1 = addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+        time
+      );
+      const c2 = addFeature.addPolygon(
+        [new Coordinate(10, 0), new Coordinate(20, 0), new Coordinate(20, 10)],
+        time
+      );
+      const container = addContainer([c1.id, c2.id]);
+
+      deleteFeature.deleteFeature(container.id);
+
+      for (const childId of [c1.id, c2.id]) {
+        const child = addFeature.getFeatureById(childId)!;
+        for (const anchor of child.anchors) {
+          expect(anchor.placement.parentId).toBeNull();
+          expect(anchor.placement.isTopLevel).toBe(true);
+        }
+      }
+    });
+
+    it('最後の子を削除すると集約地物の親も自動削除される（§2.1）', () => {
+      const child = addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+        time
+      );
+      const container = addContainer([child.id]);
+
+      const result = deleteFeature.deleteFeature(child.id);
+
+      expect(result!.deletedFeatureIds).toContain(child.id);
+      expect(result!.deletedFeatureIds).toContain(container.id);
+      expect(addFeature.getFeatureById(container.id)).toBeUndefined();
+    });
+
+    it('連鎖消滅は上位へ伝播し、参照も掃除される', () => {
+      // 祖父母 g（集約）→ 親 p（集約）→ 子 x（末端）
+      const x = addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+        time
+      );
+      const p = addContainer([x.id], '親');
+      const g = addContainer([p.id], '祖父母');
+
+      const result = deleteFeature.deleteFeature(x.id);
+
+      expect([...result!.deletedFeatureIds].sort()).toEqual([g.id, p.id, x.id].sort());
+      expect(addFeature.getFeaturesMap().size).toBe(0);
+    });
+
+    it('shape を持つ親（移行期間ノード）は最後の子を失っても末端地物として存続する', () => {
       const parent = addFeature.addPolygon(
         [new Coordinate(0, 0), new Coordinate(20, 0), new Coordinate(20, 20)],
         time
@@ -150,27 +219,97 @@ describe('DeleteFeatureUseCase', () => {
         [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
         time
       );
+      setPlacement(parent.id, null, [child.id]);
+      setPlacement(child.id, parent.id, []);
 
-      // 親子関係設定
-      const featuresMap = addFeature.getFeaturesMap() as Map<string, any>;
-      const parentFeature = featuresMap.get(parent.id)!;
-      const parentAnchor = parentFeature.getActiveAnchor(time)!;
-      featuresMap.set(parent.id, parentFeature.withAnchors([
-        parentAnchor.withPlacement({ ...parentAnchor.placement, childIds: [child.id] }),
-      ]));
+      const result = deleteFeature.deleteFeature(child.id);
 
-      const childFeature = featuresMap.get(child.id)!;
-      const childAnchor = childFeature.getActiveAnchor(time)!;
-      featuresMap.set(child.id, childFeature.withAnchors([
-        childAnchor.withPlacement({ ...childAnchor.placement, parentId: parent.id }),
-      ]));
+      expect(result!.deletedFeatureIds).toEqual([child.id]);
+      const survived = addFeature.getFeatureById(parent.id)!;
+      expect(survived.anchors[0].placement.childIds).toEqual([]);
+      expect(survived.anchors[0].shape).toBeDefined();
+    });
 
-      // childを削除 → 親も自動削除
-      const result = deleteFeature.deleteFeature(child.id, time);
+    it('削除後の状態は保存→再ロードで拒否されない（§6.4.15 round-trip）', () => {
+      const c1 = addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+        time
+      );
+      const c2 = addFeature.addPolygon(
+        [new Coordinate(10, 0), new Coordinate(20, 0), new Coordinate(20, 10)],
+        time
+      );
+      addContainer([c1.id, c2.id]);
 
-      expect(result!.deletedFeatureIds).toContain(child.id);
-      expect(result!.deletedFeatureIds).toContain(parent.id);
-      expect(addFeature.getFeatureById(parent.id)).toBeUndefined();
+      deleteFeature.deleteFeature(c1.id);
+
+      const world = new World(
+        '1.0.0',
+        new Map(addFeature.getVertices()),
+        new Map(addFeature.getFeaturesMap()),
+        new Map(addFeature.getSharedVertexGroups()),
+        [],
+        DEFAULT_METADATA
+      );
+      expect(() => deserialize(serialize(world))).not.toThrow();
+    });
+  });
+
+  describe('イベント発火（§6.4.16: touch した全地物へ対称に通知）', () => {
+    it('削除地物は feature:removed、参照掃除で変更された地物は feature:added を過不足なく発火する', () => {
+      const c1 = addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+        time
+      );
+      const c2 = addFeature.addPolygon(
+        [new Coordinate(10, 0), new Coordinate(20, 0), new Coordinate(20, 10)],
+        time
+      );
+      const container = addContainer([c1.id, c2.id]);
+
+      const events: string[] = [];
+      const unsubscribeAdded = eventBus.on('feature:added', ({ featureId }) => {
+        events.push(`added:${featureId}`);
+      });
+      const unsubscribeRemoved = eventBus.on('feature:removed', ({ featureId }) => {
+        events.push(`removed:${featureId}`);
+      });
+
+      try {
+        deleteFeature.deleteFeature(c1.id);
+        expect([...events].sort()).toEqual(
+          [`removed:${c1.id}`, `added:${container.id}`].sort()
+        );
+      } finally {
+        unsubscribeAdded();
+        unsubscribeRemoved();
+      }
+    });
+
+    it('連鎖消滅した集約地物も feature:removed を発火する', () => {
+      const child = addFeature.addPolygon(
+        [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+        time
+      );
+      const container = addContainer([child.id]);
+
+      const events: string[] = [];
+      const unsubscribeAdded = eventBus.on('feature:added', ({ featureId }) => {
+        events.push(`added:${featureId}`);
+      });
+      const unsubscribeRemoved = eventBus.on('feature:removed', ({ featureId }) => {
+        events.push(`removed:${featureId}`);
+      });
+
+      try {
+        deleteFeature.deleteFeature(child.id);
+        expect([...events].sort()).toEqual(
+          [`removed:${child.id}`, `removed:${container.id}`].sort()
+        );
+      } finally {
+        unsubscribeAdded();
+        unsubscribeRemoved();
+      }
     });
   });
 });

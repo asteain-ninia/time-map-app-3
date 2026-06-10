@@ -12,7 +12,7 @@ import {
   validateHierarchy,
   isShapeEditable,
   isSplittable,
-  shouldParentDisappear,
+  planFeatureRemoval,
   buildParentChildLink,
   buildParentChildUnlink,
   buildDirectlyGovernedDefaultName,
@@ -531,16 +531,141 @@ describe('HierarchyService', () => {
     });
   });
 
-  describe('shouldParentDisappear', () => {
-    it('最後の子を除去すると親が消失する', () => {
-      const singleParent = makePolygonFeature('sp', null, ['only_child']);
-      const child = makePolygonFeature('only_child', 'sp', []);
-      const features = [singleParent, child];
-      expect(shouldParentDisappear(singleParent, features, 'only_child', time)).toBe(true);
+  // 削除 = 全時間軸からの消滅（要件定義書 §2.1: 全時刻を通じた参照の再編 +
+  // 集約地物が下位領域を全て失った場合の自動消滅）
+  describe('planFeatureRemoval', () => {
+    function makeContainerFeature(
+      id: string,
+      parentId: string | null,
+      childIds: string[]
+    ): Feature {
+      return new Feature(id, 'Polygon', [
+        new FeatureAnchor(
+          `${id}-a1`,
+          { start: new TimePoint(1900) },
+          { name: id, description: '' },
+          undefined,
+          createAnchorPlacement(parentId, childIds)
+        ),
+      ]);
+    }
+
+    function toMap(...features: Feature[]): Map<string, Feature> {
+      return new Map(features.map(f => [f.id, f]));
+    }
+
+    it('親の childIds から削除地物を除去する（兄弟が残るケース = B31）', () => {
+      const parent = makeContainerFeature('p', null, ['c1', 'c2']);
+      const c1 = makePolygonFeature('c1', 'p', []);
+      const c2 = makePolygonFeature('c2', 'p', []);
+
+      const plan = planFeatureRemoval('c1', toMap(parent, c1, c2));
+
+      expect(plan.deletedFeatureIds).toEqual(['c1']);
+      const updatedParent = plan.modifiedFeatures.find(f => f.id === 'p')!;
+      expect(updatedParent.anchors[0].placement.childIds).toEqual(['c2']);
     });
 
-    it('子が残っていれば親は存続する', () => {
-      expect(shouldParentDisappear(country, allFeatures, 'province1', time)).toBe(false);
+    it('子の parentId をクリアし isTopLevel 不変条件を再構築する', () => {
+      const parent = makeContainerFeature('p', null, ['c1', 'c2']);
+      const c1 = makePolygonFeature('c1', 'p', []);
+      const c2 = makePolygonFeature('c2', 'p', []);
+
+      const plan = planFeatureRemoval('p', toMap(parent, c1, c2));
+
+      expect(plan.deletedFeatureIds).toEqual(['p']);
+      for (const childId of ['c1', 'c2']) {
+        const updated = plan.modifiedFeatures.find(f => f.id === childId)!;
+        expect(updated.anchors[0].placement.parentId).toBeNull();
+        expect(updated.anchors[0].placement.isTopLevel).toBe(true);
+      }
+    });
+
+    it('特定時刻の有効錨に限定せず全錨から参照を掃除する', () => {
+      // 親 p: 錨1 (childIds=[x, y]) + 錨2 (childIds=[x]) — 錨2 は剪定で消える
+      const parent = new Feature('p', 'Polygon', [
+        new FeatureAnchor(
+          'p-a1',
+          { start: new TimePoint(1900), end: new TimePoint(1950) },
+          { name: 'p', description: '' },
+          undefined,
+          createAnchorPlacement(null, ['x', 'y'])
+        ),
+        new FeatureAnchor(
+          'p-a2',
+          { start: new TimePoint(1950) },
+          { name: 'p', description: '' },
+          undefined,
+          createAnchorPlacement(null, ['x'])
+        ),
+      ]);
+      const x = makePolygonFeature('x', 'p', []);
+      const y = makePolygonFeature('y', 'p', []);
+
+      const plan = planFeatureRemoval('x', toMap(parent, x, y));
+
+      const updatedParent = plan.modifiedFeatures.find(f => f.id === 'p')!;
+      expect(updatedParent.anchors).toHaveLength(1);
+      expect(updatedParent.anchors[0].id).toBe('p-a1');
+      expect(updatedParent.anchors[0].placement.childIds).toEqual(['y']);
+    });
+
+    it('集約地物は最後の子を失うと連鎖消滅し、祖父母の参照も掃除される', () => {
+      // g (集約) → p (集約) → x (末端): x 削除で p・g が連鎖消滅
+      const grandParent = makeContainerFeature('g', null, ['p']);
+      const parent = makeContainerFeature('p', 'g', ['x']);
+      const x = makePolygonFeature('x', 'p', []);
+
+      const plan = planFeatureRemoval('x', toMap(grandParent, parent, x));
+
+      expect([...plan.deletedFeatureIds].sort()).toEqual(['g', 'p', 'x']);
+      expect(plan.modifiedFeatures).toHaveLength(0);
+    });
+
+    it('shape を持つ親（移行期間ノード）は最後の子を失っても消滅せず末端地物へ戻る', () => {
+      const parent = makePolygonFeature('p', null, ['x']);
+      const x = makePolygonFeature('x', 'p', []);
+
+      const plan = planFeatureRemoval('x', toMap(parent, x));
+
+      expect(plan.deletedFeatureIds).toEqual(['x']);
+      const updatedParent = plan.modifiedFeatures.find(f => f.id === 'p')!;
+      expect(updatedParent.anchors[0].placement.childIds).toEqual([]);
+      expect(updatedParent.anchors[0].shape).toBeDefined();
+    });
+
+    it('参照を持たない地物は同一インスタンスのまま modified に含まれない', () => {
+      const unrelated = makePolygonFeature('u', null, []);
+      const target = makePolygonFeature('t', null, []);
+
+      const plan = planFeatureRemoval('t', toMap(unrelated, target));
+
+      expect(plan.deletedFeatureIds).toEqual(['t']);
+      expect(plan.modifiedFeatures).toHaveLength(0);
+    });
+
+    it('循環親子参照を含む壊れたデータでも無限ループしない（§6.4.14 二重防御）', () => {
+      const a = makePolygonFeature('a', 'b', ['b']);
+      const b = makePolygonFeature('b', 'a', ['a']);
+
+      const plan = planFeatureRemoval('a', toMap(a, b));
+
+      expect(plan.deletedFeatureIds).toEqual(['a']);
+      const updatedB = plan.modifiedFeatures.find(f => f.id === 'b')!;
+      expect(updatedB.anchors[0].placement.parentId).toBeNull();
+      expect(updatedB.anchors[0].placement.childIds).toEqual([]);
+    });
+
+    it('入力の features マップを変異しない（純粋関数）', () => {
+      const parent = makeContainerFeature('p', null, ['c1', 'c2']);
+      const c1 = makePolygonFeature('c1', 'p', []);
+      const c2 = makePolygonFeature('c2', 'p', []);
+      const input = toMap(parent, c1, c2);
+
+      planFeatureRemoval('c1', input);
+
+      expect(input.size).toBe(3);
+      expect(input.get('p')).toBe(parent);
     });
   });
 

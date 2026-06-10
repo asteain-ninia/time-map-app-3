@@ -15,11 +15,15 @@ export {
   validateHierarchy,
   isShapeEditable,
   isSplittable,
-  shouldParentDisappear,
+  planFeatureRemoval,
   buildParentChildLink,
   buildParentChildUnlink,
 } from './HierarchyService';
-export type { DerivedShapeResult, HierarchyValidationError } from './HierarchyService';
+export type {
+  DerivedShapeResult,
+  HierarchyValidationError,
+  FeatureRemovalPlan,
+} from './HierarchyService';
 
 export {
   segmentsIntersect,

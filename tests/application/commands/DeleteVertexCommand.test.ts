@@ -4,7 +4,10 @@ import { DeleteVertexCommand, DeleteVerticesCommand } from '@application/command
 import { InsertVertexCommand } from '@application/commands/InsertVertexCommand';
 import { UndoRedoManager } from '@application/UndoRedoManager';
 import { VertexEditUseCase } from '@application/VertexEditUseCase';
+import { eventBus } from '@application/EventBus';
+import type { Feature } from '@domain/entities/Feature';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
+import { createAnchorPlacement } from '@domain/value-objects/FeatureAnchor';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 
@@ -223,6 +226,74 @@ describe('DeleteVertexCommand', () => {
     undoRedo.undo();
 
     expect(getLineVertexIds(line.id)).toEqual(vertexIds);
+  });
+
+  it('退化削除（面3点未満）で掃除された親も undo で復元され feature:added が発火する（§6.4.16）', () => {
+    const polygon = addFeature.addPolygon(
+      [new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10)],
+      time
+    );
+    const sibling = addFeature.addPolygon(
+      [new Coordinate(20, 0), new Coordinate(30, 0), new Coordinate(30, 10)],
+      time
+    );
+    // 集約地物（shape なしコンテナ）の下に polygon と sibling をぶら下げる
+    const container = addFeature.buildContainerFeature(
+      time,
+      [polygon.id, sibling.id],
+      { name: 'コンテナ', description: '' }
+    );
+    const featuresMap = addFeature.getFeaturesMap() as Map<string, Feature>;
+    featuresMap.set(container.id, container);
+    for (const childId of [polygon.id, sibling.id]) {
+      const child = featuresMap.get(childId)!;
+      featuresMap.set(childId, child.withAnchors(
+        child.anchors.map(a => a.withPlacement(
+          createAnchorPlacement(container.id, a.placement.childIds)
+        ))
+      ));
+    }
+
+    const shape = addFeature.getFeatureById(polygon.id)!.getActiveAnchor(time)!.shape;
+    const ring = shape?.type === 'Polygon' ? shape.rings[0] : undefined;
+
+    undoRedo.execute(new DeleteVertexCommand(vertexEdit, addFeature, {
+      type: 'polygon',
+      featureId: polygon.id,
+      currentTime: time,
+      ringId: ring!.id,
+      vertexId: ring!.vertexIds[0],
+    }));
+
+    // 退化削除で polygon が消え、親 childIds から掃除される
+    expect(addFeature.getFeatureById(polygon.id)).toBeUndefined();
+    expect(addFeature.getFeatureById(container.id)!.anchors[0].placement.childIds)
+      .toEqual([sibling.id]);
+
+    const events: string[] = [];
+    const unsubscribeAdded = eventBus.on('feature:added', ({ featureId }) => {
+      events.push(`added:${featureId}`);
+    });
+    const unsubscribeRemoved = eventBus.on('feature:removed', ({ featureId }) => {
+      events.push(`removed:${featureId}`);
+    });
+
+    try {
+      undoRedo.undo();
+
+      // 親子相互整合が完全復元
+      expect(addFeature.getFeatureById(polygon.id)).toBeDefined();
+      expect(addFeature.getFeatureById(container.id)!.anchors[0].placement.childIds)
+        .toEqual([polygon.id, sibling.id]);
+
+      // touch した全地物（削除地物 + 掃除された親）へ過不足なく通知（§6.4.16 厳密一致）
+      expect([...events].sort()).toEqual(
+        [`added:${polygon.id}`, `added:${container.id}`].sort()
+      );
+    } finally {
+      unsubscribeAdded();
+      unsubscribeRemoved();
+    }
   });
 
   function getLineVertexIds(featureId: string): readonly string[] {
