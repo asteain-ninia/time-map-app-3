@@ -4,6 +4,7 @@ import { MoveVertexCommand } from '@application/commands/MoveVertexCommand';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
 import { VertexEditUseCase } from '@application/VertexEditUseCase';
+import { eventBus } from '@application/EventBus';
 import { Vertex } from '@domain/entities/Vertex';
 import { Feature } from '@domain/entities/Feature';
 import { Coordinate } from '@domain/value-objects/Coordinate';
@@ -85,6 +86,40 @@ describe('MergeFeatureCommand', () => {
     cmd.undo();
 
     expect(addFeature.getVertices().size).toBe(verticesBefore);
+  });
+
+  it('execute/undo/redoが全変更地物へ対称にイベントを発火する', () => {
+    const { f1, f2 } = createAdjacentSquares();
+
+    const events: string[] = [];
+    const unsubscribeAdded = eventBus.on('feature:added', ({ featureId }) => {
+      events.push(`added:${featureId}`);
+    });
+    const unsubscribeRemoved = eventBus.on('feature:removed', ({ featureId }) => {
+      events.push(`removed:${featureId}`);
+    });
+
+    try {
+      const cmd = new MergeFeatureCommand(addFeature, {
+        featureIds: [f1.id, f2.id],
+        currentTime: time,
+      });
+      undoRedo.execute(cmd);
+      expect([...events].sort()).toEqual([`added:${f1.id}`, `removed:${f2.id}`].sort());
+
+      // undo: セカンダリ再追加・primary 形状復元はいずれも feature:added（過不足なく）
+      events.length = 0;
+      undoRedo.undo();
+      expect([...events].sort()).toEqual([`added:${f1.id}`, `added:${f2.id}`].sort());
+
+      // redo: 初回 execute と同じイベント（過不足なく）
+      events.length = 0;
+      undoRedo.redo();
+      expect([...events].sort()).toEqual([`added:${f1.id}`, `removed:${f2.id}`].sort());
+    } finally {
+      unsubscribeAdded();
+      unsubscribeRemoved();
+    }
   });
 
   it('redoで結合後の頂点IDを復元し後続の頂点移動を再実行できる', () => {

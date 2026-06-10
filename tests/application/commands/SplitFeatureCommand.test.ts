@@ -3,6 +3,7 @@ import { SplitFeatureCommand } from '@application/commands/SplitFeatureCommand';
 import { MoveFeatureCommand } from '@application/commands/MoveFeatureCommand';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
 import { UndoRedoManager } from '@application/UndoRedoManager';
+import { eventBus } from '@application/EventBus';
 import { Vertex } from '@domain/entities/Vertex';
 import { SharedVertexGroup } from '@domain/entities/SharedVertexGroup';
 import { Coordinate } from '@domain/value-objects/Coordinate';
@@ -84,6 +85,50 @@ describe('SplitFeatureCommand', () => {
       expect(restoredAnchor.shape.type).toBe('Polygon');
       const restoredRings = (restoredAnchor.shape as { type: 'Polygon'; rings: readonly unknown[] }).rings;
       expect(restoredRings.length).toBe(originalRingCount);
+    });
+
+    it('execute/undo/redoが分割元と新地物へ対称にイベントを発火する', () => {
+      const feature = createSquarePolygon();
+
+      const events: string[] = [];
+      const unsubscribeAdded = eventBus.on('feature:added', ({ featureId }) => {
+        events.push(`added:${featureId}`);
+      });
+      const unsubscribeRemoved = eventBus.on('feature:removed', ({ featureId }) => {
+        events.push(`removed:${featureId}`);
+      });
+
+      try {
+        const cmd = new SplitFeatureCommand(addFeature, {
+          featureId: feature.id,
+          cuttingLine: [{ x: 5, y: -1 }, { x: 5, y: 11 }],
+          isClosed: false,
+          currentTime: time,
+        });
+        // execute: 新地物（addPolygonFromShape の生成通知）と分割元へ各 1 回（過不足なく）
+        undoRedo.execute(cmd);
+        const newFeatureId = cmd.createdFeatureId!;
+        expect([...events].sort()).toEqual(
+          [`added:${newFeatureId}`, `added:${feature.id}`].sort()
+        );
+
+        // undo: 新地物の削除は feature:removed、形状復元される分割元は feature:added（過不足なく）
+        events.length = 0;
+        undoRedo.undo();
+        expect([...events].sort()).toEqual(
+          [`removed:${newFeatureId}`, `added:${feature.id}`].sort()
+        );
+
+        // redo: 新地物・分割元とも feature:added（過不足なく）
+        events.length = 0;
+        undoRedo.redo();
+        expect([...events].sort()).toEqual(
+          [`added:${newFeatureId}`, `added:${feature.id}`].sort()
+        );
+      } finally {
+        unsubscribeAdded();
+        unsubscribeRemoved();
+      }
     });
 
     it('分割で追加された頂点がUndoで削除される', () => {
@@ -229,6 +274,50 @@ describe('SplitFeatureCommand', () => {
       expect(findPolygonVertexIdAt(featureB.id, new Coordinate(0, 5))).toBe(insertedBVertexId);
       expect(addFeature.getSharedVertexGroups().get(sharedGroupAtCutPoint!.id)?.vertexIds)
         .toContain(insertedBVertexId!);
+    });
+
+    it('共有エッジ先地物を含めて execute/undo/redo が対称にイベントを発火する', () => {
+      const { featureA, featureB } = createSharedLeftEdgeFixture();
+
+      const events: string[] = [];
+      const unsubscribeAdded = eventBus.on('feature:added', ({ featureId }) => {
+        events.push(`added:${featureId}`);
+      });
+      const unsubscribeRemoved = eventBus.on('feature:removed', ({ featureId }) => {
+        events.push(`removed:${featureId}`);
+      });
+
+      try {
+        const cmd = new SplitFeatureCommand(addFeature, {
+          featureId: featureA.id,
+          cuttingLine: [{ x: -1, y: 5 }, { x: 11, y: 5 }],
+          isClosed: false,
+          currentTime: time,
+        });
+        // execute: 新地物（addPolygonFromShape の生成通知）・分割元・共有エッジ先へ各 1 回（過不足なく）
+        undoRedo.execute(cmd);
+        const newFeatureId = cmd.createdFeatureId!;
+        expect([...events].sort()).toEqual(
+          [`added:${newFeatureId}`, `added:${featureA.id}`, `added:${featureB.id}`].sort()
+        );
+
+        // undo: 新地物は feature:removed、復元される分割元・共有エッジ先は feature:added（過不足なく）
+        events.length = 0;
+        undoRedo.undo();
+        expect([...events].sort()).toEqual(
+          [`removed:${newFeatureId}`, `added:${featureA.id}`, `added:${featureB.id}`].sort()
+        );
+
+        // redo: 新地物・分割元・共有エッジ先とも feature:added（過不足なく）
+        events.length = 0;
+        undoRedo.redo();
+        expect([...events].sort()).toEqual(
+          [`added:${newFeatureId}`, `added:${featureA.id}`, `added:${featureB.id}`].sort()
+        );
+      } finally {
+        unsubscribeAdded();
+        unsubscribeRemoved();
+      }
     });
 
     it('共有辺の途中に複数の切断点がある場合は共有先地物へ同順で頂点を挿入する', () => {

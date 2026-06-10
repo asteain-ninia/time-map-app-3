@@ -141,7 +141,11 @@ export class MergeFeatureCommand implements UndoableCommand {
       }
     }
 
+    // 全変更地物へイベント規約（存在 = feature:added / 削除 = feature:removed）で通知する（開発ガイド §6.4.16）。
     eventBus.emit('feature:added', { featureId: primaryId });
+    for (const featureId of this.removedFeatureIds) {
+      eventBus.emit('feature:removed', { featureId });
+    }
   }
 
   undo(): void {
@@ -156,6 +160,12 @@ export class MergeFeatureCommand implements UndoableCommand {
     // 結合で追加された頂点を削除
     for (const vid of this.addedVertexIds) {
       vertices.delete(vid);
+    }
+
+    // Map 直接復元でも初回 execute と同じイベント規約で全変更地物へ通知する（開発ガイド §6.4.16）。
+    // セカンダリ地物の再追加・primary の形状復元はいずれも「存在」なので feature:added。
+    for (const featureId of this.originalFeatures.keys()) {
+      eventBus.emit('feature:added', { featureId });
     }
   }
 
@@ -174,6 +184,9 @@ export class MergeFeatureCommand implements UndoableCommand {
     }
 
     eventBus.emit('feature:added', { featureId: this.mergedFeatureAfter.id });
+    for (const featureId of this.removedFeatureIds) {
+      eventBus.emit('feature:removed', { featureId });
+    }
   }
 
   private createPolygonShape(

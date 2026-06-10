@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CommitFeatureAnchorEditUseCase, CommitError } from '@application/CommitFeatureAnchorEditUseCase';
 import { PrepareFeatureAnchorEditUseCase } from '@application/PrepareFeatureAnchorEditUseCase';
 import { AddFeatureUseCase } from '@application/AddFeatureUseCase';
+import { eventBus } from '@application/EventBus';
 import { Coordinate } from '@domain/value-objects/Coordinate';
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { Vertex } from '@domain/entities/Vertex';
@@ -78,6 +79,29 @@ describe('CommitFeatureAnchorEditUseCase', () => {
 
       const updated = addFeature.getFeatureById(feature.id)!;
       expect(updated.anchors[0].timeRange.end?.year).toBe(2100);
+    });
+
+    it('錨更新の確定で feature:added を発火する', () => {
+      const feature = addFeature.addPoint(new Coordinate(10, 20), time, 'original');
+      const prepResult = prepare.prepare(feature.id, 'property_only', time, {
+        property: { name: '更新後', description: '' },
+      });
+
+      const events: string[] = [];
+      const unsubscribeAdded = eventBus.on('feature:added', ({ featureId }) => {
+        events.push(`added:${featureId}`);
+      });
+      const unsubscribeRemoved = eventBus.on('feature:removed', ({ featureId }) => {
+        events.push(`removed:${featureId}`);
+      });
+
+      try {
+        commit.commitDirect(prepResult.draftId);
+        expect(events).toEqual([`added:${feature.id}`]);
+      } finally {
+        unsubscribeAdded();
+        unsubscribeRemoved();
+      }
     });
 
     it('historyEntryId がユニーク', () => {

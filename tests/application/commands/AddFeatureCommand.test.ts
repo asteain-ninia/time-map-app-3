@@ -97,6 +97,34 @@ describe('AddFeatureCommand', () => {
       const movedVertex = addFeature.getVertices().get(addedVertexId)!;
       expect(movedVertex.coordinate).toEqual(new Coordinate(15, 17));
     });
+
+    it('undoでfeature:removed、redoでfeature:addedを対称に発火する', () => {
+      const cmd = createCommand({
+        type: 'point', coord: new Coordinate(10, 20), time,
+      });
+      undoRedo.execute(cmd);
+      const featureId = addFeature.getFeatures()[0].id;
+
+      const events: string[] = [];
+      const unsubscribeAdded = eventBus.on('feature:added', ({ featureId: id }) => {
+        events.push(`added:${id}`);
+      });
+      const unsubscribeRemoved = eventBus.on('feature:removed', ({ featureId: id }) => {
+        events.push(`removed:${id}`);
+      });
+
+      try {
+        undoRedo.undo();
+        expect(events).toEqual([`removed:${featureId}`]);
+
+        events.length = 0;
+        undoRedo.redo();
+        expect(events).toEqual([`added:${featureId}`]);
+      } finally {
+        unsubscribeAdded();
+        unsubscribeRemoved();
+      }
+    });
   });
 
   describe('線情報の追加', () => {
@@ -434,6 +462,64 @@ describe('AddFeatureCommand', () => {
       undoRedo.undo();
       expect(addFeature.getFeatureById(directId)).toBeUndefined();
       expect(addFeature.getFeatureById(parent.id)!.getActiveAnchor(time)?.shape?.type).toBe('Polygon');
+    });
+
+    it('parentId指定のundo/redoで直轄領・変更済み親を含む全変更地物へ対称にイベントを発火する', () => {
+      const parent = addFeature.addPolygon(
+        [
+          new Coordinate(0, 0),
+          new Coordinate(10, 0),
+          new Coordinate(10, 10),
+          new Coordinate(0, 10),
+        ],
+        time,
+        '親地物'
+      );
+
+      const cmd = createCommand({
+        type: 'polygon',
+        coords: [
+          new Coordinate(2, 2),
+          new Coordinate(6, 2),
+          new Coordinate(6, 6),
+          new Coordinate(2, 6),
+        ],
+        time,
+        parentId: parent.id,
+      });
+      undoRedo.execute(cmd);
+
+      const parentAnchor = addFeature.getFeatureById(parent.id)!.getActiveAnchor(time)!;
+      const directId = parentAnchor.placement.childIds.find((id) =>
+        addFeature.getFeatureById(id)!.getActiveAnchor(time)!.property.name.endsWith('直轄領')
+      )!;
+      const childId = parentAnchor.placement.childIds.find((id) => id !== directId)!;
+
+      const events: string[] = [];
+      const unsubscribeAdded = eventBus.on('feature:added', ({ featureId }) => {
+        events.push(`added:${featureId}`);
+      });
+      const unsubscribeRemoved = eventBus.on('feature:removed', ({ featureId }) => {
+        events.push(`removed:${featureId}`);
+      });
+
+      try {
+        // undo: 子・直轄領の削除は feature:removed、復元される変更済み親は feature:added（過不足なく）
+        undoRedo.undo();
+        expect([...events].sort()).toEqual(
+          [`removed:${childId}`, `removed:${directId}`, `added:${parent.id}`].sort()
+        );
+
+        // redo: 子・直轄領の再追加と集約地物化した親の復元はすべて feature:added（過不足なく）
+        events.length = 0;
+        undoRedo.redo();
+        expect([...events].sort()).toEqual(
+          [`added:${childId}`, `added:${directId}`, `added:${parent.id}`].sort()
+        );
+      } finally {
+        unsubscribeAdded();
+        unsubscribeRemoved();
+      }
     });
 
     it('parentId指定でも親以外の末端地物と重なる子は引き続き拒否する', () => {

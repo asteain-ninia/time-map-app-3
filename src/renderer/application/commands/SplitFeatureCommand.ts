@@ -181,7 +181,12 @@ export class SplitFeatureCommand implements UndoableCommand {
     }
     this.sharedGroupsAfter = new Map(sharedGroups);
 
-    eventBus.emit('feature:added', { featureId: newFeature.id });
+    // 全変更地物へイベント規約（存在 = feature:added / 削除 = feature:removed）で通知する（開発ガイド §6.4.16）。
+    // 新地物の生成通知は addPolygonFromShape（UseCase 内）が emit 済みのため、ここで重ねない（同一状態変化の二重通知禁止）。
+    eventBus.emit('feature:added', { featureId });
+    for (const additionalFeatureId of this.updatedAdditionalFeaturesAfter.keys()) {
+      eventBus.emit('feature:added', { featureId: additionalFeatureId });
+    }
   }
 
   undo(): void {
@@ -216,6 +221,17 @@ export class SplitFeatureCommand implements UndoableCommand {
     for (const [groupId, group] of this.originalSharedGroups) {
       sharedGroups.set(groupId, group);
     }
+
+    // Map 直接復元でも初回 execute と同じイベント規約で全変更地物へ通知する（開発ガイド §6.4.16）。
+    if (this.newFeatureId) {
+      eventBus.emit('feature:removed', { featureId: this.newFeatureId });
+    }
+    if (feature) {
+      eventBus.emit('feature:added', { featureId: this.params.featureId });
+    }
+    for (const featureId of this.originalAdditionalFeatures.keys()) {
+      eventBus.emit('feature:added', { featureId });
+    }
   }
 
   private restoreAfter(): void {
@@ -240,6 +256,10 @@ export class SplitFeatureCommand implements UndoableCommand {
     }
 
     eventBus.emit('feature:added', { featureId: this.newFeatureAfter.id });
+    eventBus.emit('feature:added', { featureId: this.updatedFeatureAfter.id });
+    for (const featureId of this.updatedAdditionalFeaturesAfter.keys()) {
+      eventBus.emit('feature:added', { featureId });
+    }
   }
 
   private createPolygonShape(

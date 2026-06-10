@@ -98,12 +98,13 @@ export class CommitFeatureAnchorEditUseCase {
       const feature = features.get(featureId);
       if (!feature) continue;
 
-      // 錨列が空 → 地物削除
+      // 錨列が空 → 地物削除。イベント規約は存在 = feature:added / 削除 = feature:removed（開発ガイド §6.4.16）。
       if (newAnchors.length === 0) {
         features.delete(featureId);
         eventBus.emit('feature:removed', { featureId });
       } else {
         features.set(featureId, feature.withAnchors(newAnchors));
+        eventBus.emit('feature:added', { featureId });
       }
       updatedFeatureIds.push(featureId);
     }

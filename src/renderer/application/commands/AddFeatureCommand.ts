@@ -169,6 +169,16 @@ export class AddFeatureCommand implements UndoableCommand {
     for (const [featureId, feature] of this.modifiedFeaturesBeforeParentAssignment) {
       features.set(featureId, feature);
     }
+
+    // Map 直接復元でも初回 execute と同じイベント規約（存在 = feature:added / 削除 = feature:removed）で
+    // 全変更地物へ通知する（開発ガイド §6.4.16）。eventBus 購読の派生 consumer は明示 refresh を持たない。
+    eventBus.emit('feature:removed', { featureId: this.addedFeature.id });
+    for (const createdId of this.createdFeaturesDuringAssign.keys()) {
+      eventBus.emit('feature:removed', { featureId: createdId });
+    }
+    for (const featureId of this.modifiedFeaturesBeforeParentAssignment.keys()) {
+      eventBus.emit('feature:added', { featureId });
+    }
   }
 
   private restoreAddedFeature(): void {
@@ -187,6 +197,12 @@ export class AddFeatureCommand implements UndoableCommand {
       features.set(featureId, feature);
     }
     eventBus.emit('feature:added', { featureId: this.addedFeature.id });
+    for (const createdId of this.createdFeaturesDuringAssign.keys()) {
+      eventBus.emit('feature:added', { featureId: createdId });
+    }
+    for (const featureId of this.modifiedFeaturesAfterParentAssignment.keys()) {
+      eventBus.emit('feature:added', { featureId });
+    }
   }
 
   private assignParent(featureId: string, parentId: string): void {
