@@ -30,6 +30,7 @@
 
 - 粒度は機能単位で細かく（詳細: `memory/feedback_commit_granularity.md`）
 - Co-Authored-By はコードを書いた側に合わせる（詳細: `memory/feedback_co_author_convention.md`）
+- **実装セッションは 実装済み.md の新規エントリ末尾に実装モデル名を記録する**（例: `- 実装モデル: Claude Fable 5`）。コミット係はこれを Co-Authored-By の根拠にする。**コミット係が自分のモデル名を自己申告しない**（2026-06-11 監査で 26 コミット分の帰属誤りが判明した再発防止）
 - コミットごとに 現状.md / 実装済み.md も更新する（詳細: `memory/feedback_update_genjou_md.md`）
 - `git commit` は allowlist に入れない方針。メッセージ内容をユーザーが都度確認する
 
