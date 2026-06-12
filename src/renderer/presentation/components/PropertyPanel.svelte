@@ -13,7 +13,11 @@
     getCurrentTimePercent,
     sortAnchorsByStart,
   } from './propertyPanelHistoryUtils';
-  import { buildUpdatedAnchorProperty, isPolygonLikeFeature } from './propertyPanelUtils';
+  import {
+    buildAnchorFormValues,
+    buildUpdatedAnchorProperty,
+    isPolygonLikeFeature,
+  } from './propertyPanelUtils';
 
   let {
     feature = null as Feature | null,
@@ -75,12 +79,13 @@
     const _featureId = feature?.id;
     const _anchorId = anchor?.id;
     if (anchor) {
-      editName = anchor.property.name;
-      editDescription = anchor.property.description;
-      editFillColor = anchor.property.style?.fillColor ?? '#4a90d9';
-      editSelectedFillColor = anchor.property.style?.selectedFillColor ?? '#00ccff';
-      editAutoColor = anchor.property.style?.autoColor ?? false;
-      editPalette = anchor.property.style?.palette ?? DEFAULT_PALETTE_NAME;
+      const form = buildAnchorFormValues(anchor);
+      editName = form.name;
+      editDescription = form.description;
+      editFillColor = form.fillColor;
+      editSelectedFillColor = form.selectedFillColor;
+      editAutoColor = form.autoColor;
+      editPalette = form.palette;
     }
   });
 
@@ -93,6 +98,21 @@
   /** プロパティの変更を適用 */
   function applyChanges(): void {
     if (!feature || !anchor) return;
+    // onblur / Enter は値未変更でも発火する。フォームが同期時の baseline と一致する（＝ユーザーが
+    // 何も変えていない）なら onPropertyChange を呼ばない。これがないと no-op の確定でも
+    // SnapshotFeatureEditCommand が undo スタックへ積まれ、直前の操作を取り消すのに Ctrl+Z を
+    // 2 回押す必要が出る幽霊 undo になる（spurious dirty も同時に防ぐ）。
+    const baseline = buildAnchorFormValues(anchor);
+    if (
+      editName === baseline.name &&
+      editDescription === baseline.description &&
+      editFillColor === baseline.fillColor &&
+      editSelectedFillColor === baseline.selectedFillColor &&
+      editAutoColor === baseline.autoColor &&
+      editPalette === baseline.palette
+    ) {
+      return;
+    }
     const newProperty = buildUpdatedAnchorProperty(feature, anchor, {
       name: editName,
       description: editDescription,

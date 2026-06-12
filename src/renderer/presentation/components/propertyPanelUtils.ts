@@ -4,6 +4,41 @@ import type {
   FeatureAnchor,
   PolygonStyle,
 } from '@domain/value-objects/FeatureAnchor';
+import { DEFAULT_PALETTE_NAME } from '@infrastructure/StyleResolver';
+
+/** 面スタイル未設定時にフォームへ充てる既定色（PropertyPanel の form 同期と共有） */
+export const DEFAULT_FILL_COLOR = '#4a90d9';
+export const DEFAULT_SELECTED_FILL_COLOR = '#00ccff';
+
+export interface AnchorFormValues {
+  readonly name: string;
+  readonly description: string;
+  readonly fillColor: string;
+  readonly selectedFillColor: string;
+  readonly autoColor: boolean;
+  readonly palette: string;
+}
+
+/**
+ * 錨のプロパティから編集フォームの初期値を導出する（既定値処理の単一ソース）。
+ *
+ * PropertyPanel の form 同期 `$effect` と `applyChanges` の no-op 判定がこの同じ既定値処理を
+ * 共有することで、「名前欄へフォーカス → 値を変えずに離脱」しただけで no-op のスナップショット
+ * コマンドが undo スタックへ積まれる幽霊 undo / spurious dirty を防ぐ（開発ガイド §6.6.9: 同じ判定は
+ * 同じ実装を共有）。両者が別々に既定値を持つと、未スタイルの面情報で baseline ↔ form がずれて
+ * no-op 判定が効かなくなる。
+ */
+export function buildAnchorFormValues(anchor: FeatureAnchor): AnchorFormValues {
+  const style = anchor.property.style;
+  return {
+    name: anchor.property.name,
+    description: anchor.property.description,
+    fillColor: style?.fillColor ?? DEFAULT_FILL_COLOR,
+    selectedFillColor: style?.selectedFillColor ?? DEFAULT_SELECTED_FILL_COLOR,
+    autoColor: style?.autoColor ?? false,
+    palette: style?.palette ?? DEFAULT_PALETTE_NAME,
+  };
+}
 
 /**
  * 面情報（末端ポリゴン・集約地物の双方）かどうかを判定する。

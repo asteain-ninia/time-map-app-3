@@ -9,9 +9,13 @@ import {
 import { TimePoint } from '@domain/value-objects/TimePoint';
 import { Ring } from '@domain/value-objects/Ring';
 import {
+  buildAnchorFormValues,
   buildUpdatedAnchorProperty,
   isPolygonLikeFeature,
+  DEFAULT_FILL_COLOR,
+  DEFAULT_SELECTED_FILL_COLOR,
 } from '@presentation/components/propertyPanelUtils';
+import { DEFAULT_PALETTE_NAME } from '@infrastructure/StyleResolver';
 
 function makeAnchor(
   property: AnchorProperty,
@@ -140,5 +144,53 @@ describe('buildUpdatedAnchorProperty', () => {
       style: formStyle,
     });
     expect(result.kind).toBe('連邦');
+  });
+});
+
+describe('buildAnchorFormValues', () => {
+  it('style 設定済みの錨はその値をそのまま返す', () => {
+    const anchor = makeAnchor({ name: '名', description: '説明', style: formStyle }, polygonShape);
+    expect(buildAnchorFormValues(anchor)).toEqual({
+      name: '名',
+      description: '説明',
+      fillColor: formStyle.fillColor,
+      selectedFillColor: formStyle.selectedFillColor,
+      autoColor: formStyle.autoColor,
+      palette: formStyle.palette,
+    });
+  });
+
+  it('style 未設定の錨は既定値を充てる', () => {
+    const anchor = makeAnchor(baseProperty, polygonShape);
+    expect(buildAnchorFormValues(anchor)).toEqual({
+      name: '旧名',
+      description: '旧説明',
+      fillColor: DEFAULT_FILL_COLOR,
+      selectedFillColor: DEFAULT_SELECTED_FILL_COLOR,
+      autoColor: false,
+      palette: DEFAULT_PALETTE_NAME,
+    });
+  });
+
+  it('no-op 判定: 未変更フォーム（baseline 自身）から構築した property は baseline と全フィールド一致する', () => {
+    // applyChanges の guard は「現在のフォーム値 === buildAnchorFormValues(anchor)」を no-op とみなす。
+    // baseline をそのままフォーム値として渡しても変化が出ないこと（guard が成立すること）を固定する。
+    const anchor = makeAnchor(baseProperty, polygonShape);
+    const baseline = buildAnchorFormValues(anchor);
+    const feature = leafPolygon(baseProperty);
+    const rebuilt = buildUpdatedAnchorProperty(feature, anchor, {
+      name: baseline.name,
+      description: baseline.description,
+      style: {
+        fillColor: baseline.fillColor,
+        selectedFillColor: baseline.selectedFillColor,
+        autoColor: baseline.autoColor,
+        palette: baseline.palette,
+      },
+    });
+    const rebuiltForm = buildAnchorFormValues(
+      anchor.withProperty(rebuilt)
+    );
+    expect(rebuiltForm).toEqual(baseline);
   });
 });

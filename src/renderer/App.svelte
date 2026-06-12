@@ -96,6 +96,7 @@
   import { SplitFeatureCommand } from '@application/commands/SplitFeatureCommand';
   import { MergeFeatureCommand } from '@application/commands/MergeFeatureCommand';
   import { ReassignFeatureParentCommand } from '@application/commands/ReassignFeatureParentCommand';
+  import { SnapshotFeatureEditCommand } from '@application/commands/SnapshotFeatureEditCommand';
   import type { SpatialConflict } from '@domain/services/ConflictDetectionService';
   import type { ConflictResolution } from '@application/AnchorEditDraft';
   import {
@@ -488,9 +489,22 @@
   // --- プロパティ編集 ---
 
   function onPropertyChange(featureId: string, anchorId: string, property: AnchorProperty): void {
-    anchorEdit.updateProperty(featureId, anchorId, property);
-    refreshFeatureData();
-    markAsDirty();
+    // プロパティ編集の確定を undo 履歴に乗せる（B36）。updateProperty は features Map を直接
+    // 変異し feature:added を発火するため、スナップショットコマンドで before/after を保持する
+    // （手動 refresh / markAsDirty は emit 購読側が担う。§6.4.16）。
+    try {
+      undoRedo.execute(
+        new SnapshotFeatureEditCommand(addFeature, {
+          description: 'プロパティを編集',
+          mutate: () => {
+            anchorEdit.updateProperty(featureId, anchorId, property);
+            return [featureId];
+          },
+        })
+      );
+    } catch (error) {
+      validationMessage = getValidationMessage(error);
+    }
   }
 
   // --- コンテキストメニュー ---
@@ -1198,25 +1212,38 @@
         currentTime
       );
 
-      const vertexMap = addFeature.getVertices() as Map<string, Vertex>;
-      const newVertexIds: string[] = [];
-      for (const coord of ringDrawingState.coords) {
-        const id = `v-ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        vertexMap.set(id, new Vertex(id, coord.clampLatitude()));
-        newVertexIds.push(id);
-      }
-      const newRingId = `ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const result = placement.type === 'hole'
-        ? addHoleRing(anchor.shape.rings, placement.parentRingId!, newRingId, newVertexIds)
-        : addExclaveRing(anchor.shape.rings, placement.parentRingId, newRingId, newVertexIds);
+      // リング追加の確定を undo 履歴に乗せる（B35）。features / vertices Map を直接変異するため、
+      // スナップショットコマンドで before/after を保持し、redo は afterState 復元で生成 ID（頂点 ID・
+      // リング ID）を固定する（§6.4.12 / §6.4.16）。手動 refresh / markAsDirty は feature:added の
+      // 購読側が担う。
+      const ringCoords = ringDrawingState.coords;
+      undoRedo.execute(
+        new SnapshotFeatureEditCommand(addFeature, {
+          description: placement.type === 'hole' ? '穴リングを追加' : '飛び地リングを追加',
+          mutate: () => {
+            const vertexMap = addFeature.getVertices() as Map<string, Vertex>;
+            const newVertexIds: string[] = [];
+            for (const coord of ringCoords) {
+              const id = `v-ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+              vertexMap.set(id, new Vertex(id, coord.clampLatitude()));
+              newVertexIds.push(id);
+            }
+            const newRingId = `ring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const result = placement.type === 'hole'
+              ? addHoleRing(anchor.shape.rings, placement.parentRingId!, newRingId, newVertexIds)
+              : addExclaveRing(anchor.shape.rings, placement.parentRingId, newRingId, newVertexIds);
 
-      const newAnchor = anchor.withShape({ type: 'Polygon', rings: result.rings });
-      const newAnchors = feature.anchors.map((a) => a.id === anchor.id ? newAnchor : a);
-      const updatedFeature = feature.withAnchors(newAnchors);
-      (addFeature.getFeaturesMap() as Map<string, typeof feature>).set(feature.id, updatedFeature);
-      // features Map 直接更新のイベント規約（存在・更新 = feature:added。開発ガイド §6.4.16）。
-      // emit は同期で、購読側が refreshFeatureData / markAsDirty を実行する
-      eventBus.emit('feature:added', { featureId: feature.id });
+            const newAnchor = anchor.withShape({ type: 'Polygon', rings: result.rings });
+            const newAnchors = feature.anchors.map((a) => a.id === anchor.id ? newAnchor : a);
+            const updatedFeature = feature.withAnchors(newAnchors);
+            (addFeature.getFeaturesMap() as Map<string, typeof feature>).set(feature.id, updatedFeature);
+            // features Map 直接更新のイベント規約（存在・更新 = feature:added。開発ガイド §6.4.16）。
+            // emit は同期で、購読側が refreshFeatureData / markAsDirty を実行する
+            eventBus.emit('feature:added', { featureId: feature.id });
+            return [feature.id];
+          },
+        })
+      );
       validationMessage = '';
     } catch (error) {
       validationMessage = getValidationMessage(error);
