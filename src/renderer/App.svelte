@@ -1353,16 +1353,17 @@
   /** 結合実行 */
   function onMergeConfirm(mergedName: string): void {
     if (mergeTargetIds.length < 2 || !currentTime) return;
-    const mergedFeatureId = mergeTargetIds[0];
+
+    // 結合は「元リーフの存在終了 + 結果地物の新規生成」（要件定義書 §2.1 line 329）のため、
+    // 選択の再構築は元の先頭 ID ではなくコマンドが返す結果地物 ID で行う（§6.6.3）。
+    const command = new MergeFeatureCommand(reassignParent, addFeature, {
+      featureIds: mergeTargetIds,
+      currentTime,
+      mergedName,
+    });
 
     try {
-      undoRedo.execute(
-        new MergeFeatureCommand(addFeature, deleteFeature, {
-          featureIds: mergeTargetIds,
-          currentTime,
-          mergedName,
-        })
-      );
+      undoRedo.execute(command);
     } catch (error) {
       validationMessage = getValidationMessage(error);
       showMergeModal = false;
@@ -1373,7 +1374,7 @@
     refreshFeatureData();
     showMergeModal = false;
     mergeTargetIds = [];
-    selectedFeatureId = mergedFeatureId;
+    selectedFeatureId = command.mergedFeatureId;
   }
 
   function onCancelMerge(): void {

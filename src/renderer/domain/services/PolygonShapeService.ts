@@ -21,10 +21,11 @@ export interface PolygonRingDraft {
  * リングも除外しないため、退化データでは原点へ飛んだ偽頂点入りの polygon を返す。
  * `HierarchyService.resolvePolygonAnchorPolygons` は同じ構造化を「欠落頂点 skip +
  * 3 頂点未満除外」の filter 規則で行っており、両者は退化データで非対称（開発ガイド
- * §6.6.9 のドリフト類型）。既存 consumer（ナイフ確定可否判定 / `SplitFeatureCommand` /
- * `MergeFeatureCommand`）は現挙動でテスト固定されているため維持するが、**新規経路は
- * 本関数ではなく `HierarchyService.resolvePolygonAnchorPolygons` を検討すること**。
- * 結合・分割経路自体の刷新は Phase 4-6/4-7（現状.md §6.10）の射程。
+ * §6.6.9 のドリフト類型）。既存 consumer（ナイフ確定可否判定 / `SplitFeatureCommand`）は
+ * 現挙動でテスト固定されているため維持するが、**新規経路は本関数ではなく
+ * `HierarchyService.resolvePolygonAnchorPolygons` を検討すること**。
+ * 結合経路は Phase 4-6 の確定経路再設計で `resolvePolygonAnchorPolygons` へ移行済み
+ * （`ReassignFeatureParentUseCase.mergeLeafFeatures`）。分割経路の刷新は Phase 4 の射程。
  */
 export function resolvePolygonShapePolygons(
   shape: FeatureShape & { type: 'Polygon' },

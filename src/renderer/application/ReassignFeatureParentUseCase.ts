@@ -17,8 +17,10 @@ import {
   isEmptyContainerAnchor,
   isLeafPolygonAnchor,
   type AnchorPlacement,
+  type AnchorProperty,
 } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
+import type { RingCoords } from '@domain/services/GeometryService';
 import {
   buildDirectlyGovernedDefaultName,
   deriveParentPolygons,
@@ -29,6 +31,8 @@ import {
 import { polygonDifferenceAll } from '@domain/services/BooleanOperationService';
 import { featureCoversRange } from '@domain/services/TimeService';
 import {
+  mergePolygons,
+  validateMergeFeatures,
   validateTransfer,
   type TransferType,
 } from '@domain/services/MergeService';
@@ -115,6 +119,22 @@ export interface ReassignFeatureParentResult {
   readonly changedFeatureIds: readonly string[];
   /** 新規上位領域作成サブフローで生成したコンテナの ID（未生成なら null） */
   readonly createdParentId: string | null;
+}
+
+/** 末端地物のみの結合（要件定義書 §2.1「合体（結合）機能」）の確定パラメータ。 */
+export interface MergeLeafFeaturesParams {
+  /** 結合対象の末端地物 ID 群（2 つ以上）。属性・所属の継承元は最初の ID。 */
+  readonly featureIds: readonly string[];
+  /** 結合を実行する作中時間。元リーフはこの時刻で存在終了し、結果地物が新規開始する。 */
+  readonly effectiveTime: TimePoint;
+  /** 結果地物の名称（前後空白除去後が空なら最初の対象の名称を継承）。 */
+  readonly mergedName?: string;
+}
+
+export interface MergeLeafFeaturesResult {
+  /** 新規生成された結果末端地物の ID。 */
+  readonly mergedFeatureId: string;
+  readonly changedFeatureIds: readonly string[];
 }
 
 export class ReassignFeatureParentUseCase {
@@ -362,6 +382,229 @@ export class ReassignFeatureParentUseCase {
     this.cleanupDeletedFeatureArtifacts(deletedFeatures);
 
     return { changedFeatureIds: [...changedFeatureIds], createdParentId };
+  }
+
+  /**
+   * 末端地物のみの結合の確定経路（要件定義書 §2.1「合体（結合）機能」line 326-329）。
+   *
+   * 「元の末端地物はすべてその時刻に存在を終了する歴史の錨が打たれ、結果の末端地物が
+   * 新規開始する」を実装する:
+   *   - 各結合対象の錨を effectiveTime で打ち切る（`terminateFeatureExistenceAt`）。
+   *     effectiveTime 以前の歴史（錨・形状・頂点参照）は保持され、頂点クリーンアップの対象に
+   *     ならない（歴史錨が参照し続ける頂点を消すとロード時検証が拒否する。§6.4.15 / §6.4.17）。
+   *     地物が effectiveTime ちょうどに開始していた場合のみ全錨が消え、地物ごと消滅する
+   *     （存在期間が空になるため。この場合のみ頂点クリーンアップが走る）。
+   *   - 形状の論理和（`mergePolygons`）を持つ新規末端地物を effectiveTime から開始する。
+   *   - 親の childIds を effectiveTime で錨分割し、元リーフ除去 + 結果地物追加へ同期する。
+   *     childIds が空化した区間は剪定し、全消滅した旧親は連鎖的に消滅させる
+   *     （要件定義書 §2.1 line 349「旧親領域がいずれも下位領域を全て失う結果になる場合、
+   *     当該時刻以降の旧親領域は自動的に消滅する」）。
+   *
+   * 所属変更と同じ staged エンジン（`updateParentChildIdsFromTime` /
+   * `removeEmptyParentRangesFromTime` / `cascadeParentCleanup` / `validateStagedHierarchy` /
+   * `cleanupDeletedFeatureArtifacts`）を共有するため本クラスに置く（§6.6.9 / §6.4.17:
+   * 親 childIds の時刻同期・空コンテナ剪定・結果状態検証の判定を所属変更経路と単一実装で共有し、
+   * 経路間ドリフトを防ぐ）。
+   *
+   * 結果地物の有効期間は [effectiveTime, 結合対象の有効錨 end の最小値)（全錨が開区間なら開区間）。
+   * この区間内では各対象の形状が不変で、時間スライスごとの末端地物排他（地図全体）を満たして
+   * いたため、論理和である結果形状も構成的に排他を満たす。最小値を超えて延長すると、対象消滅後に
+   * その領域を占有した別の末端地物と重複し「保存できるが開けないファイル」（§6.4.15）を作り得る
+   * ため延長しない（§2.2.3 空間競合解決の起動配線が無い現段階での保守的設計。配線後に再検討）。
+   *
+   * 末端→集約遷移の解決（`resolveLeafToContainerTransition`）は本経路では呼ばない:
+   * 結合の変異で childIds を獲得するのは結果地物の親（resultParentId）のみであり、その親は
+   * effectiveTime で結合対象（= 子）を持つため変異前から末端ではない。よって「変異前に末端 ∧
+   * 変異後に移行期間ノード」となる地物は構造上生じない（§6.1.8 の結果状態による証明。
+   * 経路ゲートではない）。上位領域決定ダイアログで既存末端を結果地物の親に選べるようになる
+   * 後続サブフェーズ（現状.md §6.10 Phase 4-6 残作業）で遷移解決の共有が必要になる。
+   */
+  mergeLeafFeatures(params: MergeLeafFeaturesParams): MergeLeafFeaturesResult {
+    const { effectiveTime } = params;
+    const featureIds = [...new Set(params.featureIds)];
+    const features = this.featureUseCase.getFeaturesMap() as Map<string, Feature>;
+
+    // 事前条件検証（件数・重複・上位下位関係・末端のみ・同一上位領域の暫定制約）。
+    // 選択時（App.svelte の addMergeTarget）と同一サービスを共有して判定ドリフトを防ぐ（§6.6.1）。
+    const validation = validateMergeFeatures(featureIds, [...features.values()], effectiveTime);
+    if (!validation.valid) {
+      throw new FeatureParentTransferError(validation.error ?? '結合対象が不正です');
+    }
+
+    // 形状収集は描画・派生サービスと同じ shape 解決経路を共有する（§6.6.9 / B30 統一方針）。
+    const coordMap = new Map<string, Coordinate>();
+    for (const [id, vertex] of this.featureUseCase.getVertices()) {
+      coordMap.set(id, vertex.coordinate);
+    }
+    const targetAnchors = new Map<string, FeatureAnchor>();
+    const polygonsList: RingCoords[][] = [];
+    for (const featureId of featureIds) {
+      // 存在・有効性・Polygon・末端は validateMergeFeatures が保証済み。
+      const anchor = features.get(featureId)!.getActiveAnchor(effectiveTime)!;
+      targetAnchors.set(featureId, anchor);
+      polygonsList.push(...resolvePolygonAnchorPolygons(anchor, coordMap));
+    }
+    const mergeResult = mergePolygons(polygonsList);
+    if (!mergeResult.success) {
+      throw new FeatureParentTransferError(mergeResult.error ?? '結合に失敗しました');
+    }
+
+    // 結果地物の有効期間の終端 = 結合対象の有効錨 end の最小値（上記 doc コメント参照）。
+    let mergedEnd: TimePoint | undefined;
+    for (const anchor of targetAnchors.values()) {
+      const end = anchor.timeRange.end;
+      if (end && (!mergedEnd || end.isBefore(mergedEnd))) {
+        mergedEnd = end;
+      }
+    }
+
+    // 結果地物の所属と属性: 同一上位領域の暫定制約により parentId は一意（最初の対象から継承）。
+    // 属性も最初の対象から継承し、名称のみ mergedName で上書きする（上位領域決定 /
+    // プロパティ決定ダイアログは Phase 4-6 後続サブフェーズ。要件定義書 §2.1 line 341-348）。
+    const firstAnchor = targetAnchors.get(featureIds[0])!;
+    const resultParentId = firstAnchor.placement.parentId;
+    const mergedName = params.mergedName?.trim();
+    const property: AnchorProperty = mergedName
+      ? { ...firstAnchor.property, name: mergedName }
+      : firstAnchor.property;
+
+    const { feature: mergedFeature, vertices: createdVertices } =
+      this.featureUseCase.buildLeafPolygonFeature(
+        mergedEnd ? { start: effectiveTime, end: mergedEnd } : { start: effectiveTime },
+        mergeResult.mergedPolygons,
+        property,
+        resultParentId
+      );
+
+    // ここから staged 変異。検証 throw 時は live マップ・頂点へ一切反映されない（atomic 性。
+    // reassignFeatureParent と同型）。
+    const staged = new Map(features);
+    const changedFeatureIds = new Set<string>();
+    const usedAnchorIds = collectUsedAnchorIds(staged);
+    const prunedParentQueue: CascadingParentSync[] = [];
+    const targetIdSet = new Set(featureIds);
+
+    staged.set(mergedFeature.id, mergedFeature);
+    changedFeatureIds.add(mergedFeature.id);
+    for (const anchor of mergedFeature.anchors) {
+      usedAnchorIds.add(anchor.id);
+    }
+
+    // (1) 元リーフの存在終了。打ち切りで除去される後続錨（start >= effectiveTime）が下位領域を
+    // 持っていた場合（外部生成 .gimoza 由来の後続移行期間ノード錨のみ持ち得る。effectiveTime の
+    // 有効錨は末端検証済みで childIds 空）、その子の parentId 参照を後段 (2) の前に控える。
+    const survivingTargets: Feature[] = [];
+    const orphanedChildIds = new Set<string>();
+    for (const featureId of featureIds) {
+      const original = staged.get(featureId)!;
+      for (const anchor of original.anchors) {
+        if (anchor.timeRange.start.isAtOrAfter(effectiveTime)) {
+          for (const childId of anchor.placement.childIds) {
+            orphanedChildIds.add(childId);
+          }
+        }
+      }
+      const terminated = terminateFeatureExistenceAt(original, effectiveTime);
+      if (terminated) {
+        staged.set(featureId, terminated);
+        survivingTargets.push(terminated);
+      } else {
+        staged.delete(featureId);
+      }
+      changedFeatureIds.add(featureId);
+    }
+
+    // (2) 打ち切られた後続錨だけが親だった子の parentId クリア（最上位化）。削除経路の
+    // 「子の parentId クリア」と同じ解体セマンティクス（§6.4.17）。effectiveTime 以前の参照は
+    // 存在しない（子の参照区間 = 破棄された後続錨の区間）ため from-time 更新で網羅される。
+    for (const childId of orphanedChildIds) {
+      if (targetIdSet.has(childId)) continue;
+      const child = staged.get(childId);
+      if (!child) continue;
+      const updated = this.updatePlacementFromTime(
+        child,
+        effectiveTime,
+        usedAnchorIds,
+        (placement) => placement.parentId !== null && targetIdSet.has(placement.parentId)
+          ? createAnchorPlacement(null, placement.childIds)
+          : placement
+      );
+      this.stageFeature(staged, changedFeatureIds, child, updated);
+    }
+
+    // (3) 親の childIds 同期。effectiveTime 以降に結合対象を子として参照する全親
+    // （effectiveTime 時点の共通親 + 破棄された後続錨だけが参照していた別親）を錨分割で更新する。
+    // 結果地物は自身の親（resultParentId）にのみ追加する: `buildParentPlacementForSegment` は
+    // targets の active 判定のみで childIds へ追加するため、targets の与え方で所属先を制御する。
+    const oldParentIds = new Set<string>();
+    for (const featureId of featureIds) {
+      for (const parentId of collectParentIdsFromTime(features.get(featureId)!, effectiveTime)) {
+        oldParentIds.add(parentId);
+      }
+    }
+    const syncTargetIds = new Set([...featureIds, mergedFeature.id]);
+    for (const parentId of oldParentIds) {
+      const parent = staged.get(parentId);
+      if (!parent) {
+        // 結合対象自身が他対象の（破棄された後続区間の）親で、存在終了により消滅済みのケース。
+        if (targetIdSet.has(parentId)) continue;
+        throw new FeatureParentTransferError(`元の親地物 "${parentId}" が見つかりません`);
+      }
+      const syncTargets = parentId === resultParentId
+        ? [...survivingTargets, mergedFeature]
+        : survivingTargets;
+      const updated = this.updateParentChildIdsFromTime(
+        parent,
+        effectiveTime,
+        usedAnchorIds,
+        syncTargets,
+        syncTargetIds
+      );
+      const pruned = this.removeEmptyParentRangesFromTime(parent, updated, effectiveTime, featureIds);
+      if (pruned) {
+        this.stageFeature(staged, changedFeatureIds, parent, pruned);
+        if (pruned !== updated) {
+          prunedParentQueue.push({ original: parent });
+        }
+      } else {
+        this.stageFeatureDeletion(staged, changedFeatureIds, parent);
+        prunedParentQueue.push({ original: parent });
+      }
+    }
+
+    this.cascadeParentCleanup(
+      staged,
+      changedFeatureIds,
+      effectiveTime,
+      usedAnchorIds,
+      prunedParentQueue
+    );
+
+    this.validateStagedHierarchy(staged, effectiveTime, changedFeatureIds);
+
+    const deletedFeatures = [...changedFeatureIds]
+      .filter((featureId) => !staged.has(featureId))
+      .map((featureId) => features.get(featureId))
+      .filter((feature): feature is Feature => feature !== undefined);
+
+    // 結果地物の新規頂点は検証通過後にのみ反映する（atomic 性。reassignFeatureParent と同型）。
+    const verticesMap = this.featureUseCase.getVertices() as Map<string, Vertex>;
+    for (const [vertexId, vertex] of createdVertices) {
+      verticesMap.set(vertexId, vertex);
+    }
+
+    for (const featureId of changedFeatureIds) {
+      const updated = staged.get(featureId);
+      if (updated) {
+        features.set(featureId, updated);
+        eventBus.emit('feature:added', { featureId });
+      } else if (features.delete(featureId)) {
+        eventBus.emit('feature:removed', { featureId });
+      }
+    }
+    this.cleanupDeletedFeatureArtifacts(deletedFeatures);
+
+    return { mergedFeatureId: mergedFeature.id, changedFeatureIds: [...changedFeatureIds] };
   }
 
   private validateRequest(
@@ -829,6 +1072,12 @@ export class ReassignFeatureParentUseCase {
    * 違反する。削除経路では子自体が消滅するため温存しても重複しない。純粋な集約地物
    * （shape なし）ではどちらの経路も同じ挙動になる。移行期間ノードの shape 取り扱いポリシー
    * 全般は現状.md B34 で追跡中（仕様確定待ち）。
+   *
+   * **結合経路（`mergeLeafFeatures`）からの呼び出しの根拠は別**: 結合では除去された子
+   * （結合対象）は存在終了して消滅するため上記の排他重複は生じないが、子を全て失った
+   * 旧親区間の剪定は要件定義書 §2.1 line 349「旧親領域がいずれも下位領域を全て失う結果に
+   * なる場合、当該時刻以降の旧親領域は自動的に消滅する」が直接規定する仕様挙動であり、
+   * shape 温存（削除経路の「末端へ戻る」）へ揃えてはいけない。
    */
   private removeEmptyParentRangesFromTime(
     original: Feature,
@@ -1244,6 +1493,36 @@ function collectTargetBoundaryPoints(
 
 function isBeforeOptional(time: TimePoint, end: TimePoint | undefined): boolean {
   return !end || time.isBefore(end);
+}
+
+/**
+ * 地物の存在を effectiveTime で終了させる（要件定義書 §2.1 line 329「元の末端地物はすべて
+ * その時刻に存在を終了する歴史の錨が打たれ」）。
+ *
+ * - effectiveTime 以前に終了する錨: 保持（存在終了前の歴史・形状・頂点参照は破壊しない）。
+ * - effectiveTime を跨ぐ錨: end = effectiveTime へ切り詰める（半開区間 [start, end) のため
+ *   ゼロ長錨は生じず、effectiveTime ちょうどから開始する後続地物と隙間も重複もない）。
+ * - effectiveTime 以降に開始する錨: 除去（存在終了後の歴史は破棄される）。
+ *
+ * 全錨が消えた場合（地物が effectiveTime ちょうどに開始していた場合）は null = 地物ごと消滅。
+ */
+function terminateFeatureExistenceAt(feature: Feature, effectiveTime: TimePoint): Feature | null {
+  const kept: FeatureAnchor[] = [];
+  let changed = false;
+  for (const anchor of feature.anchors) {
+    if (anchor.timeRange.end && !effectiveTime.isBefore(anchor.timeRange.end)) {
+      kept.push(anchor);
+      continue;
+    }
+    if (anchor.timeRange.start.isAtOrAfter(effectiveTime)) {
+      changed = true;
+      continue;
+    }
+    kept.push(anchor.withTimeRange({ start: anchor.timeRange.start, end: effectiveTime }));
+    changed = true;
+  }
+  if (kept.length === 0) return null;
+  return changed ? feature.withAnchors(kept) : feature;
 }
 
 function collectParentIdsFromTime(feature: Feature, effectiveTime: TimePoint): Set<string> {

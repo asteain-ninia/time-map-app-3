@@ -235,22 +235,26 @@ export class AddFeatureUseCase {
   /**
    * 末端地物（リーフ: shape あり Polygon）を MultiPolygon 座標から in-memory で構築する。
    *
-   * 要件定義書 §2.1 line 226-229「集約地物への遷移時の差分処理（直轄領の自動生成）」で、
-   * 旧形状と下位領域の和の差分（`BooleanOperationService.polygonDifferenceAll` の結果）を
-   * 新規末端地物（直轄領）として実体化する経路。複数領域に分かれた差分は 1 末端地物の
-   * 複数領土リング（飛び地化）として保持する（§6.6.2 / §2.1 line 229）。
+   * ブーリアン演算結果を新規末端地物として実体化する経路が共有する（§6.6.9）:
+   * - 直轄領の自動生成（要件定義書 §2.1 line 226-229）: 旧形状と下位領域の和の差分
+   *   （`BooleanOperationService.polygonDifferenceAll` の結果）を実体化する。
+   * - 結合の結果地物生成（要件定義書 §2.1 line 326-329）: 結合対象の形状の論理和
+   *   （`MergeService.mergePolygons` の結果）を実体化する。
+   *
+   * 複数領域に分かれた結果は 1 末端地物の複数領土リング（飛び地化）として保持する
+   * （§6.6.2 / §6.6.5 / §2.1 line 229・line 328）。
    *
    * `buildContainerFeature` と同じく **登録（`this.features` / `this.vertices` への set /
    * イベント発行）はしない**。生成した Feature と新規 Vertex 群を返却し、呼び出し側が
    * staging を介して整合性検証後にまとめて commit することで atomic 性を確保する
    * （検証失敗時の頂点・地物リークを防ぐ）。ID 採番（feature / anchor / ring / vertex）は
-   * 進める（`ReassignFeatureParentCommand` のスナップショット undo が afterState に固定し
+   * 進める（呼び出し側コマンドのスナップショット undo が afterState に固定し
    * Redo 時の ID 安定を担保。§6.4.12）。
    *
-   * @param timeRange 直轄領錨の有効期間（遷移区間 = 旧親が集約地物である区間に一致させる）
-   * @param polygons territory ごとの `[territory, ...holes]` 群（polygon-clipping 差分結果）
-   * @param property 名称・種別など（種別は元末端地物から継承、§2.1 line 228）
-   * @param parentId 直轄領の所属先（遷移した集約地物の ID）
+   * @param timeRange 生成する錨の有効期間
+   * @param polygons territory ごとの `[territory, ...holes]` 群（polygon-clipping 演算結果）
+   * @param property 名称・種別など（継承規則は呼び出し側の責務）
+   * @param parentId 生成地物の所属先（最上位なら null）
    */
   buildLeafPolygonFeature(
     timeRange: TimeRange,
@@ -275,7 +279,7 @@ export class AddFeatureUseCase {
     }
 
     if (rings.length === 0) {
-      throw new Error('直轄領の形状が空です（差分が空のときは生成しないこと）');
+      throw new Error('末端地物の形状が空です（空のブーリアン演算結果から地物を生成しないこと）');
     }
 
     const shape: FeatureShape = { type: 'Polygon', rings };
