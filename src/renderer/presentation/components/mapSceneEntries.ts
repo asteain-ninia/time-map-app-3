@@ -1,9 +1,13 @@
 import type { Feature } from '@domain/entities/Feature';
-import type { FeatureAnchor, FeatureShape } from '@domain/value-objects/FeatureAnchor';
+import type { FeatureAnchor } from '@domain/value-objects/FeatureAnchor';
 import type { TimePoint } from '@domain/value-objects/TimePoint';
 import type { Coordinate } from '@domain/value-objects/Coordinate';
 import type { RingCoords } from '@domain/services/GeometryService';
-import { deriveDepth, deriveParentShape } from '@domain/services/HierarchyService';
+import {
+  deriveDepth,
+  deriveParentShape,
+  resolvePolygonAnchorPolygons,
+} from '@domain/services/HierarchyService';
 
 /**
  * sceneEntries の Polygon entry が持つ解決済み描画用 rings 座標。
@@ -47,11 +51,18 @@ export type PolygonRings = ReadonlyArray<RingCoords>;
  *
  * `polygonRings` の解決規則は描画・hitTest・wrapOffsets が共通で使う「解決済み座標列」
  * （territory/hole の階層は配列順で保持。evenodd 判定で扱う）:
- *   - リーフ（`shape` あり + `childIds` 空）: 自身の `shape.rings` の vertexIds を vertexCoordinates で解決
+ *   - リーフ（`shape` あり + `childIds` 空）: 自身の `shape.rings` を
+ *     `HierarchyService.resolvePolygonAnchorPolygons` で解決し territory/hole の順でフラット化
  *   - 集約地物（`shape` なし + `childIds` 非空）: `deriveParentShape` の派生形状を採用。
  *     派生が空（子が解決不能）ならエントリ自体を生成しない（描画も hitTest も対象外）。
  *   - 移行期間ノード（`shape` あり + `childIds` 非空）: 派生形状を優先し、派生が空のときのみ
- *     自身の `shape.rings` を fallback として採用。
+ *     自身の `shape.rings` を同関数で解決した結果を fallback として採用。
+ *
+ * いずれの分岐も shape 解決の実体は `HierarchyService` 側の単一実装
+ * （`resolvePolygonAnchorPolygons`。派生形状も内部で同関数を使用）であり、描画・hitTest と
+ * 幾何演算（直轄領差分の subject/clip 等）が同じ filter 規則（欠落頂点 skip / 3 頂点未満
+ * 除外 / 孤児 hole 除外）を共有する（開発ガイド §6.6.9。描画側ローカル再実装の残存は
+ * B30 として追跡され本統一で解消）。
  */
 export interface MapSceneEntry {
   readonly feature: Feature;
@@ -150,7 +161,7 @@ function resolvePolygonRings(
   const hasChildren = anchor.placement.childIds.length > 0;
 
   if (hasShape && !hasChildren) {
-    return resolveAnchorPolygonRings(anchor.shape as FeatureShape & { type: 'Polygon' }, vertexCoordinates);
+    return flattenAnchorShapePolygons(anchor, vertexCoordinates);
   }
 
   if (hasChildren) {
@@ -160,7 +171,7 @@ function resolvePolygonRings(
     }
     // 派生空: 移行期間ノードなら shape を fallback、集約地物（shape なし）なら描画不能
     if (hasShape) {
-      return resolveAnchorPolygonRings(anchor.shape as FeatureShape & { type: 'Polygon' }, vertexCoordinates);
+      return flattenAnchorShapePolygons(anchor, vertexCoordinates);
     }
     return null;
   }
@@ -169,22 +180,15 @@ function resolvePolygonRings(
 }
 
 /**
- * `shape.rings` の vertexIds を vertexCoordinates で解決し、3 頂点未満のリングを除外する。
+ * 自身の `shape.rings` を `HierarchyService.resolvePolygonAnchorPolygons` で
+ * 「territory + 直下 holes」単位に解決し、描画用に territory/hole の順でフラット化する。
+ * `deriveParentShape` のフラット化（公開 API 境界で flat 化）と同じ変換であり、
+ * `labelRendererUtils.getPolygonOuterCoords` の「先頭リング = 外周」前提も territory 先頭で
+ * 維持される。
  */
-function resolveAnchorPolygonRings(
-  shape: FeatureShape & { type: 'Polygon' },
+function flattenAnchorShapePolygons(
+  anchor: FeatureAnchor,
   vertexCoordinates: ReadonlyMap<string, Coordinate>
 ): PolygonRings {
-  const result: RingCoords[] = [];
-  for (const ring of shape.rings) {
-    const coords: { x: number; y: number }[] = [];
-    for (const vid of ring.vertexIds) {
-      const c = vertexCoordinates.get(vid);
-      if (c) coords.push({ x: c.x, y: c.y });
-    }
-    if (coords.length >= 3) {
-      result.push(coords);
-    }
-  }
-  return result;
+  return resolvePolygonAnchorPolygons(anchor, vertexCoordinates).flat();
 }

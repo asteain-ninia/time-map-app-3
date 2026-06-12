@@ -1214,11 +1214,10 @@
       const newAnchors = feature.anchors.map((a) => a.id === anchor.id ? newAnchor : a);
       const updatedFeature = feature.withAnchors(newAnchors);
       (addFeature.getFeaturesMap() as Map<string, typeof feature>).set(feature.id, updatedFeature);
-      // features Map 直接更新のイベント規約（存在・更新 = feature:added。開発ガイド §6.4.16）
+      // features Map 直接更新のイベント規約（存在・更新 = feature:added。開発ガイド §6.4.16）。
+      // emit は同期で、購読側が refreshFeatureData / markAsDirty を実行する
       eventBus.emit('feature:added', { featureId: feature.id });
       validationMessage = '';
-      refreshFeatureData();
-      markAsDirty();
     } catch (error) {
       validationMessage = getValidationMessage(error);
       return;

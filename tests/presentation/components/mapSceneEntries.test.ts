@@ -25,10 +25,8 @@ function pointShape(vertexId: string): FeatureShape {
 }
 
 function polygonShape(vertexIds: readonly string[]): FeatureShape {
-  // 派生形状ルート（`resolvePolygonAnchorPolygons`）が `ring.ringType === 'territory'` を
-  // 参照するため、Ring インスタンスで構築する。リーフ単独描画 (`resolveAnchorPolygonRings`)
-  // のみを使う旧テストではリテラルでも通過していたが、コンテナ・移行期間ノードのテストで
-  // 同じヘルパーを共有するため一貫して Ring を使う。
+  // shape 解決はリーフ単独描画・派生形状ルートとも `resolvePolygonAnchorPolygons`（B30 で
+  // 統一）が `ring.ringType === 'territory'` を参照するため、Ring インスタンスで構築する。
   return {
     type: 'Polygon',
     rings: [new Ring(`r-${vertexIds.join('-')}`, [...vertexIds], 'territory', null)],
@@ -488,6 +486,165 @@ describe('collectMapSceneEntries', () => {
       const entries = collectMapSceneEntries(features, new TimePoint(1500), vertexCoords);
 
       expect(entries[0].depth).toBe(0);
+    });
+  });
+
+  /**
+   * B30 解消（開発ガイド §6.6.9）: リーフ／移行期間ノード fallback の shape 解決は
+   * `HierarchyService.resolvePolygonAnchorPolygons` の単一実装を共有し、描画側に
+   * ローカル再実装を持たない。同関数の filter 規則（孤児 hole 除外 / 退化 territory の
+   * polygon ごと除外 / territory + 直下 holes 順のフラット化）が描画経路にも適用される
+   * ことを固定し、描画側ローカル再実装へ戻す回帰（解決規則のドリフト再発）を弾く。
+   */
+  describe('リーフ描画 rings の解決は HierarchyService と同一規則（B30 / §6.6.9）', () => {
+    it('parentId を持たない孤児 hole は polygonRings から除外される', () => {
+      const shape: FeatureShape = {
+        type: 'Polygon',
+        rings: [
+          new Ring('t1', ['v1', 'v2', 'v3'], 'territory', null),
+          new Ring('h-orphan', ['v4', 'v5', 'v6'], 'hole', null),
+        ],
+      };
+      const features = [
+        new Feature('pg', 'Polygon', [makeAnchor('a1', 1000, 2000, shape)]),
+      ];
+      const vertexCoords = new Map<string, Coordinate>([
+        ['v1', new Coordinate(0, 0)],
+        ['v2', new Coordinate(10, 0)],
+        ['v3', new Coordinate(5, 10)],
+        ['v4', new Coordinate(2, 2)],
+        ['v5', new Coordinate(4, 2)],
+        ['v6', new Coordinate(3, 4)],
+      ]);
+
+      const entries = collectMapSceneEntries(features, new TimePoint(1500), vertexCoords);
+
+      expect(entries[0].polygonRings).toEqual([
+        [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 5, y: 10 },
+        ],
+      ]);
+    });
+
+    it('親 territory が退化（3 頂点未満に解決）した場合は直下 hole ごと除外される', () => {
+      // v-missing が vertexCoordinates に無いため territory t1 は 2 頂点に退化し polygon ごと
+      // 除外。hole h1 自体は 3 頂点解決できても所属 polygon が消えるため描画されない
+      // （hole 単独を塗り領域として描画しない）。
+      const shape: FeatureShape = {
+        type: 'Polygon',
+        rings: [
+          new Ring('t1', ['v1', 'v2', 'v-missing'], 'territory', null),
+          new Ring('h1', ['v4', 'v5', 'v6'], 'hole', 't1'),
+        ],
+      };
+      const features = [
+        new Feature('pg', 'Polygon', [makeAnchor('a1', 1000, 2000, shape)]),
+      ];
+      const vertexCoords = new Map<string, Coordinate>([
+        ['v1', new Coordinate(0, 0)],
+        ['v2', new Coordinate(10, 0)],
+        ['v4', new Coordinate(2, 2)],
+        ['v5', new Coordinate(4, 2)],
+        ['v6', new Coordinate(3, 4)],
+      ]);
+
+      const entries = collectMapSceneEntries(features, new TimePoint(1500), vertexCoords);
+
+      // リーフは polygonRings === [] でも entry に含まれる（規約: non-null 維持）
+      expect(entries).toHaveLength(1);
+      expect(entries[0].polygonRings).toEqual([]);
+    });
+
+    it('飛び地は [territory, ...直下 holes] 単位の順でフラット化される（shape.rings のソース順ではない）', () => {
+      // ソース順は t1, t2, h1(t1 直下) だが、polygon 単位の解決により t1, h1, t2 の順になる
+      const shape: FeatureShape = {
+        type: 'Polygon',
+        rings: [
+          new Ring('t1', ['v1', 'v2', 'v3', 'v4'], 'territory', null),
+          new Ring('t2', ['v8', 'v9', 'v10'], 'territory', null),
+          new Ring('h1', ['v5', 'v6', 'v7'], 'hole', 't1'),
+        ],
+      };
+      const features = [
+        new Feature('pg', 'Polygon', [makeAnchor('a1', 1000, 2000, shape)]),
+      ];
+      const vertexCoords = new Map<string, Coordinate>([
+        ['v1', new Coordinate(0, 0)],
+        ['v2', new Coordinate(10, 0)],
+        ['v3', new Coordinate(10, 10)],
+        ['v4', new Coordinate(0, 10)],
+        ['v5', new Coordinate(2, 2)],
+        ['v6', new Coordinate(4, 2)],
+        ['v7', new Coordinate(3, 4)],
+        ['v8', new Coordinate(20, 0)],
+        ['v9', new Coordinate(30, 0)],
+        ['v10', new Coordinate(25, 10)],
+      ]);
+
+      const entries = collectMapSceneEntries(features, new TimePoint(1500), vertexCoords);
+
+      expect(entries[0].polygonRings).toEqual([
+        [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 10, y: 10 },
+          { x: 0, y: 10 },
+        ],
+        [
+          { x: 2, y: 2 },
+          { x: 4, y: 2 },
+          { x: 3, y: 4 },
+        ],
+        [
+          { x: 20, y: 0 },
+          { x: 30, y: 0 },
+          { x: 25, y: 10 },
+        ],
+      ]);
+    });
+
+    it('移行期間ノードの fallback 解決にも同一規則（孤児 hole 除外）が適用される', () => {
+      // shape あり + childIds 非空（移行期間ノード）で子の派生が空 → 自身の shape を
+      // fallback 解決する経路。fallback もリーフ単独描画と同じ filter 規則を共有する。
+      const shape: FeatureShape = {
+        type: 'Polygon',
+        rings: [
+          new Ring('t1', ['v1', 'v2', 'v3'], 'territory', null),
+          new Ring('h-orphan', ['v4', 'v5', 'v6'], 'hole', null),
+        ],
+      };
+      const features = [
+        new Feature('transition', 'Polygon', [
+          makeAnchor('a-t', 1000, 2000, shape, { childIds: ['child'] }),
+        ]),
+        new Feature('child', 'Polygon', [
+          makeAnchor('a-c', 1000, 2000, polygonShape(['unresolved']), {
+            parentId: 'transition',
+          }),
+        ]),
+      ];
+      const vertexCoords = new Map<string, Coordinate>([
+        ['v1', new Coordinate(0, 0)],
+        ['v2', new Coordinate(10, 0)],
+        ['v3', new Coordinate(5, 10)],
+        ['v4', new Coordinate(2, 2)],
+        ['v5', new Coordinate(4, 2)],
+        ['v6', new Coordinate(3, 4)],
+      ]);
+
+      const entries = collectMapSceneEntries(features, new TimePoint(1500), vertexCoords);
+      const transitionEntry = entries.find((e) => e.feature.id === 'transition');
+
+      expect(transitionEntry).toBeDefined();
+      expect(transitionEntry!.polygonRings).toEqual([
+        [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 5, y: 10 },
+        ],
+      ]);
     });
   });
 });

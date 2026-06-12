@@ -390,14 +390,18 @@ export interface DerivedShapeResult {
  * holes は `parentId` で territory に紐付け、所属が無い hole（不正データ）は捨てる。
  * 欠落頂点・3 頂点未満の退化リングは除外する（解決不能な ring を結果へ混入させない）。
  *
- * export する理由（§6.6.9）: 末端→集約遷移の直轄領差分（`ReassignFeatureParentUseCase`）で
- * 旧形状（subject）と子の和（clip = `deriveParentPolygons`）を同一の解決規則で揃えるため、
- * subject 側も本関数で解決する。subject/clip で別解決器を使うと退化データで非対称が生じる。
+ * export する理由（§6.6.9）:
+ * - 末端→集約遷移の直轄領差分（`ReassignFeatureParentUseCase`）で旧形状（subject）と
+ *   子の和（clip = `deriveParentPolygons`）を同一の解決規則で揃えるため、subject 側も
+ *   本関数で解決する。subject/clip で別解決器を使うと退化データで非対称が生じる。
+ * - 描画・hitTest の共通中間表現（`mapSceneEntries`）のリーフ／移行期間ノード fallback の
+ *   shape 解決も本関数を使う（B30 解消: 描画側ローカル再実装のドリフト排除）。描画側は
+ *   結果を territory/hole の順でフラット化して evenodd 判定で消費する。
  *
- * @internal 上記の subject/clip 統一のための限定 export（バレル `services/index.ts` には
- * 再エクスポートしない運用）。新規 consumer は本関数を直接 import する前に、
- * `deriveParentShape` / `deriveParentPolygons` など経路統合済みの公開 API で
- * 賄えないかを先に検討すること（§6.6.9: shape 解決経路の分散はドリフトの温床）。
+ * @internal 上記の subject/clip 統一・描画経路統一のための限定 export（バレル
+ * `services/index.ts` には再エクスポートしない運用）。新規 consumer は本関数を直接
+ * import する前に、`deriveParentShape` / `deriveParentPolygons` など経路統合済みの
+ * 公開 API で賄えないかを先に検討すること（§6.6.9: shape 解決経路の分散はドリフトの温床）。
  */
 export function resolvePolygonAnchorPolygons(
   anchor: FeatureAnchor,
